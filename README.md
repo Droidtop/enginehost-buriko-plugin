@@ -5,6 +5,8 @@ This project aims to reverse-engineer the Ethornell Buriko General Interpreter (
 
 We now have a Discord server: https://discord.gg/3zFTJWUNt7
 
+Official website: [OpenBGI.net](https://openbgi.net)
+
 Status
 ------
 
