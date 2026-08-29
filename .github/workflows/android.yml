@@ -22,7 +22,7 @@ jobs:
         run: |
           git clone --depth 1 --branch release-2.30.12 https://github.com/libsdl-org/SDL.git app/src/main/cpp/vendor/SDL
           mkdir -p app/src/main/java/org/libsdl/app
-          cp app/src/main/cpp/vendor/SDL/android-project/app/src/main/java/org/libsdl/app/SDLActivity.java app/src/main/java/org/libsdl/app/
+          cp app/src/main/cpp/vendor/SDL/android-project/app/src/main/java/org/libsdl/app/*.java app/src/main/java/org/libsdl/app/
       - name: Build plugin APK
         run: gradle :app:assembleDebug --no-daemon --stacktrace
       - name: Verify plugin APK
