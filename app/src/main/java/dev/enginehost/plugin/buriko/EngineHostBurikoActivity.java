@@ -14,8 +14,9 @@ public final class EngineHostBurikoActivity extends SDLActivity {
         String context = getIntent().getStringExtra("engineContext");
         String version = getIntent().getStringExtra("engineVersion");
         String path = getIntent().getStringExtra("path");
-        if (!"compiled-script-v1".equals(context)
-                || version == null || !version.matches("\\d+(\\.\\d+)+")
+        boolean supportedContext = "compiled-script-v1".equals(context)
+                || "august-compiled-script-v1".equals(context);
+        if (!supportedContext || !"1.0".equals(version)
                 || path == null || !new File(path).isDirectory()) {
             Toast.makeText(this, "Invalid enginehost Buriko launch request", Toast.LENGTH_LONG).show();
             finish();

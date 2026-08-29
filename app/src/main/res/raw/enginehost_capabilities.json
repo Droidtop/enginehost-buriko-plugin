@@ -5,6 +5,11 @@
       "id": "openbgi-script-v1-experimental",
       "engineContext": "compiled-script-v1",
       "runtimeVersion": "1.0"
+    },
+    {
+      "id": "openbgi-august-script-v1-experimental",
+      "engineContext": "august-compiled-script-v1",
+      "runtimeVersion": "1.0"
     }
   ]
 }
