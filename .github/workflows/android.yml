@@ -10,6 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Droidtop/enginehost
+          ref: codex/engine-bundles
+          path: enginehost-tooling
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -31,7 +36,31 @@ jobs:
           test -f "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml | grep -q dev.enginehost.plugin.RUN
           unzip -l "$APK" | grep -q lib/arm64-v8a/libmain.so
+      - name: Build signed internal Enginehost bundle
+        if: startsWith(github.ref, 'refs/heads/plugin/')
+        env:
+          ENGINEHOST_SIGNING_KEY_PEM: ${{ secrets.ENGINEHOST_SIGNING_KEY_PEM }}
+        run: |
+          test -n "$ENGINEHOST_SIGNING_KEY_PEM"
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          test -f "$apk"
+          mkdir -p build/payload build/output
+          cp "$apk" build/payload/runtime.apk
+          unzip -q "$apk" 'classes*.dex' 'lib/*' -d build/payload
+          cp enginehost/LICENSES.md build/payload/LICENSES.md
+          printf '%s' "$ENGINEHOST_SIGNING_KEY_PEM" > build/signing-key.pem
+          python3 enginehost-tooling/scripts/build-engine-bundle.py \
+            --metadata enginehost/bundle-metadata.json --payload build/payload \
+            --private-key build/signing-key.pem \
+            --repository-key-document enginehost-public-key.json \
+            --output build/output/dev.enginehost.buriko.openbgi.v1.enginehost.tar.xz \
+            --release-envelope build/output/enginehost-release.json \
+            --public-key-document build/output/enginehost-public-key.json
+          cmp enginehost-public-key.json build/output/enginehost-public-key.json
       - uses: actions/upload-artifact@v4
         with:
           name: enginehost-buriko-openbgi-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            build/output/*
+          if-no-files-found: error
