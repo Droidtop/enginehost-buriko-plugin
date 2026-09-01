@@ -1,0 +1,13 @@
+{
+  "algorithm": "SHA256withECDSA",
+  "formatVersion": 1,
+  "issuer": {
+    "algorithm": "SHA256withECDSA",
+    "id": "enginehost-official-v1",
+    "keySha256": "AFA793A97577A13D7362F80FEDB3EE8CEFCA9A01014C3A73FA7BF34E26FF4A9F",
+    "signature": "MEQCICD3hyMqAEa1oL19IJO/fF55cO9BeAIYjQlewu6FgVKBAiBM0qIHTCRLuiOIB07UoAbCheCSG1lKe5v89U660YLV9A=="
+  },
+  "keySha256": "5D3B225A7D29D4AFAB810D11561F977A9F361CDB6527456E6D3CC82D3A25F355",
+  "origin": "https://github.com/droidtop/enginehost-buriko-plugin",
+  "publicKeySpki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEXlMD7VTQ17KsO/TVv4yqQ0O20/YBXLrInl1J7nnYntt2eT+MbT1T88WcWUrAUhH0Z3TKJ+6lnM7ElemEZ+aaKg=="
+}
