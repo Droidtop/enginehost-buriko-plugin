@@ -11,9 +11,9 @@ public final class EngineHostBurikoActivity extends SDLActivity {
 
     @Override
     protected void onCreate(Bundle state) {
-        String context = getIntent().getStringExtra("engineContext");
-        String version = getIntent().getStringExtra("engineVersion");
-        String path = getIntent().getStringExtra("path");
+        String context = getIntent().getStringExtra("dev.enginehost.runtime.ENGINE_CONTEXT");
+        String version = getIntent().getStringExtra("dev.enginehost.runtime.ENGINE_VERSION");
+        String path = getIntent().getStringExtra("dev.enginehost.runtime.PATH");
         boolean supportedContext = "compiled-script-v1".equals(context)
                 || "august-compiled-script-v1".equals(context);
         if (!supportedContext || !"1.0".equals(version)
