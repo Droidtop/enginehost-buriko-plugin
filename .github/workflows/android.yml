@@ -47,6 +47,26 @@ jobs:
           mkdir -p build/payload build/output
           cp "$apk" build/payload/runtime.apk
           unzip -q "$apk" 'classes*.dex' 'lib/*' -d build/payload
+          # The wrapper APK is multidex. enginehost class-loads exactly the
+          # dex files this metadata declares, so a hard-coded single-entry
+          # list silently drops the rest of the wrapper at launch. Declare
+          # what the payload actually contains, in load order.
+          python3 - <<'DEXES'
+          import json, pathlib, re
+          payload = pathlib.Path('build/payload')
+          def order(p):
+              # classes.dex, classes2.dex ... classes10.dex is numeric order;
+              # a lexical sort would put 10 ahead of 2.
+              m = re.fullmatch(r'classes(\d*)\.dex', p.name)
+              return int(m.group(1) or 1)
+          dexes = sorted(payload.glob('classes*.dex'), key=order)
+          assert dexes, 'no classes*.dex in the APK payload'
+          meta = pathlib.Path('enginehost/bundle-metadata.json')
+          data = json.loads(meta.read_text())
+          data['dexFiles'] = [d.name for d in dexes]
+          meta.write_text(json.dumps(data, indent=2) + '\n')
+          print('dexFiles =', data['dexFiles'])
+          DEXES
           cp enginehost/LICENSES.md build/payload/LICENSES.md
           printf '%s' "$ENGINEHOST_SIGNING_KEY_PEM" > build/signing-key.pem
           python3 enginehost-tooling/scripts/build-engine-bundle.py \
