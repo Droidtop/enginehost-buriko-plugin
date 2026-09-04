@@ -6,23 +6,31 @@
   "entrypoint": "dev.enginehost.plugin.buriko.EngineHostBurikoActivity",
   "runtimeTransport": "android-activity",
   "origin": "https://github.com/droidtop/enginehost-buriko-plugin",
-  "dexFiles": ["classes.dex"],
-  "resourceApks": ["runtime.apk"],
+  "dexFiles": [
+    "classes.dex"
+  ],
+  "resourceApks": [
+    "runtime.apk"
+  ],
   "capabilities": [
     {
       "id": "openbgi-script-v1-experimental",
       "engineContext": "compiled-script-v1",
-      "runtimeVersion": "1.0"
+      "runtimeVersion": "1.0",
+      "acceptsAnyEngineVersion": true
     },
     {
       "id": "openbgi-august-script-v1-experimental",
       "engineContext": "august-compiled-script-v1",
-      "runtimeVersion": "1.0"
+      "runtimeVersion": "1.0",
+      "acceptsAnyEngineVersion": true
     }
   ],
   "source": {
     "upstream": "https://github.com/Cytlan/openbgi",
     "revision": "continuous"
   },
-  "licenses": ["GPL-2.0-only with SDL zlib license and bundled upstream notices"]
+  "licenses": [
+    "GPL-2.0-only with SDL zlib license and bundled upstream notices"
+  ]
 }
