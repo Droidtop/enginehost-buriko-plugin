@@ -13,7 +13,7 @@
 
 int packFile(FILE*, const char*);
 int unpackFile(FILE*, const char*);
-void decompressDSC(uint8_t *out_buf, const uint8_t *file_buf);
+#include "../../../src/dsc.h"
 int encodeImage(FILE* outFile, uint8_t* pixels, int width, int height, int bpp);
 
 static void print_header()

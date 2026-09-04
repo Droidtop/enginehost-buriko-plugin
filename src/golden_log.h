@@ -24,4 +24,11 @@ extern GLogEntry_t* GoldenLog;
 
 void GoldenLog_Load(const char *filename);
 
+/* The original engine's timestamp for the current step, or 0 when no golden log is loaded. */
+static inline unsigned int GoldenLog_Time(void)
+{
+	return (GoldenLog != NULL && GoldenLogIndex < GoldenLogTotal) ? GoldenLog[GoldenLogIndex].time : 0;
+}
+
+
 #endif

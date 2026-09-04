@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <time.h>
 #include "engine.h"
+#include "arc.h"
 #include "renderer.h"
 #include "golden_log.h"
 #include "os.h"
@@ -203,8 +204,11 @@ uint8_t* Engine_ReadFile(Engine_t* engine, const char* archive, const char* file
 	char* path = Engine_SearchForFile(archive, filename);
 	if(!path)
 	{
-		printf("[Engine]: Failed to find file \"%s\" from archive \"%s\"\n", filename, archive);
-		return 0;
+		// Not unpacked on disk: read it out of the archive as shipped.
+		uint8_t* packed = Arc_ReadFile(archive, filename, outSize);
+		if(packed == NULL)
+			printf("[Engine]: Failed to find file \"%s\" from archive \"%s\"\n", filename, archive);
+		return packed;
 	}
 	printf("[Engine]: Found file at \"%s\"\n", path);
 
@@ -279,8 +283,17 @@ uint32_t Engine_ReadFileToMemory(Engine_t* engine, const char* archive, const ch
 	char* path = Engine_SearchForFile(archive, filename);
 	if(!path)
 	{
-		printf("[Engine]: Failed to find file \"%s\" from archive \"%s\"\n", filename, archive);
-		return 0;
+		// Not unpacked on disk: read it out of the archive as shipped.
+		size_t packedSize = 0;
+		uint8_t* packed = Arc_ReadFile(archive, filename, &packedSize);
+		if(packed == NULL)
+		{
+			printf("[Engine]: Failed to find file \"%s\" from archive \"%s\"\n", filename, archive);
+			return 0;
+		}
+		memcpy(buffer, packed, packedSize);
+		free(packed);
+		return (uint32_t)packedSize;
 	}
 	printf("[Engine]: Found file at \"%s\"\n", path);
 

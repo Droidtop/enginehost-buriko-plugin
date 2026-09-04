@@ -410,10 +410,12 @@ uint32_t Thread_Execute(Thread_t* thread)
 	uint32_t res = Opcodes[opcode](thread);
 	thread->level--;
 
-	if(GoldenLog[GoldenLogIndex].thread == thread->threadId && GoldenLog[GoldenLogIndex].tick == thread->ticks)
+	// The golden log is a debugging aid recorded from the original engine; a
+	// game run without one has nothing to compare against.
+	if(GoldenLogTotal && GoldenLogIndex < GoldenLogTotal && GoldenLog[GoldenLogIndex].thread == thread->threadId && GoldenLog[GoldenLogIndex].tick == thread->ticks)
 	{
 		int idx = GoldenLogIndex;
-		while(GoldenLog[idx].tick == thread->ticks)
+		while(idx < GoldenLogTotal && GoldenLog[idx].tick == thread->ticks)
 		{
 			switch(GoldenLog[idx].type)
 			{
