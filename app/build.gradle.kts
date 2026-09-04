@@ -18,6 +18,11 @@ android {
             version = "3.22.1"
         }
     }
+    // Enginehost loads this runtime's resources beside its own, which sit at
+    // package id 0x7f; a second table at 0x7f is refused. Compile at 0x80.
+    androidResources {
+        additionalParameters += listOf("--package-id", "0x80", "--allow-reserved-package-id")
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
