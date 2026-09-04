@@ -29,6 +29,20 @@ public final class EngineHostBurikoActivity extends SDLActivity {
     }
 
     @Override
+    protected String getMainSharedObject() {
+        // SDLActivity looks for libmain.so in the application's own native
+        // library directory, which under Enginehost is the host APK's, not this
+        // bundle's. The class loader that loaded this activity knows where the
+        // bundle's libraries are; ask it.
+        ClassLoader loader = EngineHostBurikoActivity.class.getClassLoader();
+        if (loader instanceof dalvik.system.BaseDexClassLoader) {
+            String path = ((dalvik.system.BaseDexClassLoader) loader).findLibrary("main");
+            if (path != null) return path;
+        }
+        return super.getMainSharedObject();
+    }
+
+    @Override
     protected String[] getLibraries() {
         return new String[] { "SDL2", "main" };
     }
