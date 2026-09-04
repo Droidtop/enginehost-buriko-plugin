@@ -1,7 +1,7 @@
 {
   "bundleId": "dev.enginehost.buriko.openbgi.v1",
   "engine": "buriko",
-  "pluginVersion": "1.0",
+  "pluginVersion": "0.1",
   "apiVersion": 1,
   "entrypoint": "dev.enginehost.plugin.buriko.EngineHostBurikoActivity",
   "runtimeTransport": "android-activity",
