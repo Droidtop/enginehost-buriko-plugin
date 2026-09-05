@@ -647,8 +647,8 @@ uint32_t Opcode_Grp1_ScaleBitmap(Thread_t* thread)
 			       thread->threadId, TLevel[thread->level], rateY, rateX);
 			return 0xFFFFFFFF;
 		default:
-			printf("[Thread %d]: %sError: the smooth scaler is not written yet (filter %d)\n",
-			       thread->threadId, TLevel[thread->level], filter);
+			printf("[Thread %d]: %sError: the smooth scaler for rates [ %d , %d ] is not written yet\n",
+			       thread->threadId, TLevel[thread->level], rateX, rateY);
 			return 0xFFFFFFFF;
 	}
 }

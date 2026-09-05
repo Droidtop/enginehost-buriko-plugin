@@ -498,6 +498,52 @@ int Renderer_BlitBitmap(Renderer_t* renderer, int destination, int x, int y,
 	return 0;
 }
 
+/*
+ * 0x00495200: the average of one box of the source. Every pixel of the box counts
+ * towards the alpha; only the pixels that are not fully transparent - or all of them,
+ * when the source has no alpha at all - count towards the three colours.
+ */
+static uint32_t Renderer_AverageBox(const uint8_t* pixels, int width, int height,
+                                    int stride, int mode,
+                                    int left, int top, int boxWidth, int boxHeight)
+{
+	int right  = left + boxWidth;
+	int bottom = top + boxHeight;
+	if(left < 0)
+		left = 0;
+	if(top < 0)
+		top = 0;
+	if(right > width)
+		right = width;
+	if(bottom > height)
+		bottom = height;
+
+	uint32_t sumB = 0, sumG = 0, sumR = 0, sumA = 0;
+	uint32_t colourCount = 0;
+	uint32_t alphaCount = 0;
+	for(int row = top; row < bottom; row++)
+	{
+		const uint8_t* in = pixels + (size_t)row * stride + (size_t)left * 4;
+		alphaCount += (uint32_t)(right - left);
+		for(int column = left; column < right; column++, in += 4)
+		{
+			if(in[3] == 0 && mode != BITMAP_MODE_24)
+				continue;
+			sumB += in[0];
+			sumG += in[1];
+			sumR += in[2];
+			sumA += in[3];
+			colourCount++;
+		}
+	}
+	if(alphaCount == 0)
+		return 0;
+	if(colourCount == 0)
+		colourCount = 1;
+	return ((sumA / alphaCount) << 24) | ((sumR / colourCount) << 16)
+	     | ((sumG / colourCount) << 8) | (sumB / colourCount);
+}
+
 int Renderer_ScaleBitmap(Renderer_t* renderer, int destination, int source,
                          int rateX, int rateY, int filter)
 {
@@ -507,7 +553,14 @@ int Renderer_ScaleBitmap(Renderer_t* renderer, int destination, int source,
 	if(src->mode != BITMAP_MODE_24 && src->mode != BITMAP_MODE_32)
 		return 3;
 	if(filter != 0)
-		return 5; // 0x00494F20, the smooth scaler, is not read yet.
+	{
+		// 0x00494F20 picks its sampler from the two rates; only the shrinking one
+		// (0x00495200) is written. 0x00495340 and 0x004954B0 are not read yet.
+		int mildX = (rateX >= 0x8000 && rateX <= 0xFFFF);
+		int mildY = (rateY >= 0x8000 && rateY <= 0xFFFF);
+		if(mildX || mildY || (rateX >= 0x8000 && rateY >= 0x8000))
+			return 5;
+	}
 
 	int width  = (int)(((int64_t)src->width  * (int64_t)rateX) >> 16);
 	int height = (int)(((int64_t)src->height * (int64_t)rateY) >> 16);
@@ -550,19 +603,46 @@ int Renderer_ScaleBitmap(Renderer_t* renderer, int destination, int source,
 		if(bottom > height)
 			bottom = height;
 
-		for(int row = top; row < bottom; row++)
+		if(filter == 0)
 		{
-			int sourceRow = (int)(((int64_t)(row - originY) * stepY) >> 16);
-			if(sourceRow >= sourceHeight)
-				sourceRow = sourceHeight - 1;
-			uint32_t* in  = (uint32_t*)(pixels + (size_t)sourceRow * sourceStride);
-			uint32_t* out = (uint32_t*)(dst->bitmap + (size_t)row * dst->stride);
-			for(int column = left; column < right; column++)
+			for(int row = top; row < bottom; row++)
 			{
-				int sourceColumn = (int)(((int64_t)(column - originX) * stepX) >> 16);
-				if(sourceColumn >= sourceWidth)
-					sourceColumn = sourceWidth - 1;
-				out[column] = in[sourceColumn];
+				int sourceRow = (int)(((int64_t)(row - originY) * stepY) >> 16);
+				if(sourceRow >= sourceHeight)
+					sourceRow = sourceHeight - 1;
+				uint32_t* in  = (uint32_t*)(pixels + (size_t)sourceRow * sourceStride);
+				uint32_t* out = (uint32_t*)(dst->bitmap + (size_t)row * dst->stride);
+				for(int column = left; column < right; column++)
+				{
+					int sourceColumn = (int)(((int64_t)(column - originX) * stepX) >> 16);
+					if(sourceColumn >= sourceWidth)
+						sourceColumn = sourceWidth - 1;
+					out[column] = in[sourceColumn];
+				}
+			}
+		}
+		else
+		{
+			// 0x00494F20: the box is 0x10000 / (rate >> 8) wide in 8.8, and the corner
+			// advances so that the last box ends on the source's far edge.
+			int boxStepX = rateX >= 0x100 ? 0x10000 / (rateX >> 8) : sourceWidth  << 8;
+			int boxStepY = rateY >= 0x100 ? 0x10000 / (rateY >> 8) : sourceHeight << 8;
+			int boxWidth  = (boxStepX + 0xFF) >> 8;
+			int boxHeight = (boxStepY + 0xFF) >> 8;
+			int walkX = (int)((((int64_t)(sourceWidth  - (boxStepX >> 8))) << 16) / scaledWidth);
+			int walkY = (int)((((int64_t)(sourceHeight - (boxStepY >> 8))) << 16) / scaledHeight);
+
+			for(int row = top; row < bottom; row++)
+			{
+				int boxTop = (int)(((int64_t)(row - originY) * walkY) >> 16);
+				uint32_t* out = (uint32_t*)(dst->bitmap + (size_t)row * dst->stride);
+				for(int column = left; column < right; column++)
+				{
+					int boxLeft = (int)(((int64_t)(column - originX) * walkX) >> 16);
+					out[column] = Renderer_AverageBox(pixels, sourceWidth, sourceHeight,
+					                                  sourceStride, src->mode,
+					                                  boxLeft, boxTop, boxWidth, boxHeight);
+				}
 			}
 		}
 	}
