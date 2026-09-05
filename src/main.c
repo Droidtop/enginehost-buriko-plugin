@@ -10,6 +10,7 @@
 #include "version.h"
 #include "golden_log.h"
 #include "os.h"
+#include "gameid.h"
 
 void PrintVersion()
 {
@@ -37,10 +38,38 @@ int main(int argc, char** argv)
 	}
 
 	// The game's identifier is a constant of each original executable and is not
-	// recorded anywhere in the game's data, so it has to be supplied. Fureraba's
-	// ipl takes a different branch without it and never loads the programs it names.
+	// recorded anywhere in the game's data, so it is read back out of that
+	// executable (see gameid.c). Fureraba's ipl takes a different branch without it
+	// and never loads the programs it names, so an unreadable identifier is a fatal
+	// error naming the files that were looked at, never a guess or an empty string.
+	// The second argument overrides the scan, including with an empty string, which
+	// is how the short boot without an identifier can still be run.
 	if(argc > 2 && argv[2] != NULL)
+	{
 		Engine_SetGameId(argv[2]);
+	}
+	else
+	{
+		char gameId[ENGINE_GAME_ID_SIZE] = { 0 };
+		char exeName[256] = { 0 };
+		char examined[512] = { 0 };
+
+		if(!GameId_ScanFolder(".", gameId, exeName, sizeof(exeName), examined, sizeof(examined)))
+		{
+			fprintf(stderr, "[EngineHost]: No BURIKO game identifier could be read from "
+				"any executable in \"%s\".\n", argv[1]);
+			if(examined[0])
+				fprintf(stderr, "[EngineHost]: Executables examined: %s\n", examined);
+			else
+				fprintf(stderr, "[EngineHost]: There are no .exe files in that folder.\n");
+			fprintf(stderr, "[EngineHost]: Supply the identifier as the second argument "
+				"if the game's own executable is missing or packed.\n");
+			return 3;
+		}
+
+		printf("[EngineHost]: Game identifier \"%s\" read from %s\n", gameId, exeName);
+		Engine_SetGameId(gameId);
+	}
 
 	PrintVersion();
 

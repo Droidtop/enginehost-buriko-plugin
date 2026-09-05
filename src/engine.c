@@ -1358,9 +1358,10 @@ void Engine_SetFlagUnknown1to4(int value)
 // literal in its string pool, next to "UserData" and "%s%s", which is how the save
 // files come to be named UserData\FriendToLoverHD000.sud.
 //
-// There is no general place to read it from: it is not in the game's data and not in
-// the executable's version resource, so OpenBGI has to be told it per game. Until it
-// is, this is empty, which is at least honest about not knowing.
+// It is not in the game's data and not in the executable's version resource, but the
+// handler that returns it has a fixed shape, so it can be recovered from the game's
+// own executable at startup; gameid.c does that, and the command line can override
+// it. Until either happens this is empty, which is at least honest about not knowing.
 char gGameId[ENGINE_GAME_ID_SIZE] = { 0 };
 
 void Engine_SetGameId(const char* id)
