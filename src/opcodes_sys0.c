@@ -116,7 +116,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x67 103 */ "SetCursorShape",
 	/* 0x68 104 */ "SetGlobalUnknownVal001",
 	/* 0x69 105 */ "Unknown_105",
-	/* 0x6A 106 */ "Unknown_106",
+	/* 0x6A 106 */ "YieldAndEndPass",
 	/* 0x6B 107 */ "Unknown_107",
 	/* 0x6C 108 */ "Unknown_108",
 	/* 0x6D 109 */ "Unknown_109",
@@ -375,7 +375,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x67 103 */ Opcode_Sys0_SetCursorShape,
 	/* 0x68 104 */ Opcode_Sys0_SetGlobalUnknownVal001,
 	/* 0x69 105 */ Opcode_Sys0_Unknown_105,
-	/* 0x6A 106 */ Opcode_Sys0_Unknown_106,
+	/* 0x6A 106 */ Opcode_Sys0_YieldAndEndPass,
 	/* 0x6B 107 */ Opcode_Sys0_Unknown_107,
 	/* 0x6C 108 */ Opcode_Sys0_Unknown_108,
 	/* 0x6D 109 */ Opcode_Sys0_Unknown_109,
@@ -1135,9 +1135,25 @@ uint32_t Opcode_Sys0_Unknown_105(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_106(Thread_t* thread)
+// Sys0 0x6A (fureraba.exe 0x00489650) is "mov eax, 6; ret": no operands, no work,
+// only a control code for the scheduler at 0x0048CF00.
+//
+// That scheduler runs each thread in turn and switches on the code a handler
+// returns: 0 and 1 move to the next thread, 2 stays on this one, 3 switches to the
+// thread named by 0x00566894, 4 stays after a call with 0x80000000, and 5 and 6 move
+// on like 1 but also raise a flag. Code 6 raises the one at [ebp-0x118], which makes
+// every remaining thread be skipped at 0x0048CFD5, so nothing else runs in this pass;
+// the pass then reports 1 to the frame loop at 0x0048CD5F, which notes that it ran
+// and goes on to the frame's own work. Code 5 raises the other flag and the pass
+// reports 2, which the frame loop records at [ebp-0x634] as well.
+//
+// So this is the yield that also ends the pass, against Sys0 0x5F (0x00489450, "mov
+// eax, 1") which is the plain one. OpenBGI runs one thread's slice at a time and has
+// no pass to end, so both stop the slice and return 1; the difference will only start
+// to matter once more than one thread is scheduled.
+uint32_t Opcode_Sys0_YieldAndEndPass(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	return 1;
 }
 
 uint32_t Opcode_Sys0_Unknown_107(Thread_t* thread)

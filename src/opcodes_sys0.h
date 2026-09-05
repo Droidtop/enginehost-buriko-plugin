@@ -88,7 +88,7 @@ uint32_t Opcode_Sys0_SetCursorShape(Thread_t* thread);
 uint32_t Opcode_Sys0_SetWindowTitle(Thread_t* thread);
 uint32_t Opcode_Sys0_SetGlobalUnknownVal001(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_105(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_106(Thread_t* thread);
+uint32_t Opcode_Sys0_YieldAndEndPass(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_107(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_108(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_109(Thread_t* thread);
