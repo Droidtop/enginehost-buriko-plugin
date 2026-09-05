@@ -68,8 +68,81 @@ static char* FindArchiveIn(const char* dir, const char* archive)
 	return result;
 }
 
+/* One path component of dir, whatever case the disk has, appended to it. */
+static char* ResolveComponent(const char* dir, const char* name)
+{
+	DIR* d = opendir(dir);
+	if(d == NULL)
+		return NULL;
+	char* result = NULL;
+	struct dirent* entry;
+	while((entry = readdir(d)) != NULL)
+	{
+		if(!EqualsIgnoringCase(entry->d_name, name))
+			continue;
+		size_t length = strlen(dir) + 1 + strlen(entry->d_name) + 1;
+		result = (char*)malloc(length);
+		if(result != NULL)
+			snprintf(result, length, "%s/%s", dir, entry->d_name);
+		break;
+	}
+	closedir(d);
+	return result;
+}
+
+/* The directory a script named, resolved from the game folder without regard
+   to case, or NULL when a component of it is not there. */
+static char* ResolveDirectory(char* path)
+{
+	char* dir = (char*)malloc(2);
+	if(dir == NULL)
+		return NULL;
+	strcpy(dir, ".");
+	char* rest = path;
+	while(rest != NULL && *rest != 0)
+	{
+		char* slash = strchr(rest, '/');
+		if(slash != NULL)
+			*slash = 0;
+		if(*rest != 0)
+		{
+			char* next = ResolveComponent(dir, rest);
+			free(dir);
+			if(next == NULL)
+				return NULL;
+			dir = next;
+		}
+		rest = slash == NULL ? NULL : slash + 1;
+	}
+	return dir;
+}
+
 static char* FindArchive(const char* archive)
 {
+	// Scripts name archives by a path as well as by a bare name: the boot's
+	// listing of "Archive\\data0????.arc" is handed straight to Sys0 0x38, so
+	// its members arrive as "Archive\\data01800.arc". Search the directory
+	// the script named rather than the game folder.
+	char normalised[512];
+	if(snprintf(normalised, sizeof(normalised), "%s", archive) >= (int)sizeof(normalised))
+		return NULL;
+	for(char* c = normalised; *c != 0; c++)
+	{
+		if(*c == '\\')
+			*c = '/';
+	}
+	char* base = strrchr(normalised, '/');
+	if(base != NULL)
+	{
+		*base++ = 0;
+		char* dir = ResolveDirectory(normalised);
+		if(dir == NULL)
+			return NULL;
+		char* path = FindArchiveIn(dir, base);
+		free(dir);
+		return path;
+	}
+
 	char* path = FindArchiveIn(".", archive);
 	if(path == NULL)
 		path = FindArchiveIn("Archive", archive);
@@ -104,11 +177,73 @@ static uint8_t* Inflate(uint8_t* data, size_t size, size_t* outSize)
 	return plain;
 }
 
+// Complex archives, in the order they were registered. The original keeps its
+// archives in one linked list rooted at 0x00566754 and walks it by name.
+typedef struct ArcComplex ArcComplex_t;
+struct ArcComplex
+{
+	char*         name;
+	char**        members;
+	int           count;
+	ArcComplex_t* next;
+};
+
+static ArcComplex_t* gComplexArchives = NULL;
+
+static ArcComplex_t* FindComplex(const char* name)
+{
+	for(ArcComplex_t* c = gComplexArchives; c != NULL; c = c->next)
+	{
+		if(EqualsIgnoringCase(c->name, name))
+			return c;
+	}
+	return NULL;
+}
+
+int Arc_CreateComplex(const char* name, const char* const* members, int count)
+{
+	if(name == NULL || count < 0)
+		return 0;
+	// 0x00406BC0 compares the new archive's name against every archive already
+	// in the list and refuses a repeat, returning 0 without registering it.
+	if(FindComplex(name) != NULL)
+		return 0;
+
+	ArcComplex_t* c = (ArcComplex_t*)malloc(sizeof(ArcComplex_t));
+	if(c == NULL)
+		return 0;
+	c->name = (char*)malloc(strlen(name) + 1);
+	c->members = (char**)malloc(sizeof(char*) * (size_t)(count > 0 ? count : 1));
+	if(c->name == NULL || c->members == NULL)
+	{
+		free(c->name);
+		free(c->members);
+		free(c);
+		return 0;
+	}
+	strcpy(c->name, name);
+	c->count = 0;
+	for(int i = 0; i < count; i++)
+	{
+		const char* member = members[i];
+		if(member == NULL)
+			continue;
+		char* copy = (char*)malloc(strlen(member) + 1);
+		if(copy == NULL)
+			continue;
+		strcpy(copy, member);
+		c->members[c->count++] = copy;
+	}
+	c->next = gComplexArchives;
+	gComplexArchives = c;
+	return 1;
+}
+
 // Opening the archive and walking its table is the same work whether the caller
 // wants the file's bytes or only wants to know the file is there, so both go
 // through here. outData NULL asks the second question, and answers it without
 // reading or inflating anything.
-static int Arc_Find(const char* archive, const char* filename, uint8_t** outData, size_t* outSize)
+static int Arc_FindInArchive(const char* archive, const char* filename, uint8_t** outData, size_t* outSize)
 {
 	char* path = FindArchive(archive);
 	if(path == NULL)
@@ -177,14 +312,35 @@ static int Arc_Find(const char* archive, const char* filename, uint8_t** outData
 	return present;
 }
 
+// A name that belongs to a complex archive is answered by its members, in the
+// order the script listed them. The depth limit is ours: the original's list is
+// a flat one, but nothing stops a script from naming a group inside itself.
+static int Arc_Find(const char* archive, const char* filename, uint8_t** outData, size_t* outSize, int depth)
+{
+	ArcComplex_t* group = FindComplex(archive);
+	if(group == NULL)
+		return Arc_FindInArchive(archive, filename, outData, outSize);
+	if(depth > 8)
+	{
+		printf("[Arc]: complex archive \"%s\" is nested too deeply\n", archive);
+		return 0;
+	}
+	for(int i = 0; i < group->count; i++)
+	{
+		if(Arc_Find(group->members[i], filename, outData, outSize, depth + 1))
+			return 1;
+	}
+	return 0;
+}
+
 uint8_t* Arc_ReadFile(const char* archive, const char* filename, size_t* outSize)
 {
 	uint8_t* data = NULL;
-	Arc_Find(archive, filename, &data, outSize);
+	Arc_Find(archive, filename, &data, outSize, 0);
 	return data;
 }
 
 int Arc_FileExists(const char* archive, const char* filename)
 {
-	return Arc_Find(archive, filename, NULL, NULL);
+	return Arc_Find(archive, filename, NULL, NULL, 0);
 }

@@ -8,6 +8,7 @@
 #include <dirent.h>
 #include <time.h>
 #include "engine.h"
+#include "arc.h"
 #include "opcodes.h"
 #include "opcodes_sys0.h"
 #include "os.h"
@@ -70,7 +71,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x35  53 */ "Unknown_53",
 	/* 0x36  54 */ "EnableSearchPaths",
 	/* 0x37  55 */ "AddSearchPath",
-	/* 0x38  56 */ "Unknown_56",
+	/* 0x38  56 */ "CreateComplexArchive",
 	/* 0x39  57 */ "SetUserDirectory",
 	/* 0x3A  58 */ "Unknown_58",
 	/* 0x3B  59 */ "Unknown_59",
@@ -329,7 +330,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x35  53 */ Opcode_Sys0_Unknown_53,
 	/* 0x36  54 */ Opcode_Sys0_EnableSearchPaths,
 	/* 0x37  55 */ Opcode_Sys0_AddSearchPath,
-	/* 0x38  56 */ Opcode_Sys0_Unknown_56,
+	/* 0x38  56 */ Opcode_Sys0_CreateComplexArchive,
 	/* 0x39  57 */ Opcode_Sys0_SetUserDirectory,
 	/* 0x3A  58 */ Opcode_Sys0_Unknown_58,
 	/* 0x3B  59 */ Opcode_Sys0_Unknown_59,
@@ -1002,9 +1003,49 @@ uint32_t Opcode_Sys0_AddSearchPath(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_56(Thread_t* thread)
+uint32_t Opcode_Sys0_CreateComplexArchive(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x00488B00: the array of member names first, then the group's own name.
+	uint32_t listAddress = Thread_PopStack(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t* list = (uint32_t*)Thread_ResolveAddr(thread, listAddress);
+	if(list == NULL || name == NULL)
+		return 0xFFFFFFFF;
+
+	// The array ends at the first null entry, as 0x00488B1F counts it.
+	int count = 0;
+	while(list[count] != 0)
+		count++;
+
+	const char** members = (const char**)malloc(sizeof(char*) * (size_t)(count > 0 ? count : 1));
+	if(members == NULL)
+		return 0xFFFFFFFF;
+	int silenced = thread->silenceBasicOpcodeLog;
+	thread->silenceBasicOpcodeLog = 1;
+	int inBasic = thread->inBasicOpcode;
+	thread->inBasicOpcode = 1;
+	for(int i = 0; i < count; i++)
+		members[i] = (const char*)Thread_ResolveAddr(thread, list[i]);
+	thread->silenceBasicOpcodeLog = silenced;
+	thread->inBasicOpcode = inBasic;
+
+	printf("[Thread %d]: %sComplex archive \"%s\" of %d archive%s\n",
+	       thread->threadId, TLevel[thread->level], name, count, count == 1 ? "" : "s");
+	for(int i = 0; i < count; i++)
+	{
+		printf("[Thread %d]: %s  %s\n", thread->threadId, TLevel[thread->level],
+		       members[i] == NULL ? "(unresolved)" : members[i]);
+	}
+
+	uint32_t result = (uint32_t)Arc_CreateComplex(name, members, count);
+	free(members);
+	if(result == 0)
+	{
+		printf("[Thread %d]: %sAn archive named \"%s\" is already registered\n",
+		       thread->threadId, TLevel[thread->level], name);
+	}
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_58(Thread_t* thread)

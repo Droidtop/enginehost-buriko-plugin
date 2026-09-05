@@ -24,4 +24,17 @@ uint8_t* Arc_ReadFile(const char* archive, const char* filename, size_t* outSize
 /* Arc_FileExists answers the same lookup without reading the file. */
 int Arc_FileExists(const char* archive, const char* filename);
 
+/*
+ * A complex archive is several archives addressed under one name, which is
+ * how a shipped game keeps its bulk data: Fureraba lists its forty
+ * data0????.arc files and hands them to Sys0 0x38 as a single archive.
+ * The original builds a DCArchiveComplex and links it into the engine's
+ * archive list; a name already in that list is refused.
+ *
+ * Arc_CreateComplex returns 1 when the group was registered and 0 when the
+ * name was taken, as the original's 0x00406BC0 does. Lookups on the group's
+ * name then try each member in the order the script gave them.
+ */
+int Arc_CreateComplex(const char* name, const char* const* members, int count);
+
 #endif

@@ -51,7 +51,7 @@ uint32_t Opcode_Sys0_SetUserDirectory(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_53(Thread_t* thread);
 uint32_t Opcode_Sys0_EnableSearchPaths(Thread_t* thread);
 uint32_t Opcode_Sys0_AddSearchPath(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_56(Thread_t* thread);
+uint32_t Opcode_Sys0_CreateComplexArchive(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_58(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_59(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_60(Thread_t* thread);
