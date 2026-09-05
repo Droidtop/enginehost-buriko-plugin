@@ -65,7 +65,11 @@ Bitmap_t* Renderer_ResolveBitmap(Renderer_t* renderer, int id);
 // Replaces whatever is in the slot with a cleared bitmap (0x00407DA0); NULL on a bad
 // id, an unusable mode or an allocation failure.
 Bitmap_t* Renderer_CreateBitmap(Renderer_t* renderer, int id, int width, int height, int mode);
-void Renderer_DestroyBitmap(Renderer_t* renderer, int id);
+// Releases a slot and says whether there was anything in it (0x00407CF0).
+int Renderer_DestroyBitmap(Renderer_t* renderer, int id);
+// Writes one colour over every pixel of a bitmap (0x00408040); 0 when the slot
+// is empty, 1 when it was filled.
+int Renderer_FillBitmap(Renderer_t* renderer, int id, uint32_t colour);
 // 0, or one of the 0x8000000X codes the original's loader returns.
 uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filename, const char* archive);
 // 0 on success, 1 invalid destination, 2 invalid source, 3 invalid range (0x004033A0).
@@ -82,6 +86,12 @@ int Renderer_CopyBitmap(Renderer_t* renderer, int destination, int source, int o
 // mode that is not written yet, 6 a transparency that mode 0x01 does not take yet.
 int Renderer_BlitBitmap(Renderer_t* renderer, int destination, int x, int y,
                         int source, int mode, int transparency);
+// Scales the source into the destination by two 16.16 rates (0x00402B90).
+// 0 on success, 1 the destination could not be made, 2 no source, 3 a source
+// that is not 24- or 32-bit, 4 a rate that leaves nothing, 5 a filter that is
+// not written yet.
+int Renderer_ScaleBitmap(Renderer_t* renderer, int destination, int source,
+                         int rateX, int rateY, int filter);
 // The whole of one bitmap, its offset pair included, into another slot
 // (0x00403450). 0 on success, 1 invalid destination, 2 invalid source.
 int Renderer_DuplicateBitmap(Renderer_t* renderer, int destination, int source);

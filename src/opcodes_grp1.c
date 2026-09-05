@@ -36,7 +36,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x19  25 */ "Unknown_25",
     /* 0x1A  26 */ "--Unknown--",
     /* 0x1B  27 */ "--Unknown--",
-    /* 0x1C  28 */ "Unknown_28",
+    /* 0x1C  28 */ "ScaleBitmap",
     /* 0x1D  29 */ "--Unknown--",
     /* 0x1E  30 */ "Unknown_30",
     /* 0x1F  31 */ "DuplicateBitmap",
@@ -295,7 +295,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x19  25 */ Opcode_Grp1_Unknown_25,
     /* 0x1A  26 */ NULL,
     /* 0x1B  27 */ NULL,
-    /* 0x1C  28 */ Opcode_Grp1_Unknown_28,
+    /* 0x1C  28 */ Opcode_Grp1_ScaleBitmap,
     /* 0x1D  29 */ NULL,
     /* 0x1E  30 */ Opcode_Grp1_Unknown_30,
     /* 0x1F  31 */ Opcode_Grp1_DuplicateBitmap,
@@ -610,9 +610,47 @@ uint32_t Opcode_Grp1_Unknown_25(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_28(Thread_t* thread)
+/*
+ * Grp1 0x1C (0x00481740 -> 0x00402B90) scales one bitmap into another. The script
+ * pushes the destination, the source, the horizontal rate, the vertical rate and
+ * the filter flag, both rates being 16.16 fixed point, so they pop back to front.
+ * All four of the original's failures are fatal and name what caused them
+ * (0x004EA8DC, 0x004EA858, 0x004EA90C, 0x004EA94C).
+ */
+uint32_t Opcode_Grp1_ScaleBitmap(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int filter      = (int)Thread_PopStack(thread);
+	int rateY       = (int)Thread_PopStack(thread);
+	int rateX       = (int)Thread_PopStack(thread);
+	int source      = (int)Thread_PopStack(thread);
+	int destination = (int)Thread_PopStack(thread);
+
+	Engine_t* engine = thread->engine;
+	switch(Renderer_ScaleBitmap(engine->renderer, destination, source, rateX, rateY, filter))
+	{
+		case 0:
+			return 0;
+		case 1:
+			printf("[Thread %d]: %sError: the specified destination bitmap [ %d ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], destination);
+			return 0xFFFFFFFF;
+		case 2:
+			printf("[Thread %d]: %sError: the specified reference bitmap [ %d ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], source);
+			return 0xFFFFFFFF;
+		case 3:
+			printf("[Thread %d]: %sError: the specified reference bitmap [ %d ] is not TRUECOLOR\n",
+			       thread->threadId, TLevel[thread->level], source);
+			return 0xFFFFFFFF;
+		case 4:
+			printf("[Thread %d]: %sError: an invalid stretch rate [ %d , %d ] was specified\n",
+			       thread->threadId, TLevel[thread->level], rateY, rateX);
+			return 0xFFFFFFFF;
+		default:
+			printf("[Thread %d]: %sError: the smooth scaler is not written yet (filter %d)\n",
+			       thread->threadId, TLevel[thread->level], filter);
+			return 0xFFFFFFFF;
+	}
 }
 
 uint32_t Opcode_Grp1_Unknown_30(Thread_t* thread)

@@ -207,15 +207,32 @@ Bitmap_t* Renderer_ResolveBitmap(Renderer_t* renderer, int id)
 	return renderer->bitmaps[id];
 }
 
-void Renderer_DestroyBitmap(Renderer_t* renderer, int id)
+int Renderer_DestroyBitmap(Renderer_t* renderer, int id)
 {
 	if(renderer == NULL || id < 0 || id >= RENDERER_MAX_BITMAPS)
-		return;
+		return 0;
 	if(renderer->bitmaps[id] == NULL)
-		return;
+		return 0;
 	free(renderer->bitmaps[id]->bitmap);
 	free(renderer->bitmaps[id]);
 	renderer->bitmaps[id] = NULL;
+	return 1;
+}
+
+int Renderer_FillBitmap(Renderer_t* renderer, int id, uint32_t colour)
+{
+	Bitmap_t* bitmap = Renderer_ResolveBitmap(renderer, id);
+	if(bitmap == NULL)
+		return 0;
+	if(Renderer_ModePixelBytes(bitmap->mode) != 4)
+		return 1;
+	for(int row = 0; row < bitmap->height; row++)
+	{
+		uint32_t* out = (uint32_t*)(bitmap->bitmap + (size_t)row * bitmap->stride);
+		for(int column = 0; column < bitmap->width; column++)
+			out[column] = colour;
+	}
+	return 1;
 }
 
 Bitmap_t* Renderer_CreateBitmap(Renderer_t* renderer, int id, int width, int height, int mode)
@@ -478,6 +495,78 @@ int Renderer_BlitBitmap(Renderer_t* renderer, int destination, int x, int y,
 			dstRow[column] = pixel;
 		}
 	}
+	return 0;
+}
+
+int Renderer_ScaleBitmap(Renderer_t* renderer, int destination, int source,
+                         int rateX, int rateY, int filter)
+{
+	Bitmap_t* src = Renderer_ResolveBitmap(renderer, source);
+	if(src == NULL)
+		return 2;
+	if(src->mode != BITMAP_MODE_24 && src->mode != BITMAP_MODE_32)
+		return 3;
+	if(filter != 0)
+		return 5; // 0x00494F20, the smooth scaler, is not read yet.
+
+	int width  = (int)(((int64_t)src->width  * (int64_t)rateX) >> 16);
+	int height = (int)(((int64_t)src->height * (int64_t)rateY) >> 16);
+	if(width <= 0 || height <= 0)
+		return 4;
+
+	// The source is copied out first, because the destination may be the same slot.
+	int sourceWidth  = src->width;
+	int sourceHeight = src->height;
+	int sourceStride = src->stride;
+	size_t sourceBytes = (size_t)sourceStride * (size_t)sourceHeight;
+	uint8_t* pixels = (uint8_t*)malloc(sourceBytes);
+	if(pixels == NULL)
+		return 1;
+	memcpy(pixels, src->bitmap, sourceBytes);
+
+	Bitmap_t* dst = Renderer_CreateBitmap(renderer, destination, width, height, src->mode);
+	if(dst == NULL)
+	{
+		free(pixels);
+		return 1;
+	}
+
+	// 0x00494D20 rounds the size a second time and centres it in what it was given.
+	int scaledWidth  = (int)((((int64_t)sourceWidth  * (int64_t)rateX) + 0x8000) >> 16);
+	int scaledHeight = (int)((((int64_t)sourceHeight * (int64_t)rateY) + 0x8000) >> 16);
+	if(scaledWidth > 0 && scaledHeight > 0)
+	{
+		int originX = width / 2 - scaledWidth / 2;
+		int originY = height / 2 - scaledHeight / 2;
+		int stepX = (int)(((int64_t)sourceWidth  << 16) / scaledWidth);
+		int stepY = (int)(((int64_t)sourceHeight << 16) / scaledHeight);
+
+		int left   = originX < 0 ? 0 : originX;
+		int top    = originY < 0 ? 0 : originY;
+		int right  = originX + scaledWidth;
+		int bottom = originY + scaledHeight;
+		if(right > width)
+			right = width;
+		if(bottom > height)
+			bottom = height;
+
+		for(int row = top; row < bottom; row++)
+		{
+			int sourceRow = (int)(((int64_t)(row - originY) * stepY) >> 16);
+			if(sourceRow >= sourceHeight)
+				sourceRow = sourceHeight - 1;
+			uint32_t* in  = (uint32_t*)(pixels + (size_t)sourceRow * sourceStride);
+			uint32_t* out = (uint32_t*)(dst->bitmap + (size_t)row * dst->stride);
+			for(int column = left; column < right; column++)
+			{
+				int sourceColumn = (int)(((int64_t)(column - originX) * stepX) >> 16);
+				if(sourceColumn >= sourceWidth)
+					sourceColumn = sourceWidth - 1;
+				out[column] = in[sourceColumn];
+			}
+		}
+	}
+	free(pixels);
 	return 0;
 }
 

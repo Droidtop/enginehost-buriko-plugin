@@ -26,12 +26,12 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x0E  14 */ "Unknown_0x0E",
 	/* 0x0F  15 */ "Unknown_15",
 	/* 0x10  16 */ "LoadBitmap",
-	/* 0x11  17 */ "Unknown_17",
-	/* 0x12  18 */ "Unknown_18",
-	/* 0x13  19 */ "Unknown_0x13",
+	/* 0x11  17 */ "CreateBitmap",
+	/* 0x12  18 */ "DestroyBitmap",
+	/* 0x13  19 */ "FillBitmap",
 	/* 0x14  20 */ "Unknown_20",
 	/* 0x15  21 */ "Unknown_21",
-	/* 0x16  22 */ "Unknown_22",
+	/* 0x16  22 */ "GetBitmapInfo",
 	/* 0x17  23 */ "--Unknown--",
 	/* 0x18  24 */ "BlitBitmap",
 	/* 0x19  25 */ "Unknown_25",
@@ -285,12 +285,12 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x0E  14 */ Opcode_Grp0_Unknown_0x0E,
 	/* 0x0F  15 */ Opcode_Grp0_Unknown_15,
 	/* 0x10  16 */ Opcode_Grp0_LoadBitmap,
-	/* 0x11  17 */ Opcode_Grp0_Unknown_17,
-	/* 0x12  18 */ Opcode_Grp0_Unknown_18,
-	/* 0x13  19 */ Opcode_Grp0_Unknown_0x13,
+	/* 0x11  17 */ Opcode_Grp0_CreateBitmap,
+	/* 0x12  18 */ Opcode_Grp0_DestroyBitmap,
+	/* 0x13  19 */ Opcode_Grp0_FillBitmap,
 	/* 0x14  20 */ Opcode_Grp0_Unknown_20,
 	/* 0x15  21 */ Opcode_Grp0_Unknown_21,
-	/* 0x16  22 */ Opcode_Grp0_Unknown_22,
+	/* 0x16  22 */ Opcode_Grp0_GetBitmapInfo,
 	/* 0x17  23 */ NULL,
 	/* 0x18  24 */ Opcode_Grp0_BlitBitmap,
 	/* 0x19  25 */ Opcode_Grp0_Unknown_25,
@@ -676,30 +676,74 @@ uint32_t Opcode_Grp0_LoadBitmap(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_17(Thread_t* thread)
+/*
+ * Grp0 0x11 (0x00479B30) makes a bitmap. The script pushes the number, the width,
+ * the height and the pixel mode, so the mode pops first; the number is range-checked
+ * before anything else (0x00497CF0). When the slot cannot be made the original stops
+ * with "an invalid pixel mode [ %d ] was specified" (0x004E84E0), naming the mode.
+ */
+uint32_t Opcode_Grp0_CreateBitmap(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint32_t value3 = Thread_PopStack(thread);
-	uint32_t value4 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	int mode   = (int)Thread_PopStack(thread);
+	int height = (int)Thread_PopStack(thread);
+	int width  = (int)Thread_PopStack(thread);
+	int id     = (int)Thread_PopStack(thread);
+
+	if(id < 0 || id >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: an invalid bitmap number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], id);
+		return 0xFFFFFFFF;
+	}
+
+	Engine_t* engine = thread->engine;
+	if(Renderer_CreateBitmap(engine->renderer, id, width, height, mode) == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid pixel mode [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], mode);
+		return 0xFFFFFFFF;
+	}
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_18(Thread_t* thread)
+/*
+ * Grp0 0x12 (0x00479BD0) releases a bitmap and pushes whether there was one to
+ * release. The number is not range-checked here; an out-of-range one simply answers
+ * no, as 0x00407CF0 does.
+ */
+uint32_t Opcode_Grp0_DestroyBitmap(Thread_t* thread)
 {
-	// Maybe unload assets?
-	uint32_t grpAssetId = Thread_PopStack(thread);
-	Thread_PushStack(thread, 0x00000001);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	int id = (int)Thread_PopStack(thread);
+	Engine_t* engine = thread->engine;
+	Thread_PushStack(thread, (uint32_t)Renderer_DestroyBitmap(engine->renderer, id));
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_0x13(Thread_t* thread)
+/*
+ * Grp0 0x13 (0x00479C00) writes one colour over a whole bitmap: the script pushes the
+ * number and then the colour, so the colour pops first. Zero clears the bitmap
+ * (0x0040A620) and any other value is written to every pixel (0x0040A710). An empty
+ * slot is fatal with "no bitmap is registered at bitmap entry [ %d ]" (0x004EC4A0).
+ */
+uint32_t Opcode_Grp0_FillBitmap(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t colour = Thread_PopStack(thread);
+	int id = (int)Thread_PopStack(thread);
+
+	if(id < 0 || id >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: an invalid bitmap number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], id);
+		return 0xFFFFFFFF;
+	}
+
+	Engine_t* engine = thread->engine;
+	if(!Renderer_FillBitmap(engine->renderer, id, colour))
+	{
+		printf("[Thread %d]: %sError: no bitmap is registered at bitmap entry [ %d ]\n",
+		       thread->threadId, TLevel[thread->level], id);
+		return 0xFFFFFFFF;
+	}
 	return 0;
 }
 
@@ -713,21 +757,32 @@ uint32_t Opcode_Grp0_Unknown_21(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_22(Thread_t* thread)
+/*
+ * Grp0 0x16 (0x00479D80) writes a bitmap's shape into script memory. The bitmap
+ * number pops first and the address second; 0x00407F20 fills six dwords there - the
+ * pixels, the stride, the width, the height, the pixel mode and the bytes per pixel -
+ * and the handler then zeroes the first so the script never holds a real pointer.
+ * A number that does not resolve leaves the other five as they were, and the opcode
+ * succeeds all the same.
+ */
+uint32_t Opcode_Grp0_GetBitmapInfo(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t* ptr = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	int id = (int)Thread_PopStack(thread);
+	uint32_t* out = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	if(out == NULL)
+		return 1;
 
-	*ptr = 0x03FD2298; ptr++;
-	*ptr = 0x00000190; ptr++;
-	*ptr = 0x00000064; ptr++;
-	*ptr = 0x00000028; ptr++;
-	*ptr = 0x00000002; ptr++;
-	*ptr = 0x00000004; ptr++;
-	*ptr = 0x00000000; ptr++;
-
-	Thread_PushStack(thread, 1);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	Engine_t* engine = thread->engine;
+	Bitmap_t* bitmap = Renderer_ResolveBitmap(engine->renderer, id);
+	if(bitmap != NULL)
+	{
+		out[1] = (uint32_t)bitmap->stride;
+		out[2] = (uint32_t)bitmap->width;
+		out[3] = (uint32_t)bitmap->height;
+		out[4] = (uint32_t)bitmap->mode;
+		out[5] = (uint32_t)Renderer_ModePixelBytes(bitmap->mode);
+	}
+	out[0] = 0;
 	return 0;
 }
 
