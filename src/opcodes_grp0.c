@@ -25,7 +25,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x0D  13 */ "SetAntialiasingLevel",
 	/* 0x0E  14 */ "Unknown_0x0E",
 	/* 0x0F  15 */ "Unknown_15",
-	/* 0x10  16 */ "Unknown_0x10",
+	/* 0x10  16 */ "LoadBitmap",
 	/* 0x11  17 */ "Unknown_17",
 	/* 0x12  18 */ "Unknown_18",
 	/* 0x13  19 */ "Unknown_0x13",
@@ -40,7 +40,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x1C  28 */ "Unknown_28",
 	/* 0x1D  29 */ "Unknown_29",
 	/* 0x1E  30 */ "Unknown_30",
-	/* 0x1F  31 */ "Unknown_31",
+	/* 0x1F  31 */ "CopyBitmap",
 	/* 0x20  32 */ "Unknown_32",
 	/* 0x21  33 */ "Unknown_33",
 	/* 0x22  34 */ "Unknown_34",
@@ -284,7 +284,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x0D  13 */ Opcode_Grp0_SetAntialiasingLevel,
 	/* 0x0E  14 */ Opcode_Grp0_Unknown_0x0E,
 	/* 0x0F  15 */ Opcode_Grp0_Unknown_15,
-	/* 0x10  16 */ Opcode_Grp0_Unknown_0x10,
+	/* 0x10  16 */ Opcode_Grp0_LoadBitmap,
 	/* 0x11  17 */ Opcode_Grp0_Unknown_17,
 	/* 0x12  18 */ Opcode_Grp0_Unknown_18,
 	/* 0x13  19 */ Opcode_Grp0_Unknown_0x13,
@@ -299,7 +299,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x1C  28 */ Opcode_Grp0_Unknown_28,
 	/* 0x1D  29 */ Opcode_Grp0_Unknown_29,
 	/* 0x1E  30 */ Opcode_Grp0_Unknown_30,
-	/* 0x1F  31 */ Opcode_Grp0_Unknown_31,
+	/* 0x1F  31 */ Opcode_Grp0_CopyBitmap,
 	/* 0x20  32 */ Opcode_Grp0_Unknown_32,
 	/* 0x21  33 */ Opcode_Grp0_Unknown_33,
 	/* 0x22  34 */ Opcode_Grp0_Unknown_34,
@@ -636,17 +636,44 @@ uint32_t Opcode_Grp0_Unknown_15(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_0x10(Thread_t* thread)
-{	
+/*
+ * Grp0 0x10 (0x00479960) reads a bitmap into a slot. It pops the file name, then the
+ * archive name, then the slot. The original has two ways to do it: when the archive
+ * name is a path (it contains a '/') or the wait window Grp0 0x07 opened has run out,
+ * it hands the work to a loader thread and returns 2; otherwise it loads there and
+ * then through 0x00401E00 and returns 0. Every failure is fatal and names the file,
+ * with one message per reason (0x004E5638 and its neighbours).
+ *
+ * OpenBGI's loader is synchronous, so it always takes the immediate path. The wait
+ * window is still what decides that in the original, so it is still consulted and
+ * still reported; it just cannot fail us into a background load we do not have.
+ */
+uint32_t Opcode_Grp0_LoadBitmap(Thread_t* thread)
+{
 	uint8_t* filename = Thread_PopAndResolveAddress(thread);
 	uint8_t* archive = Thread_PopAndResolveAddress(thread);
 	uint32_t bitmapSlot = Thread_PopStack(thread);
-	printf("[Thread %d]: %sLoad bitmap? [%s : %s] (%d)\n", thread->threadId, TLevel[thread->level], filename, archive, bitmapSlot);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
 
 	Engine_t* engine = thread->engine;
-	Renderer_LoadBitmap(engine->renderer, bitmapSlot, filename, archive);
-	return 2;
+	uint32_t result = Renderer_LoadBitmap(engine->renderer, (int)bitmapSlot, (const char*)filename, (const char*)archive);
+	if(result != 0)
+	{
+		const char* reason = "the file could not be read";
+		switch(result)
+		{
+			case 0x80000002: reason = "it is not Windows bitmap data"; break;
+			case 0x80000003: reason = "its plane count is not supported"; break;
+			case 0x80000004: reason = "its bit count is not supported"; break;
+			case 0x80000005: reason = "it is compressed in a way that cannot be handled"; break;
+			case 0x80000006: reason = "its size is invalid"; break;
+			case 0x80000008: reason = "there was not enough memory"; break;
+			default: break;
+		}
+		printf("[Thread %d]: %sError: the bitmap [%s : %s] could not be loaded: %s\n",
+		       thread->threadId, TLevel[thread->level], filename, archive, reason);
+		return 0xFFFFFFFF;
+	}
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_17(Thread_t* thread)
@@ -739,9 +766,43 @@ uint32_t Opcode_Grp0_Unknown_30(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_31(Thread_t* thread)
+/*
+ * Grp0 0x1F (0x0047A710 -> 0x004033A0) copies a rectangle out of one bitmap into
+ * another. The script pushes the destination, the source, the two offsets and then
+ * the width and the height, so they pop back to front. The worker resolves the
+ * source, refuses a zero width or height, creates the destination at that size in the
+ * source's pixel mode and blits the source in at the negated offsets: the destination
+ * ends up holding the source's (offsetX, offsetY, width, height) rectangle. All three
+ * failures are fatal in the original and each names the numbers that caused it
+ * (0x004E8B44, 0x004E8B74, 0x004E8BA4).
+ */
+uint32_t Opcode_Grp0_CopyBitmap(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int height      = (int)Thread_PopStack(thread);
+	int width       = (int)Thread_PopStack(thread);
+	int offsetY     = (int)Thread_PopStack(thread);
+	int offsetX     = (int)Thread_PopStack(thread);
+	int source      = (int)Thread_PopStack(thread);
+	int destination = (int)Thread_PopStack(thread);
+
+	Engine_t* engine = thread->engine;
+	switch(Renderer_CopyBitmap(engine->renderer, destination, source, offsetX, offsetY, width, height))
+	{
+		case 0:
+			return 0;
+		case 1:
+			printf("[Thread %d]: %sError: the specified destination bitmap [ %d ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], destination);
+			return 0xFFFFFFFF;
+		case 2:
+			printf("[Thread %d]: %sError: the specified source bitmap [ %d ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], source);
+			return 0xFFFFFFFF;
+		default:
+			printf("[Thread %d]: %sError: an invalid copy range [ %d , %d ] was specified\n",
+			       thread->threadId, TLevel[thread->level], width, height);
+			return 0xFFFFFFFF;
+	}
 }
 
 uint32_t Opcode_Grp0_Unknown_32(Thread_t* thread)

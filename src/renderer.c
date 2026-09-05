@@ -3,7 +3,11 @@
 #include <stdio.h>
 #include "renderer.h"
 #include "engine.h"
+#include <string.h>
 #include "spng.h"
+#include "cbg.h"
+
+Bitmap_t* Renderer_ParsePng(uint8_t* file, size_t fileSize);
 
 Renderer_t* Renderer_Init(Engine_t* engine)
 {
@@ -82,8 +86,11 @@ void Renderer_DrawBitmapToScreen(Renderer_t* renderer, uint32_t bitmapId, int sc
 		printf("[Renderer]: Warning: Attempting to draw invalid bitmap (%d)\n", bitmapId);
 		return;
 	}
-	int x = 0;
-	int y = 0;
+	if(Renderer_ModePixelBytes(bitmap->mode) != 4)
+	{
+		printf("[Renderer]: Warning: bitmap %d is pixel mode %d, which the screen blit does not take yet\n", bitmapId, bitmap->mode);
+		return;
+	}
 	for(int y = 0; y < bitmap->height; y++)
 	{
 		if(y >= screen->height)
@@ -92,10 +99,9 @@ void Renderer_DrawBitmapToScreen(Renderer_t* renderer, uint32_t bitmapId, int sc
 		{
 			if(x >= screen->width)
 				break;
-			screen->bitmap[(y * screen->width * 4) + (x * 4) + 0] = bitmap->bitmap[(y * bitmap->width * 4) + (x * 4) + 0];
-			screen->bitmap[(y * screen->width * 4) + (x * 4) + 1] = bitmap->bitmap[(y * bitmap->width * 4) + (x * 4) + 1];
-			screen->bitmap[(y * screen->width * 4) + (x * 4) + 2] = bitmap->bitmap[(y * bitmap->width * 4) + (x * 4) + 2];
-			screen->bitmap[(y * screen->width * 4) + (x * 4) + 3] = bitmap->bitmap[(y * bitmap->width * 4) + (x * 4) + 3];
+			memcpy(&screen->bitmap[(y * screen->width * 4) + (x * 4)],
+			       &bitmap->bitmap[(y * bitmap->stride) + (x * 4)],
+			       4);
 		}
 	}
 	printf("[Renderer]: End draw\n");
@@ -165,43 +171,206 @@ Bitmap_t* Renderer_ParsePng(uint8_t* file, size_t fileSize)
     }
     bitmap->width = ihdr.width;
     bitmap->height = ihdr.height;
+    bitmap->mode = BITMAP_MODE_32;
+    bitmap->stride = ihdr.width * 4;
     bitmap->bitmap = out_buffer;
 
     spng_ctx_free(ctx);
     return bitmap;
 }
 
-void Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filename, const char* archive)
+// 0x004E41B0, indexed by pixel mode.
+int Renderer_ModePixelBytes(int mode)
+{
+	static const int bytes[BITMAP_MODE_COUNT] = { 2, 4, 4, 1, 4, 4, 6, 4 };
+	if(mode < 0 || mode >= BITMAP_MODE_COUNT)
+		return 0;
+	return bytes[mode];
+}
+
+// 0x00401C10, for the bit counts a CompressedBG file can carry.
+int Renderer_ModeForBits(int bits)
+{
+	switch(bits)
+	{
+		case 8:  return BITMAP_MODE_8;
+		case 24: return BITMAP_MODE_24;
+		case 32: return BITMAP_MODE_32;
+		default: return -1;
+	}
+}
+
+Bitmap_t* Renderer_ResolveBitmap(Renderer_t* renderer, int id)
+{
+	if(renderer == NULL || id < 0 || id >= RENDERER_MAX_BITMAPS)
+		return NULL;
+	return renderer->bitmaps[id];
+}
+
+void Renderer_DestroyBitmap(Renderer_t* renderer, int id)
+{
+	if(renderer == NULL || id < 0 || id >= RENDERER_MAX_BITMAPS)
+		return;
+	if(renderer->bitmaps[id] == NULL)
+		return;
+	free(renderer->bitmaps[id]->bitmap);
+	free(renderer->bitmaps[id]);
+	renderer->bitmaps[id] = NULL;
+}
+
+Bitmap_t* Renderer_CreateBitmap(Renderer_t* renderer, int id, int width, int height, int mode)
+{
+	if(renderer == NULL || id < 0 || id >= RENDERER_MAX_BITMAPS)
+		return NULL;
+	if(width <= 0 || height <= 0)
+		return NULL;
+
+	int pixelBytes = Renderer_ModePixelBytes(mode);
+	if(pixelBytes == 0)
+		return NULL;
+
+	Bitmap_t* bitmap = (Bitmap_t*)malloc(sizeof(Bitmap_t));
+	if(bitmap == NULL)
+		return NULL;
+	bitmap->width  = width;
+	bitmap->height = height;
+	bitmap->mode   = mode;
+	bitmap->stride = width * pixelBytes;
+	bitmap->bitmap = (uint8_t*)calloc(1, (size_t)bitmap->stride * (size_t)height);
+	if(bitmap->bitmap == NULL)
+	{
+		free(bitmap);
+		return NULL;
+	}
+
+	Renderer_DestroyBitmap(renderer, id);
+	renderer->bitmaps[id] = bitmap;
+	return bitmap;
+}
+
+/*
+ * Grp0 0x10's immediate path, 0x00401E00 by way of 0x00401EF0: read the file, take
+ * its size and bit count, and put its pixels in the slot. The 0x8000000X results are
+ * the original's, and every one of them is fatal at the opcode.
+ *
+ * A 24-bit image is widened to four bytes a pixel because that is how the original
+ * holds it (mode 1 is four bytes in the table at 0x004E41B0); the fourth byte is set
+ * opaque, which is what a bitmap with no alpha channel means to the blitter.
+ */
+uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filename, const char* archive)
 {
 	size_t fileSize;
 	uint8_t* file = Engine_ReadFile(renderer->engine, archive, filename, &fileSize);
 	if(file == NULL)
-		return;
+		return 0x80000009; // the loader's "no such image" result
 
-	Bitmap_t* bitmap = NULL;
-	if(file[0] == 0x89 && file[1] == 'P' && file[2] == 'N' && file[3] == 'G')
+	int width = 0;
+	int height = 0;
+	int bits = 0;
+	uint8_t* pixels = NULL;
+
+	if(CBG_IsCompressedBG(file, fileSize))
 	{
-		// Parse PNG
-		printf("[Renderer]: Parsing PNG\n");
-		bitmap = Renderer_ParsePng(file, fileSize);
+		pixels = CBG_Decode(file, fileSize, &width, &height, &bits);
 	}
-
-	if(bitmap != NULL)
+	else if(fileSize > 4 && file[0] == 0x89 && file[1] == 'P' && file[2] == 'N' && file[3] == 'G')
 	{
-		if(renderer->bitmaps[slot] != NULL)
+		// Not a format the original knows; kept because OpenBGI's own test data uses it.
+		Bitmap_t* png = Renderer_ParsePng(file, fileSize);
+		if(png != NULL)
 		{
-			printf("[Renderer]: Warning: Overwriting slot 0x%04X!\n", slot);
-			if(renderer->bitmaps[slot]->bitmap != NULL)
-				free(renderer->bitmaps[slot]->bitmap);
-			renderer->bitmaps[slot]->bitmap = NULL;
-			free(renderer->bitmaps[slot]);
+			width  = png->width;
+			height = png->height;
+			bits   = 32;
+			pixels = png->bitmap;
+			free(png);
 		}
-		renderer->bitmaps[slot] = bitmap;
+	}
+	free(file);
 
-		printf("[Renderer]: Added bitmap to slot 0x%04X (%dx%d)\n", slot, bitmap->width, bitmap->height);
+	if(pixels == NULL)
+	{
+		printf("[Renderer]: Could not decode bitmap [%s : %s]\n", filename, archive);
+		return 0x80000002; // "not Windows bitmap data"
 	}
 
-	free(file);
+	int mode = Renderer_ModeForBits(bits);
+	if(mode < 0)
+	{
+		free(pixels);
+		return 0x80000004; // "unsupported bit count"
+	}
+
+	Bitmap_t* bitmap = Renderer_CreateBitmap(renderer, slot, width, height, mode);
+	if(bitmap == NULL)
+	{
+		free(pixels);
+		return 0x80000008; // "not enough memory"
+	}
+
+	int pixelBytes = Renderer_ModePixelBytes(mode);
+	if(bits / 8 == pixelBytes)
+	{
+		memcpy(bitmap->bitmap, pixels, (size_t)bitmap->stride * (size_t)height);
+	}
+	else
+	{
+		// 24 bits into four-byte pixels.
+		int sourceBytes = bits / 8;
+		for(int y = 0; y < height; y++)
+		{
+			uint8_t* dst = bitmap->bitmap + (size_t)y * bitmap->stride;
+			uint8_t* src = pixels + (size_t)y * width * sourceBytes;
+			for(int x = 0; x < width; x++)
+			{
+				memcpy(dst + x * pixelBytes, src + x * sourceBytes, sourceBytes);
+				dst[x * pixelBytes + 3] = 0xFF;
+			}
+		}
+	}
+	free(pixels);
+
+	printf("[Renderer]: Loaded bitmap %d from [%s : %s] (%dx%d, %d bits)\n",
+	       slot, filename, archive, width, height, bits);
+	return 0;
+}
+
+/*
+ * 0x004033A0. The source must resolve, the size must be non-zero, and the destination
+ * is then created at that size in the source's own pixel mode and the source blitted
+ * into it at the negated offsets - so the destination ends up holding the source's
+ * (offsetX, offsetY, width, height) rectangle. Source pixels outside the source stay
+ * as the fresh bitmap's cleared bytes.
+ */
+int Renderer_CopyBitmap(Renderer_t* renderer, int destination, int source, int offsetX, int offsetY, int width, int height)
+{
+	Bitmap_t* src = Renderer_ResolveBitmap(renderer, source);
+	if(src == NULL)
+		return 2;
+	if(width == 0 || height == 0)
+		return 3;
+
+	Bitmap_t* dst = Renderer_CreateBitmap(renderer, destination, width, height, src->mode);
+	if(dst == NULL)
+		return 1;
+
+	int pixelBytes = Renderer_ModePixelBytes(src->mode);
+	for(int y = 0; y < height; y++)
+	{
+		int sourceY = y + offsetY;
+		if(sourceY < 0 || sourceY >= src->height)
+			continue;
+		for(int x = 0; x < width; x++)
+		{
+			int sourceX = x + offsetX;
+			if(sourceX < 0 || sourceX >= src->width)
+				continue;
+			memcpy(dst->bitmap + (size_t)y * dst->stride + (size_t)x * pixelBytes,
+			       src->bitmap + (size_t)sourceY * src->stride + (size_t)sourceX * pixelBytes,
+			       (size_t)pixelBytes);
+		}
+	}
+	return 0;
 }
 
 void Renderer_DrawScreen(Renderer_t* renderer)
@@ -245,16 +414,7 @@ void Renderer_Free(Renderer_t* renderer)
 	if(renderer == NULL)
 		return;
 	for(int i = 0; i < RENDERER_MAX_BITMAPS; i++)
-	{
-		if(renderer->bitmaps[i] == NULL)
-			continue;
-
-		if(renderer->bitmaps[i]->bitmap != NULL)
-			free(renderer->bitmaps[i]->bitmap);
-		renderer->bitmaps[i]->bitmap = NULL;
-		free(renderer->bitmaps[i]);
-		renderer->bitmaps[i] = NULL;
-	}
+		Renderer_DestroyBitmap(renderer, i);
 	for(int i = 0; i < RENDERER_MAX_SCREENS; i++)
 	{
 		if(renderer->screens[i] == NULL)
