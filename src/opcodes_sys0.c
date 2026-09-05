@@ -43,7 +43,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x1E  30 */ "Unknown_30",
 	/* 0x1F  31 */ "Unknown_31",
 	/* 0x20  32 */ "AllocAuxMem",
-	/* 0x21  33 */ "Unknown_33",
+	/* 0x21  33 */ "FreeAuxMem",
 	/* 0x22  34 */ "--Unknown--",
 	/* 0x23  35 */ "--Unknown--",
 	/* 0x24  36 */ "Unknown_36",
@@ -302,7 +302,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x1E  30 */ Opcode_Sys0_Unknown_30,
 	/* 0x1F  31 */ Opcode_Sys0_Unknown_31,
 	/* 0x20  32 */ Opcode_Sys0_AllocAuxMem,
-	/* 0x21  33 */ Opcode_Sys0_Unknown_33,
+	/* 0x21  33 */ Opcode_Sys0_FreeAuxMem,
 	/* 0x22  34 */ NULL,
 	/* 0x23  35 */ NULL,
 	/* 0x24  36 */ Opcode_Sys0_Unknown_36,
@@ -731,9 +731,17 @@ uint32_t Opcode_Sys0_AllocAuxMem(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_33(Thread_t* thread)
+uint32_t Opcode_Sys0_FreeAuxMem(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t address = Thread_PopStack(thread);
+	uint32_t result = Engine_FreeAuxMemory(thread->engine, address);
+	if(result == 0)
+	{
+		printf("[Thread %d]: %sError: 0x%.8X is not the start of an allocated memory area\n", thread->threadId, TLevel[thread->level], address);
+		return 0xFFFFFFFF;
+	}
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_36(Thread_t* thread)

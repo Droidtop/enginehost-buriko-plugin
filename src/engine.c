@@ -620,6 +620,9 @@ void Engine_SetFontSubstitution(const char* name, const char* replacement)
 			return;
 		entry->name = Engine_DupString(name);
 		entry->replacement = NULL;
+		// The original starts a fresh entry's charset at -1 (0x0042D9A0), i.e. "not
+		// stated", until Ext0 0xC1 sets one.
+		entry->charset = -1;
 		entry->next = gFontSubstitutions;
 		gFontSubstitutions = entry;
 	}
@@ -650,6 +653,123 @@ const char* Engine_GetFontSubstitution(const char* name)
 // depends on the argument: with no buffer it returns the byte count, so a script can
 // size a buffer, and with a buffer it fills it with NUL-terminated names and returns
 // how many it wrote. Fureraba calls it both ways in that order.
+// Ext0 0xC1 (fureraba.exe 0x00479340 -> 0x00468BF0) does two things with one font
+// name. First it records which character set the font should be looked up under, in
+// the same table Ext0 0xC7 uses: 0 from the script means SHIFTJIS_CHARSET (0x80) and
+// 1 means ANSI_CHARSET (0), which is what the query at 0x0042DC80 drops into
+// LOGFONT.lfCharSet before calling EnumFontFamiliesEx. Anything else leaves the
+// entry alone. Then it interns the name in a second list (head 0x0056631C, counter
+// 0x00566314) and returns the id, so later opcodes can name the font by number.
+void Engine_SetFontCharset(const char* name, int charset)
+{
+	if(name == NULL)
+		return;
+
+	FontSubstitution_t* entry = gFontSubstitutions;
+	while(entry != NULL && strcmp(entry->name, name) != 0)
+		entry = entry->next;
+
+	if(entry == NULL)
+	{
+		entry = (FontSubstitution_t*)malloc(sizeof(FontSubstitution_t));
+		if(entry == NULL)
+			return;
+		entry->name = Engine_DupString(name);
+		entry->replacement = NULL;
+		entry->charset = -1;
+		entry->next = gFontSubstitutions;
+		gFontSubstitutions = entry;
+	}
+
+	entry->charset = charset;
+}
+
+FontName_t* gFontNames = NULL;
+static uint32_t gFontNameCounter = 0;
+
+uint32_t Engine_InternFontName(const char* name)
+{
+	if(name == NULL)
+		return 0;
+
+	for(FontName_t* entry = gFontNames; entry != NULL; entry = entry->next)
+	{
+		if(strcmp(entry->name, name) == 0)
+			return entry->id;
+	}
+
+	FontName_t* entry = (FontName_t*)malloc(sizeof(FontName_t));
+	if(entry == NULL)
+		return 0;
+	entry->id = gFontNameCounter++;
+	entry->name = Engine_DupString(name);
+	entry->next = gFontNames;
+	gFontNames = entry;
+	return entry->id;
+}
+
+// Grp1 0x0E (fureraba.exe 0x004808F0 -> 0x00461F10 -> 0x00407BC0 -> 0x0042EEB0)
+// attaches a scale and an origin to a named font, which it finds by walking the list
+// at +0xAC of the object held in 0x00566750. Fureraba calls it once for every family
+// Ext0 0xC4 handed back, with all four values zero, which is what identifies the name
+// as a font family rather than anything else. The script sees only whether it was
+// accepted: the two rejections have their own messages in the binary, "invalid scale"
+// and "invalid coordinates", and both are fatal.
+//
+// The validator at 0x0042EC10 is what says how the numbers are meant. Both scales
+// are 16.16 fixed point and must be between 1.0 and 2.0, except that scaleX may also
+// be 0, meaning "use scaleY"; all four values zero is accepted as a reset. The origin
+// is 16.16 too, and each axis must be no larger than 1.0 - 1/scale - that is, the
+// visible rectangle is 1/scale of the whole and the origin may move it only as far
+// as its own far edge. The original computes that bound in double precision as
+// 65536.0 - 4294967296.0 / scale and truncates it, so this does the same.
+FontAdjust_t* gFontAdjusts = NULL;
+
+static int32_t Engine_FontAdjustOriginLimit(uint32_t scale)
+{
+	return (int32_t)(65536.0 - 4294967296.0 / (double)scale);
+}
+
+uint32_t Engine_SetFontAdjust(const char* name, uint32_t scaleX, uint32_t scaleY, int32_t originX, int32_t originY)
+{
+	if(scaleX == 0 && scaleY == 0 && originX == 0 && originY == 0)
+		return 0;
+
+	if((scaleX < 0x10000 || scaleX > 0x20000) && scaleX != 0)
+		return 0x80000005;
+	if(scaleY < 0x10000 || scaleY > 0x20000)
+		return 0x80000005;
+
+	uint32_t reference = scaleX != 0 ? scaleX : scaleY;
+	if(originX > Engine_FontAdjustOriginLimit(reference))
+		return 0x80000006;
+	if(originY > Engine_FontAdjustOriginLimit(scaleY))
+		return 0x80000006;
+
+	if(name == NULL)
+		return 0;
+
+	FontAdjust_t* entry = gFontAdjusts;
+	while(entry != NULL && strcmp(entry->name, name) != 0)
+		entry = entry->next;
+
+	if(entry == NULL)
+	{
+		entry = (FontAdjust_t*)malloc(sizeof(FontAdjust_t));
+		if(entry == NULL)
+			return 0;
+		entry->name = Engine_DupString(name);
+		entry->next = gFontAdjusts;
+		gFontAdjusts = entry;
+	}
+
+	entry->scaleX = scaleX;
+	entry->scaleY = scaleY;
+	entry->originX = originX;
+	entry->originY = originY;
+	return 0;
+}
+
 uint32_t Engine_EnumerateFontFamilies(char* buffer)
 {
 	Font_Init();
@@ -721,6 +841,32 @@ uint8_t* Engine_GetAuxMemory(Engine_t* engine, uint8_t slot)
 	if(slot >= 48)
 		return NULL;
 	return NULL;
+}
+
+// Sys0 0x21 (fureraba.exe 0x00488550 -> 0x0048DEA0) releases the aux memory area an
+// address belongs to. The original finds the area by decoding the address the same
+// way its resolver does, frees the block and clears the slot, and answers 1. A null
+// address is accepted and answers 1 without freeing anything. An address that is not
+// in any allocated area is fatal - "an invalid address was given as the target of a
+// global memory free" - so this reports it and stops the thread rather than ignoring
+// it.
+uint32_t Engine_FreeAuxMemory(Engine_t* engine, uint32_t address)
+{
+	if(address == 0)
+		return 1;
+
+	int tag = address >> 24;
+	if(tag < 0x40)
+		return 0;
+
+	int slot = (tag >> 1) - 32;
+	if(slot < 0 || slot >= 48 || engine->auxMemory[slot] == NULL)
+		return 0;
+
+	free(engine->auxMemory[slot]);
+	engine->auxMemory[slot] = NULL;
+	printf("[Engine]: Freed aux memory in slot %d\n", slot);
+	return 1;
 }
 
 uint32_t gFrameTimeMs = 0;

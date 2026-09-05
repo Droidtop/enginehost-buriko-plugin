@@ -33,7 +33,7 @@ uint32_t Opcode_Sys0_Unknown_29(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_30(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_31(Thread_t* thread);
 uint32_t Opcode_Sys0_AllocAuxMem(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_33(Thread_t* thread);
+uint32_t Opcode_Sys0_FreeAuxMem(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_36(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_37(Thread_t* thread);
 uint32_t Opcode_Sys0_CreateDirectory(Thread_t* thread);

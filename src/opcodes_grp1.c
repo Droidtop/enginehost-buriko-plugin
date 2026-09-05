@@ -21,7 +21,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x0B  11 */ "--Unknown--",
     /* 0x0C  12 */ "--Unknown--",
     /* 0x0D  13 */ "Unknown_13",
-    /* 0x0E  14 */ "--Unknown--",
+    /* 0x0E  14 */ "SetFontAdjust",
     /* 0x0F  15 */ "--Unknown--",
     /* 0x10  16 */ "Unknown_16",
     /* 0x11  17 */ "Unknown_17",
@@ -280,7 +280,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x0B  11 */ NULL,
     /* 0x0C  12 */ NULL,
     /* 0x0D  13 */ Opcode_Grp1_Unknown_13,
-    /* 0x0E  14 */ NULL,
+    /* 0x0E  14 */ Opcode_Grp1_SetFontAdjust,
     /* 0x0F  15 */ NULL,
     /* 0x10  16 */ Opcode_Grp1_Unknown_16,
     /* 0x11  17 */ Opcode_Grp1_Unknown_17,
@@ -523,6 +523,25 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0xFE 254 */ NULL,
     /* 0xFF 255 */ NULL,
 };
+
+uint32_t Opcode_Grp1_SetFontAdjust(Thread_t* thread)
+{
+	int32_t originY = (int32_t)Thread_PopStack(thread);
+	int32_t originX = (int32_t)Thread_PopStack(thread);
+	uint32_t scaleY = Thread_PopStack(thread);
+	uint32_t scaleX = Thread_PopStack(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+
+	printf("[Thread %d]: %sAdjust font \"%s\" by %d.%04X/%d.%04X at %d.%04X, %d.%04X\n", thread->threadId, TLevel[thread->level], name != NULL ? name : "(none)", scaleX >> 16, scaleX & 0xFFFF, scaleY >> 16, scaleY & 0xFFFF, originX >> 16, originX & 0xFFFF, originY >> 16, originY & 0xFFFF);
+
+	uint32_t result = Engine_SetFontAdjust(name, scaleX, scaleY, originX, originY);
+	if(result != 0)
+	{
+		printf("[Thread %d]: %sError: %s rejected\n", thread->threadId, TLevel[thread->level], result == 0x80000005 ? "scale" : "origin");
+		return result;
+	}
+	return 0;
+}
 
 uint32_t Opcode_Grp1_Unknown_13(Thread_t* thread)
 {

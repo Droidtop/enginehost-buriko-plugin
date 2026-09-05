@@ -200,7 +200,7 @@ char* OpcodesExt0Mnemonics[256] = {
     /* 0xBE 190 */ "--Unknown--",
     /* 0xBF 191 */ "--Unknown--",
     /* 0xC0 192 */ "--Unknown--",
-    /* 0xC1 193 */ "--Unknown--",
+    /* 0xC1 193 */ "RegisterFont",
     /* 0xC2 194 */ "--Unknown--",
     /* 0xC3 195 */ "--Unknown--",
     /* 0xC4 196 */ "EnumerateFontFamilies",
@@ -459,7 +459,7 @@ OpcodePtr_t OpcodesExt0[256] = {
     /* 0xBE 190 */ NULL,
     /* 0xBF 191 */ NULL,
     /* 0xC0 192 */ NULL,
-    /* 0xC1 193 */ NULL,
+    /* 0xC1 193 */ Opcode_Ext0_RegisterFont,
     /* 0xC2 194 */ NULL,
     /* 0xC3 195 */ NULL,
     /* 0xC4 196 */ Opcode_Ext0_EnumerateFontFamilies,
@@ -523,6 +523,20 @@ OpcodePtr_t OpcodesExt0[256] = {
     /* 0xFE 254 */ NULL,
     /* 0xFF 255 */ NULL,
 };
+
+uint32_t Opcode_Ext0_RegisterFont(Thread_t* thread)
+{
+	uint32_t kind = Thread_PopStack(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+
+	if(kind == 0)
+		Engine_SetFontCharset(name, 0x80);
+	else if(kind == 1)
+		Engine_SetFontCharset(name, 0);
+
+	Thread_PushStack(thread, Engine_InternFontName(name));
+	return 0;
+}
 
 uint32_t Opcode_Ext0_EnumerateFontFamilies(Thread_t* thread)
 {

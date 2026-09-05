@@ -68,19 +68,45 @@ typedef struct FontSubstitution
 {
 	char* name;
 	char* replacement;
+	int charset;
 	struct FontSubstitution* next;
 } FontSubstitution_t;
+
+typedef struct FontName
+{
+	uint32_t id;
+	char* name;
+	struct FontName* next;
+} FontName_t;
 
 extern FontSubstitution_t* gFontSubstitutions;
 extern char* gFontSubstitutionDefault;
 void Engine_SetFontSubstitution(const char* name, const char* replacement);
 const char* Engine_GetFontSubstitution(const char* name);
 uint32_t Engine_EnumerateFontFamilies(char* buffer);
+void Engine_SetFontCharset(const char* name, int charset);
+extern FontName_t* gFontNames;
+uint32_t Engine_InternFontName(const char* name);
+
+typedef struct FontAdjust
+{
+	char* name;
+	uint32_t scaleX;
+	uint32_t scaleY;
+	int32_t originX;
+	int32_t originY;
+	struct FontAdjust* next;
+} FontAdjust_t;
+
+extern FontAdjust_t* gFontAdjusts;
+// 0 on success, 0x80000005 for a rejected scale, 0x80000006 for a rejected origin.
+uint32_t Engine_SetFontAdjust(const char* name, uint32_t scaleX, uint32_t scaleY, int32_t originX, int32_t originY);
 
 int Engine_InitGlobalMemory(Engine_t* engine, uint32_t level);
 
 uint32_t Engine_AllocAuxMemory(Engine_t* engine, uint32_t size);
 uint8_t* Engine_GetAuxMemory(Engine_t* engine, uint8_t slot);
+uint32_t Engine_FreeAuxMemory(Engine_t* engine, uint32_t address);
 
 extern uint32_t gFrameTimeMs;
 extern uint32_t gFrameTimer;
