@@ -21,4 +21,7 @@
  */
 uint8_t* Arc_ReadFile(const char* archive, const char* filename, size_t* outSize);
 
+/* Arc_FileExists answers the same lookup without reading the file. */
+int Arc_FileExists(const char* archive, const char* filename);
+
 #endif

@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <strings.h>
+#include <sys/stat.h>
 #include <ctype.h>
 #include <time.h>
 #include "engine.h"
@@ -143,66 +145,49 @@ char* Engine_SearchForArchive(const char* archive)
     return NULL;
 }
 
+// The engine runs on Windows, where the file system matches names without regard to
+// case; every lookup here has to do that itself. A match must also be a real file:
+// the original asks GetFileAttributesA and rejects the answer when the directory bit
+// is set, so a directory of the right name is not a file of that name.
+static char* Engine_ResolveInDirectory(const char* directory, const char* name)
+{
+	DIR* dir = opendir(directory);
+	if(dir == NULL)
+		return NULL;
+
+	char* found = NULL;
+	struct dirent* entry;
+	while((entry = readdir(dir)) != NULL)
+	{
+		if(strcasecmp(entry->d_name, name) != 0)
+			continue;
+
+		char path[512];
+		int length = snprintf(path, sizeof(path), "%s/%s", directory, entry->d_name);
+		if(length < 0 || length >= (int)sizeof(path))
+			break;
+
+		struct stat info;
+		if(stat(path, &info) != 0 || !S_ISREG(info.st_mode))
+			break;
+
+		found = (char*)malloc(strlen(path) + 1);
+		if(found != NULL)
+			strcpy(found, path);
+		break;
+	}
+	closedir(dir);
+	return found;
+}
+
 char* Engine_SearchForFile(const char* archive, const char* filename)
 {
 	char* arcPath = Engine_SearchForArchive(archive);
 	if(arcPath == NULL)
 		return NULL;
-
-    DIR *dir;
-    struct dirent *entry;
-
-    dir = opendir(arcPath);
-    if(dir == NULL)
-    {
-        perror("[Engine]");
-        free(arcPath);
-        return NULL;
-    }
-
-    char fileName[256];
-	strcpy(fileName, filename);
-	for(int i = 0; fileName[i] != '\0'; i++)
-		fileName[i] = tolower(fileName[i]);
-
-	char path[256];
-	int found = 0;
-    while((entry = readdir(dir)) != NULL)
-    {
-        char* name = entry->d_name;
-        int i;
-		for(i = 0; name[i] != '\0'; i++)
-			path[i] = tolower(name[i]);
-		path[i] = 0;
-
-		if(strcmp(path, fileName) == 0)
-		{
-			strcpy(path, name);
-			found = 1;
-			break;
-		}
-    }
-    closedir(dir);
-    if(found)
-    {
-		char fullpath[256];
-		int cx = snprintf(fullpath, 256, "%s/%s", arcPath, path);
-		free(arcPath);
-		if(cx < 0 || cx > 256)
-		{
-			// TODO: Error
-			return NULL;
-		}
-
-		char* finalpath = (char*)malloc(strlen(fullpath) + 1);
-		strcpy(finalpath, fullpath);
-		return finalpath;
-	}
-	else
-	{
-		free(arcPath);
-		return NULL;
-	}
+	char* path = Engine_ResolveInDirectory(arcPath, filename);
+	free(arcPath);
+	return path;
 }
 
 uint8_t* Engine_ReadFile(Engine_t* engine, const char* archive, const char* filename, size_t* outSize)
@@ -1049,6 +1034,71 @@ void Engine_AddSearchPath(char* path)
 	gSearchPaths = node;
 
 	printf("[Engine]: Added search path \"%s\"\n", copy);
+}
+
+// Sys0 0x34 (fureraba.exe 0x00488A40 -> 0x00466740) answers whether a file exists,
+// and it answers from the disk and the archives rather than from any list of names.
+// Its shape there is:
+//
+//   with no archive named, an absolute name (one starting "\" or with ":" second)
+//   is tested where it stands; otherwise the bare name is looked for under the
+//   install directory, and then under the second data root when the game has one;
+//
+//   with an archive named, the bare name is still tried under the install directory
+//   first - that is how an unpacked file wins over the packed one - and only then is
+//   the name looked up inside the archive.
+//
+// Either way the loose search also walks the search paths added by Sys0 0x37, but
+// only while Sys0 0x36 has them enabled: the list head is masked with that flag
+// before the walk at 0x00466620, so a disabled list is skipped rather than emptied.
+//
+// OpenBGI has one root, the game folder it was pointed at, and no second data root.
+int Engine_FileExists(const char* archive, const char* filename)
+{
+	if(filename == NULL || filename[0] == 0)
+		return 0;
+
+	char* path = Engine_ResolveInDirectory(".", filename);
+	if(path != NULL)
+	{
+		free(path);
+		return 1;
+	}
+
+	if(gEnableSearchPaths)
+	{
+		for(SearchPathNode_t* node = gSearchPaths; node != NULL; node = node->next)
+		{
+			char directory[512];
+			int length = snprintf(directory, sizeof(directory), "./%s", node->path);
+			if(length < 0 || length >= (int)sizeof(directory))
+				continue;
+			for(char* c = directory; *c != 0; c++)
+			{
+				if(*c == '\\')
+					*c = '/';
+			}
+
+			path = Engine_ResolveInDirectory(directory, filename);
+			if(path != NULL)
+			{
+				free(path);
+				return 1;
+			}
+		}
+	}
+
+	if(archive == NULL || archive[0] == 0)
+		return 0;
+
+	path = Engine_SearchForFile(archive, filename);
+	if(path != NULL)
+	{
+		free(path);
+		return 1;
+	}
+
+	return Arc_FileExists(archive, filename);
 }
 
 int gFlagUnknown20 = 0;

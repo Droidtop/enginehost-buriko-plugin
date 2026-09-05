@@ -141,6 +141,8 @@ void Engine_AddSearchPath(char* path);
 extern int gEnableSearchPaths;
 void Engine_SetEnableSearchPaths(int value);
 
+int Engine_FileExists(const char* archive, const char* filename);
+
 extern int gFlagUnknown2;
 extern int gFlagUnknown3;
 extern int gFlagUnknown4;

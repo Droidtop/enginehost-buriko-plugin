@@ -92,17 +92,21 @@ static uint8_t* Inflate(uint8_t* data, size_t size, size_t* outSize)
 	return plain;
 }
 
-uint8_t* Arc_ReadFile(const char* archive, const char* filename, size_t* outSize)
+// Opening the archive and walking its table is the same work whether the caller
+// wants the file's bytes or only wants to know the file is there, so both go
+// through here. outData NULL asks the second question, and answers it without
+// reading or inflating anything.
+static int Arc_Find(const char* archive, const char* filename, uint8_t** outData, size_t* outSize)
 {
 	char* path = FindArchive(archive);
 	if(path == NULL)
-		return NULL;
+		return 0;
 
 	FILE* f = fopen(path, "rb");
 	if(f == NULL)
 	{
 		free(path);
-		return NULL;
+		return 0;
 	}
 
 	uint8_t header[ARC20_HEADER_SIZE];
@@ -111,7 +115,7 @@ uint8_t* Arc_ReadFile(const char* archive, const char* filename, size_t* outSize
 		printf("[Arc]: \"%s\" is not a BURIKO ARC20 archive\n", path);
 		fclose(f);
 		free(path);
-		return NULL;
+		return 0;
 	}
 	uint32_t count = ReadU32(header + ARC20_MAGIC_LENGTH);
 	size_t tableSize = (size_t)count * ARC20_ENTRY_SIZE;
@@ -121,11 +125,11 @@ uint8_t* Arc_ReadFile(const char* archive, const char* filename, size_t* outSize
 		free(table);
 		fclose(f);
 		free(path);
-		return NULL;
+		return 0;
 	}
 	long dataBase = ARC20_HEADER_SIZE + (long)tableSize;
 
-	uint8_t* result = NULL;
+	int present = 0;
 	for(uint32_t i = 0; i < count; i++)
 	{
 		const uint8_t* entry = table + (size_t)i * ARC20_ENTRY_SIZE;
@@ -134,6 +138,10 @@ uint8_t* Arc_ReadFile(const char* archive, const char* filename, size_t* outSize
 		name[ARC20_NAME_LENGTH] = 0;
 		if(!EqualsIgnoringCase(name, filename))
 			continue;
+
+		present = 1;
+		if(outData == NULL)
+			break;
 
 		uint32_t offset = ReadU32(entry + ARC20_NAME_LENGTH);
 		uint32_t size = ReadU32(entry + ARC20_NAME_LENGTH + 4);
@@ -145,8 +153,8 @@ uint8_t* Arc_ReadFile(const char* archive, const char* filename, size_t* outSize
 			free(data);
 			break;
 		}
-		result = Inflate(data, size, outSize);
-		if(result != NULL)
+		*outData = Inflate(data, size, outSize);
+		if(*outData != NULL)
 			printf("[Arc]: Read \"%s\" from \"%s\" (%zu bytes)\n", name, path, *outSize);
 		break;
 	}
@@ -154,5 +162,17 @@ uint8_t* Arc_ReadFile(const char* archive, const char* filename, size_t* outSize
 	free(table);
 	fclose(f);
 	free(path);
-	return result;
+	return present;
+}
+
+uint8_t* Arc_ReadFile(const char* archive, const char* filename, size_t* outSize)
+{
+	uint8_t* data = NULL;
+	Arc_Find(archive, filename, &data, outSize);
+	return data;
+}
+
+int Arc_FileExists(const char* archive, const char* filename)
+{
+	return Arc_Find(archive, filename, NULL, NULL);
 }

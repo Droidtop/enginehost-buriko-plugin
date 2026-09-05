@@ -836,20 +836,12 @@ uint32_t Opcode_Sys0_DeleteFile(Thread_t* thread)
 
 uint32_t Opcode_Sys0_FindFile(Thread_t* thread)
 {
-	uint8_t* ptr1 = Thread_PopAndResolveAddress(thread);
-	uint8_t* ptr2 = Thread_PopAndResolveAddress(thread);
-	printf("[Thread %d]: %sFinding file (\"%s\", \"%s\")\n", thread->threadId, TLevel[thread->level], ptr1, ptr2);
-	if(strcmp(ptr1, "fordebuggers.dbg") == 0)
-		Thread_PushStack(thread, 0);
-	else if(strcmp(ptr1, "debug.inf") == 0)
-		Thread_PushStack(thread, 1);
-	else if(strcmp(ptr1, "font") == 0)
-		Thread_PushStack(thread, 1);
-	else if(strcmp(ptr1, "UserData\\NurseryRhyme") >= 0)
-		Thread_PushStack(thread, 0);
-	else
-		Thread_PushStack(thread, 1);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	const char* filename = (const char*)Thread_PopAndResolveAddress(thread);
+	const char* archive = (const char*)Thread_PopAndResolveAddress(thread);
+	printf("[Thread %d]: %sFinding file (\"%s\", \"%s\")\n", thread->threadId, TLevel[thread->level], filename, archive);
+	int found = Engine_FileExists(archive, filename);
+	printf("[Thread %d]: %s%s\n", thread->threadId, TLevel[thread->level], found ? "Found it" : "Not there");
+	Thread_PushStack(thread, found);
 	return 0;
 }
 
