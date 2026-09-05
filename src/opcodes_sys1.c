@@ -114,7 +114,7 @@ char* OpcodesSys1Mnemonics[256] = {
 	/* 0x60  96 */ "SetDisplayModeSize",
 	/* 0x61  97 */ "Unknown_97",
 	/* 0x62  98 */ "Unknown_98",
-	/* 0x63  99 */ "Unknown_99",
+	/* 0x63  99 */ "SetScreenMappingMode",
 	/* 0x64 100 */ "Unknown_100",
 	/* 0x65 101 */ "Unknown_101",
 	/* 0x66 102 */ "--Unknown--",
@@ -373,7 +373,7 @@ OpcodePtr_t OpcodesSys1[256] = {
 	/* 0x60  96 */ Opcode_Sys1_SetDisplayModeSize,
 	/* 0x61  97 */ Opcode_Sys1_Unknown_97,
 	/* 0x62  98 */ Opcode_Sys1_Unknown_98,
-	/* 0x63  99 */ Opcode_Sys1_Unknown_99,
+	/* 0x63  99 */ Opcode_Sys1_SetScreenMappingMode,
 	/* 0x64 100 */ Opcode_Sys1_Unknown_100,
 	/* 0x65 101 */ Opcode_Sys1_Unknown_101,
 	/* 0x66 102 */ NULL,
@@ -763,9 +763,11 @@ uint32_t Opcode_Sys1_Unknown_98(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys1_Unknown_99(Thread_t* thread)
+uint32_t Opcode_Sys1_SetScreenMappingMode(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t mode = Thread_PopStack(thread);
+	Thread_PushStack(thread, Engine_SetScreenMappingMode(mode));
+	return 0;
 }
 
 uint32_t Opcode_Sys1_Unknown_100(Thread_t* thread)

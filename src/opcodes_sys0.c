@@ -109,7 +109,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x60  96 */ "SetDisplayMode",
 	/* 0x61  97 */ "Unknown_97",
 	/* 0x62  98 */ "SetKeySlots",
-	/* 0x63  99 */ "Unknown_99",
+	/* 0x63  99 */ "SetScreenMappingModeFlag",
 	/* 0x64 100 */ "Unknown_100",
 	/* 0x65 101 */ "Unknown_101",
 	/* 0x66 102 */ "SetWindowTitle",
@@ -368,7 +368,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x60  96 */ Opcode_Sys0_SetDisplayMode,
 	/* 0x61  97 */ Opcode_Sys0_Unknown_97,
 	/* 0x62  98 */ Opcode_Sys0_SetKeySlots,
-	/* 0x63  99 */ Opcode_Sys0_Unknown_99,
+	/* 0x63  99 */ Opcode_Sys0_SetScreenMappingModeFlag,
 	/* 0x64 100 */ Opcode_Sys0_Unknown_100,
 	/* 0x65 101 */ Opcode_Sys0_Unknown_101,
 	/* 0x66 102 */ Opcode_Sys0_SetWindowTitle,
@@ -1080,9 +1080,14 @@ uint32_t Opcode_Sys0_SetKeySlots(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_99(Thread_t* thread)
+// The boolean form of Sys1 0x63: a true value selects mapping mode 0 and a false
+// value selects mode 1. The original (0x00489520) discards the setter result and
+// pushes nothing back.
+uint32_t Opcode_Sys0_SetScreenMappingModeFlag(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value = Thread_PopStack(thread);
+	Engine_SetScreenMappingMode(value != 0 ? 0 : 1);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_100(Thread_t* thread)

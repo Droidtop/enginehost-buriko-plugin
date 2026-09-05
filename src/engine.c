@@ -1025,6 +1025,39 @@ uint32_t Engine_SetControlMode(uint32_t mode)
 	printf("[Engine]: Set ControlMode to %d\n", (int)mode);
 	return 1;
 }
+
+// Screen mapping mode: how a point in the game's base coordinate space is placed in
+// the actual window. Set by Sys1 0x63 (0x0048C2F0 -> the setter at 0x0045E9E0), which
+// accepts only 0, 1 and 2, stores the value at 0x00565E98 and pushes 1, or changes
+// nothing and pushes 0. Unlike the control mode, a rejected value is not fatal here;
+// the script is told and carries on.
+//
+// Sys0 0x63 (0x00489520) is the older boolean form of the same setting: it pops one
+// value and calls the same setter with (value != 0) ? 0 : 1, discarding the result.
+// So a true value means mode 0 and a false value means mode 1.
+//
+// The mode is read through the resolver at 0x0045EA00, which returns the stored mode
+// as it stands for 0 and 1 but treats 2 as "decide now": it compares the current
+// display size (0x00461220 / 0x00461240) against the game's base size halved
+// (0x0045E700 called with 1) and answers 2 only when the halved size is at least as
+// large as the display in both directions, otherwise 0. The transform at 0x0045EA50
+// then scales for modes 0 and 1 and merely centres for mode 2, which is what makes
+// this a mapping mode rather than a scale factor.
+//
+// That resolver is Sys1 0x61 and is deliberately not implemented yet: OpenBGI tracks
+// neither the current display mode index nor the game's base size, so mode 2 cannot
+// be resolved faithfully, and inventing an answer would put the game's coordinates
+// somewhere the original would not.
+int gScreenMappingMode = 0;
+
+uint32_t Engine_SetScreenMappingMode(uint32_t mode)
+{
+	if(mode > 2)
+		return 0;
+	gScreenMappingMode = (int)mode;
+	printf("[Engine]: Set ScreenMappingMode to %d\n", (int)mode);
+	return 1;
+}
 int gFlagUnknown10 = 0;
 void Engine_SetFlagUnknown10(int value)
 {

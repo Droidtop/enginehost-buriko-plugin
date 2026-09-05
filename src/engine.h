@@ -126,6 +126,9 @@ extern int gCursorShape;
 
 extern int gControlMode;
 uint32_t Engine_SetControlMode(uint32_t mode);
+
+extern int gScreenMappingMode;
+uint32_t Engine_SetScreenMappingMode(uint32_t mode);
 extern int gFlagUnknown10;
 void Engine_SetFlagUnknown10(int value);
 
