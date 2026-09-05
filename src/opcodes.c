@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include "opcodes.h"
+#include "opcodes_user.h"
 #include "opcodes_sys0.h"
 #include "opcodes_sys1.h"
 #include "opcodes_grp0.h"
@@ -270,7 +271,7 @@ char* OpcodesMnemonics[256] = {
 	/* 0xFC 252 */ "Unknown",
 	/* 0xFD 253 */ "Unknown",
 	/* 0xFE 254 */ "Unknown",
-	/* 0xFF 255 */ "Unknown",
+	/* 0xFF 255 */ "User",
 };
 
 OpcodePtr_t Opcodes[256] = {
@@ -529,7 +530,7 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0xFC 252 */ 0,
 	/* 0xFD 253 */ 0,
 	/* 0xFE 254 */ 0,
-	/* 0xFF 255 */ 0,
+	/* 0xFF 255 */ Opcode_User,
 };
 
 uint32_t Opcode_Push8(Thread_t* thread)

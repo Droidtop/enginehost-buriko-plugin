@@ -1078,6 +1078,71 @@ void Engine_SetGameId(const char* id)
 	memcpy(gGameId, id, length);
 }
 
+// Base opcode 0xFF (fureraba.exe 0x00498D20) is the group the script fills in for
+// itself: user-defined instructions, which the engine calls "mediation programs"
+// (0x004EC6E8). Numbers 0x00 to 0xEF are the script's own, held in the table at
+// 0x00560FC0 - all 0xFFFEFEFE in the image, so it is built at run time.
+//
+// Defining one (0x00498B20) clears whatever the number held, loads the named program
+// into a 0x20000 scratch buffer through 0x00465C30, and keeps it only if something
+// loaded: an 8-byte entry with the program's name strdup'd at +0 and a right-sized
+// copy of the loaded bytes at +4, after which the scratch buffer is freed. A load of
+// zero length is not recorded and the define reports failure.
+//
+// Undefining one (0x00498AB0) frees both and nulls the slot, and reports whether
+// there was anything there.
+UserInstruction_t gUserInstructions[USER_INSTRUCTION_COUNT] = { 0 };
+
+int Engine_UndefineUserInstruction(uint32_t number)
+{
+	if(number >= USER_INSTRUCTION_COUNT)
+		return 0;
+
+	UserInstruction_t* instruction = &gUserInstructions[number];
+	if(instruction->program == NULL && instruction->code == NULL)
+		return 0;
+
+	free(instruction->program);
+	free(instruction->code);
+	instruction->program = NULL;
+	instruction->code = NULL;
+	instruction->codeSize = 0;
+	return 1;
+}
+
+int Engine_DefineUserInstruction(Engine_t* engine, uint32_t number, const char* archive, const char* program)
+{
+	if(number >= USER_INSTRUCTION_COUNT)
+		return 0;
+
+	Engine_UndefineUserInstruction(number);
+
+	size_t size = 0;
+	uint8_t* code = Engine_ReadFile(engine, archive, program, &size);
+	if(code == NULL || size == 0)
+	{
+		// The original keeps nothing when nothing loaded, and says so.
+		free(code);
+		printf("[Engine]: User instruction 0x%.2X: could not load \"%s\" from \"%s\"\n", number, program, archive);
+		return 0;
+	}
+
+	UserInstruction_t* instruction = &gUserInstructions[number];
+	instruction->program = (char*)malloc(strlen(program) + 1);
+	if(instruction->program != NULL)
+		strcpy(instruction->program, program);
+	instruction->code = code;
+	instruction->codeSize = size;
+	printf("[Engine]: User instruction 0x%.2X is \"%s\" from \"%s\" (%zu bytes)\n", number, program, archive, size);
+	return 1;
+}
+
+void Engine_FreeUserInstructions(void)
+{
+	for(uint32_t i = 0; i < USER_INSTRUCTION_COUNT; i++)
+		Engine_UndefineUserInstruction(i);
+}
+
 SearchPathNode_t* gSearchPaths = NULL;
 void Engine_AddSearchPath(char* path)
 {
@@ -1353,6 +1418,7 @@ void Engine_Free(Engine_t* engine)
 
 	Renderer_Free(engine->renderer);
 
+	Engine_FreeUserInstructions();
 	while(gSearchPaths)
 	{
 		SearchPathNode_t* next = gSearchPaths->next;

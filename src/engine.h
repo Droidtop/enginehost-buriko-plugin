@@ -143,6 +143,19 @@ void Engine_SetEnableSearchPaths(int value);
 
 int Engine_FileExists(const char* archive, const char* filename);
 
+#define USER_INSTRUCTION_COUNT 0xF0
+typedef struct UserInstruction UserInstruction_t;
+struct UserInstruction
+{
+    char*    program;
+    uint8_t* code;
+    size_t   codeSize;
+};
+extern UserInstruction_t gUserInstructions[USER_INSTRUCTION_COUNT];
+int Engine_DefineUserInstruction(Engine_t* engine, uint32_t number, const char* archive, const char* program);
+int Engine_UndefineUserInstruction(uint32_t number);
+void Engine_FreeUserInstructions(void);
+
 #define ENGINE_GAME_ID_SIZE 16
 extern char gGameId[ENGINE_GAME_ID_SIZE];
 void Engine_SetGameId(const char* id);

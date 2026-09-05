@@ -30,11 +30,23 @@ static int EqualsIgnoringCase(const char* a, const char* b)
 	return *a == *b;
 }
 
-/* "<archive>.arc" under dir, with whatever case the disk has, or NULL. */
+/* True when name ends with ".arc", whatever case the caller wrote it in. */
+static int HasArcExtension(const char* name)
+{
+	size_t length = strlen(name);
+	return length > 4 && EqualsIgnoringCase(name + length - 4, ".arc");
+}
+
+/* The archive under dir, with whatever case the disk has, or NULL. Scripts name
+   archives both ways - Fureraba's ipl asks for "sysprg.arc" where the boot asks for
+   "system" - so a name that already carries the extension is taken as it stands. */
 static char* FindArchiveIn(const char* dir, const char* archive)
 {
 	char wanted[300];
-	snprintf(wanted, sizeof(wanted), "%s.arc", archive);
+	if(HasArcExtension(archive))
+		snprintf(wanted, sizeof(wanted), "%s", archive);
+	else
+		snprintf(wanted, sizeof(wanted), "%s.arc", archive);
 
 	DIR* d = opendir(dir);
 	if(d == NULL)
