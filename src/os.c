@@ -1,4 +1,5 @@
 #include <SDL2/SDL.h>
+#include <unistd.h>
 #include "os.h"
 #include "version.h"
 #include "engine.h"
@@ -50,4 +51,14 @@ int OS_Quit()
 	SDL_DestroyWindow(osEngine->window);
     SDL_Quit();
     return 0;
+}
+
+void OS_GetPhysicalMemory(uint64_t* total, uint64_t* available)
+{
+	long pageSize = sysconf(_SC_PAGESIZE);
+	long totalPages = sysconf(_SC_PHYS_PAGES);
+	long freePages = sysconf(_SC_AVPHYS_PAGES);
+
+	*total = (pageSize > 0 && totalPages > 0) ? (uint64_t)pageSize * (uint64_t)totalPages : 0;
+	*available = (pageSize > 0 && freePages > 0) ? (uint64_t)pageSize * (uint64_t)freePages : 0;
 }

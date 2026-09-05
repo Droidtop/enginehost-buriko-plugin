@@ -2,9 +2,11 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "engine.h"
 #include "opcodes.h"
 #include "opcodes_sys0.h"
+#include "os.h"
 #include "thread.h"
 
 char* OpcodesSys0Mnemonics[256] = {
@@ -20,8 +22,8 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x09   9 */ "--Unknown--",
 	/* 0x0A  10 */ "Unknown_10",
 	/* 0x0B  11 */ "Unknown_11",
-	/* 0x0C  12 */ "Unknown_12",
-	/* 0x0D  13 */ "Unknown_13",
+	/* 0x0C  12 */ "GetLocalTime",
+	/* 0x0D  13 */ "GetPhysicalMemory",
 	/* 0x0E  14 */ "Unknown_14",
 	/* 0x0F  15 */ "IsWindowActive",
 	/* 0x10  16 */ "Unknown_16",
@@ -279,8 +281,8 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x09   9 */ NULL,
 	/* 0x0A  10 */ Opcode_Sys0_Unknown_10,
 	/* 0x0B  11 */ Opcode_Sys0_Unknown_11,
-	/* 0x0C  12 */ Opcode_Sys0_Unknown_12,
-	/* 0x0D  13 */ Opcode_Sys0_Unknown_13,
+	/* 0x0C  12 */ Opcode_Sys0_GetLocalTime,
+	/* 0x0D  13 */ Opcode_Sys0_GetPhysicalMemory,
 	/* 0x0E  14 */ Opcode_Sys0_Unknown_14,
 	/* 0x0F  15 */ Opcode_Sys0_IsWindowActive,
 	/* 0x10  16 */ Opcode_Sys0_Unknown_16,
@@ -567,14 +569,49 @@ uint32_t Opcode_Sys0_Unknown_11(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_12(Thread_t* thread)
+// Sys0 0x0C (fureraba.exe 0x00488080) pops one script address, resolves it with the
+// engine's own address resolver at 0x0048DF60 and hands the host pointer straight to
+// GetLocalTime. So the script buffer receives a SYSTEMTIME: eight 16-bit fields in
+// the order year, month, day of week, day, hour, minute, second, millisecond. The
+// original writes local time, not UTC.
+uint32_t Opcode_Sys0_GetLocalTime(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint16_t* out = (uint16_t*)Thread_PopAndResolveAddress(thread);
+	if(out == NULL)
+		return 1;
+
+	struct timespec now;
+	clock_gettime(CLOCK_REALTIME, &now);
+
+	struct tm local;
+	localtime_r(&now.tv_sec, &local);
+
+	out[0] = (uint16_t)(local.tm_year + 1900);
+	out[1] = (uint16_t)(local.tm_mon + 1);
+	out[2] = (uint16_t)local.tm_wday;
+	out[3] = (uint16_t)local.tm_mday;
+	out[4] = (uint16_t)local.tm_hour;
+	out[5] = (uint16_t)local.tm_min;
+	out[6] = (uint16_t)local.tm_sec;
+	out[7] = (uint16_t)(now.tv_nsec / 1000000);
+
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_13(Thread_t* thread)
+// Sys0 0x0D (fureraba.exe 0x004880A0) fills a MEMORYSTATUS with GlobalMemoryStatus
+// and pushes two of its fields: dwTotalPhys first, then dwAvailPhys, so the script
+// pops the available figure first. Both are clamped to 0x7FFFFFFF when they do not
+// fit in a signed 32-bit value, which is how the original copes with machines that
+// have 2 GB or more.
+uint32_t Opcode_Sys0_GetPhysicalMemory(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint64_t total = 0;
+	uint64_t available = 0;
+	OS_GetPhysicalMemory(&total, &available);
+
+	Thread_PushStack(thread, total >= 0x80000000ULL ? 0x7FFFFFFF : (uint32_t)total);
+	Thread_PushStack(thread, available >= 0x80000000ULL ? 0x7FFFFFFF : (uint32_t)available);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_14(Thread_t* thread)

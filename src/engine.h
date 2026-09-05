@@ -61,6 +61,22 @@ extern int gMousePosY;
 extern int gMousePosPending;
 void Engine_SetMousePosition(int x, int y);
 
+extern uint32_t gGrp1FlagUnknown13;
+void Engine_SetGrp1FlagUnknown13(uint32_t value);
+
+typedef struct FontSubstitution
+{
+	char* name;
+	char* replacement;
+	struct FontSubstitution* next;
+} FontSubstitution_t;
+
+extern FontSubstitution_t* gFontSubstitutions;
+extern char* gFontSubstitutionDefault;
+void Engine_SetFontSubstitution(const char* name, const char* replacement);
+const char* Engine_GetFontSubstitution(const char* name);
+uint32_t Engine_EnumerateFontFamilies(char* buffer);
+
 int Engine_InitGlobalMemory(Engine_t* engine, uint32_t level);
 
 uint32_t Engine_AllocAuxMemory(Engine_t* engine, uint32_t size);

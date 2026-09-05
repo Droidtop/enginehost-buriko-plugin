@@ -203,10 +203,10 @@ char* OpcodesExt0Mnemonics[256] = {
     /* 0xC1 193 */ "--Unknown--",
     /* 0xC2 194 */ "--Unknown--",
     /* 0xC3 195 */ "--Unknown--",
-    /* 0xC4 196 */ "--Unknown--",
+    /* 0xC4 196 */ "EnumerateFontFamilies",
     /* 0xC5 197 */ "--Unknown--",
     /* 0xC6 198 */ "--Unknown--",
-    /* 0xC7 199 */ "--Unknown--",
+    /* 0xC7 199 */ "SetFontSubstitution",
     /* 0xC8 200 */ "--Unknown--",
     /* 0xC9 201 */ "--Unknown--",
     /* 0xCA 202 */ "--Unknown--",
@@ -462,10 +462,10 @@ OpcodePtr_t OpcodesExt0[256] = {
     /* 0xC1 193 */ NULL,
     /* 0xC2 194 */ NULL,
     /* 0xC3 195 */ NULL,
-    /* 0xC4 196 */ NULL,
+    /* 0xC4 196 */ Opcode_Ext0_EnumerateFontFamilies,
     /* 0xC5 197 */ NULL,
     /* 0xC6 198 */ NULL,
-    /* 0xC7 199 */ NULL,
+    /* 0xC7 199 */ Opcode_Ext0_SetFontSubstitution,
     /* 0xC8 200 */ NULL,
     /* 0xC9 201 */ NULL,
     /* 0xCA 202 */ NULL,
@@ -523,6 +523,22 @@ OpcodePtr_t OpcodesExt0[256] = {
     /* 0xFE 254 */ NULL,
     /* 0xFF 255 */ NULL,
 };
+
+uint32_t Opcode_Ext0_EnumerateFontFamilies(Thread_t* thread)
+{
+	char* buffer = (char*)Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, Engine_EnumerateFontFamilies(buffer));
+	return 0;
+}
+
+uint32_t Opcode_Ext0_SetFontSubstitution(Thread_t* thread)
+{
+	const char* replacement = (const char*)Thread_PopAndResolveAddress(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+	printf("[Thread %d]: %sSubstitute font %s with %s\n", thread->threadId, TLevel[thread->level], name != NULL ? name : "(default)", replacement != NULL ? replacement : "(none)");
+	Engine_SetFontSubstitution(name, replacement);
+	return 0;
+}
 
 uint32_t Opcode_Ext0_Unknown_0(Thread_t* thread)
 {

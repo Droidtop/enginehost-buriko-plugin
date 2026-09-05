@@ -20,7 +20,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x0A  10 */ "--Unknown--",
     /* 0x0B  11 */ "--Unknown--",
     /* 0x0C  12 */ "--Unknown--",
-    /* 0x0D  13 */ "--Unknown--",
+    /* 0x0D  13 */ "Unknown_13",
     /* 0x0E  14 */ "--Unknown--",
     /* 0x0F  15 */ "--Unknown--",
     /* 0x10  16 */ "Unknown_16",
@@ -279,7 +279,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x0A  10 */ NULL,
     /* 0x0B  11 */ NULL,
     /* 0x0C  12 */ NULL,
-    /* 0x0D  13 */ NULL,
+    /* 0x0D  13 */ Opcode_Grp1_Unknown_13,
     /* 0x0E  14 */ NULL,
     /* 0x0F  15 */ NULL,
     /* 0x10  16 */ Opcode_Grp1_Unknown_16,
@@ -523,6 +523,13 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0xFE 254 */ NULL,
     /* 0xFF 255 */ NULL,
 };
+
+uint32_t Opcode_Grp1_Unknown_13(Thread_t* thread)
+{
+	uint32_t value = Thread_PopStack(thread);
+	Engine_SetGrp1FlagUnknown13(value);
+	return 0;
+}
 
 uint32_t Opcode_Grp1_Unknown_16(Thread_t* thread)
 {

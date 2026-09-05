@@ -9,6 +9,7 @@
 #include "arc.h"
 #include "renderer.h"
 #include "golden_log.h"
+#include "font.h"
 #include "os.h"
 
 void Engine_Init(Engine_t* engine)
@@ -564,6 +565,111 @@ void Engine_SetMousePosition(int x, int y)
 	gMousePosX = x;
 	gMousePosY = y;
 	gMousePosPending = 1;
+}
+
+// Grp1 0x0D (fureraba.exe 0x004808D0 -> 0x00469100 -> 0x0042DD10) pops one value
+// into the global at 0x00565B60 and pushes nothing. The single reader, at
+// 0x0042E1F2, is a gate: when the global is zero the routine keeps the value it has
+// just computed, and when it is non-zero it consults 0x0042DC40 and discards that
+// value if the query answers 2. What the option is called is not established from
+// the binary, so it keeps the engine's numbering.
+uint32_t gGrp1FlagUnknown13 = 0;
+void Engine_SetGrp1FlagUnknown13(uint32_t value)
+{
+	gGrp1FlagUnknown13 = value;
+}
+
+// Ext0 0xC7 (fureraba.exe 0x00479440 -> 0x004690E0 -> 0x0042D900) fills the engine's
+// font substitution table: a singly linked list of { name, replacement } whose head
+// is 0x00565B5C, plus a fallback replacement at 0x00565B4C used when a name is not
+// listed. The text path at 0x0042DF60 is what identifies it: when the face name a
+// script asked for does not match the one already selected, it looks the name up
+// through 0x0042ECB0 and draws with whatever comes back. A NULL name sets the
+// fallback instead of an entry, and a NULL replacement clears the entry's own
+// replacement without removing the entry - both are the original's behaviour.
+FontSubstitution_t* gFontSubstitutions = NULL;
+char* gFontSubstitutionDefault = NULL;
+
+static char* Engine_DupString(const char* str)
+{
+	if(str == NULL)
+		return NULL;
+	char* copy = (char*)malloc(strlen(str) + 1);
+	if(copy != NULL)
+		strcpy(copy, str);
+	return copy;
+}
+
+void Engine_SetFontSubstitution(const char* name, const char* replacement)
+{
+	if(name == NULL)
+	{
+		free(gFontSubstitutionDefault);
+		gFontSubstitutionDefault = Engine_DupString(replacement);
+		return;
+	}
+
+	FontSubstitution_t* entry = gFontSubstitutions;
+	while(entry != NULL && strcmp(entry->name, name) != 0)
+		entry = entry->next;
+
+	if(entry == NULL)
+	{
+		entry = (FontSubstitution_t*)malloc(sizeof(FontSubstitution_t));
+		if(entry == NULL)
+			return;
+		entry->name = Engine_DupString(name);
+		entry->replacement = NULL;
+		entry->next = gFontSubstitutions;
+		gFontSubstitutions = entry;
+	}
+	else
+	{
+		free(entry->replacement);
+		entry->replacement = NULL;
+	}
+
+	entry->replacement = Engine_DupString(replacement);
+}
+
+const char* Engine_GetFontSubstitution(const char* name)
+{
+	for(FontSubstitution_t* entry = gFontSubstitutions; entry != NULL; entry = entry->next)
+	{
+		if(strcmp(entry->name, name) == 0)
+			return entry->replacement != NULL ? entry->replacement : gFontSubstitutionDefault;
+	}
+	return gFontSubstitutionDefault;
+}
+
+// Ext0 0xC4 (fureraba.exe 0x004793E0 -> 0x004690D0 -> 0x0042DBC0) enumerates the
+// installed font families. The original walks EnumFontFamiliesEx with an all-zero
+// LOGFONT, so it sees every family, and its callback at 0x0042ED30 keeps three
+// running totals: how many families it saw, where to write the next name, and how
+// many bytes the names take with their terminators. Which of those it returns
+// depends on the argument: with no buffer it returns the byte count, so a script can
+// size a buffer, and with a buffer it fills it with NUL-terminated names and returns
+// how many it wrote. Fureraba calls it both ways in that order.
+uint32_t Engine_EnumerateFontFamilies(char* buffer)
+{
+	Font_Init();
+
+	uint32_t count = Font_GetFamilyCount();
+	uint32_t bytes = 0;
+
+	for(uint32_t i = 0; i < count; i++)
+	{
+		const char* name = Font_GetFamilyName(i);
+		size_t length = strlen(name) + 1;
+		if(buffer != NULL)
+		{
+			memcpy(buffer, name, length);
+			buffer += length;
+		}
+		bytes += (uint32_t)length;
+	}
+
+	return buffer != NULL ? count : bytes;
 }
 
 int Engine_InitGlobalMemory(Engine_t* engine, uint32_t level)
