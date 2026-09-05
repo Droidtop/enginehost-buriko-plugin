@@ -19,6 +19,7 @@ uint32_t Opcode_Jump(Thread_t* thread);
 uint32_t Opcode_CondJump(Thread_t* thread);
 uint32_t Opcode_Add(Thread_t* thread);
 uint32_t Opcode_Sys0(Thread_t* thread);
+uint32_t Opcode_Sys1(Thread_t* thread);
 uint32_t Opcode_Grp0(Thread_t* thread);
 uint32_t Opcode_Grp1(Thread_t* thread);
 uint32_t Opcode_Grp2(Thread_t* thread);

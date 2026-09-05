@@ -14,7 +14,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x03   3 */ "Unknown_0x03",
 	/* 0x04   4 */ "Unknown_4",
 	/* 0x05   5 */ "Unknown_5",
-	/* 0x06   6 */ "--Unknown--",
+	/* 0x06   6 */ "SetMousePosition",
 	/* 0x07   7 */ "--Unknown--",
 	/* 0x08   8 */ "Unknown_8",
 	/* 0x09   9 */ "Unknown_9",
@@ -273,7 +273,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x03   3 */ Opcode_Grp0_Unknown_0x03,
 	/* 0x04   4 */ Opcode_Grp0_Unknown_4,
 	/* 0x05   5 */ Opcode_Grp0_Unknown_5,
-	/* 0x06   6 */ NULL,
+	/* 0x06   6 */ Opcode_Grp0_SetMousePosition,
 	/* 0x07   7 */ NULL,
 	/* 0x08   8 */ Opcode_Grp0_Unknown_8,
 	/* 0x09   9 */ Opcode_Grp0_Unknown_9,
@@ -536,6 +536,14 @@ uint32_t Opcode_Grp0_StopRendering(Thread_t* thread)
 {
 	uint32_t value1 = Thread_PopStack(thread);
 	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	return 0;
+}
+
+uint32_t Opcode_Grp0_SetMousePosition(Thread_t* thread)
+{
+	int y = (int)Thread_PopStack(thread);
+	int x = (int)Thread_PopStack(thread);
+	Engine_SetMousePosition(x, y);
 	return 0;
 }
 

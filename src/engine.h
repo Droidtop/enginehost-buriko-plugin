@@ -46,6 +46,21 @@ void Engine_Init(Engine_t* engine);
 extern uint32_t gUnknownVal001;
 void SetGlobalUnknownVal001(uint32_t value);
 
+extern uint32_t gIdleWaitTime;
+void Engine_SetIdleWaitTime(uint32_t value);
+
+extern uint32_t gDisplayModeWidth[8];
+extern uint32_t gDisplayModeHeight[8];
+uint32_t Engine_SetDisplayModeSize(uint32_t index, uint32_t width, uint32_t height);
+
+extern uint32_t gDisplayFlagUnknown98;
+uint32_t Engine_SetDisplayFlagUnknown98(uint32_t value);
+
+extern int gMousePosX;
+extern int gMousePosY;
+extern int gMousePosPending;
+void Engine_SetMousePosition(int x, int y);
+
 int Engine_InitGlobalMemory(Engine_t* engine, uint32_t level);
 
 uint32_t Engine_AllocAuxMemory(Engine_t* engine, uint32_t size);

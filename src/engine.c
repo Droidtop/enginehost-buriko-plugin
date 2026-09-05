@@ -29,6 +29,12 @@ void Engine_Init(Engine_t* engine)
 	engine->nextThreadRequest = 0;
 	engine->renderer = Renderer_Init(engine);
 	engine->window = NULL;
+	// The original engine allocates global memory before it runs a line of script:
+	// its startup path at 0x0046D340 calls the same allocator the InitGlobalMem
+	// opcode uses (0x0046BD10) with level 4, i.e. 0x1000 << 4 = 64 KiB. Scripts
+	// rely on that; ipl._bp reads global memory long before it calls InitGlobalMem,
+	// and without this the read resolves against a NULL base.
+	Engine_InitGlobalMemory(engine, 4);
 	printf("[Engine]: Engine initialised\n");
 }
 
@@ -492,6 +498,72 @@ uint32_t gUnknownVal001 = 0;
 void SetGlobalUnknownVal001(uint32_t value)
 {
 	gUnknownVal001 = value;
+}
+
+// Sys0 0x52 in the original engine (fureraba.exe 0x004891D0) pops one value and
+// stores it in a global at 0x00503EF8. The only consumer is the main loop
+// (0x0048CE1E): when no timed event is pending it passes this value to the frame
+// wait (0x00493C70 -> 0x004528A0), which turns it into a SetWaitableTimer delay of
+// n milliseconds (0.5 ms for the special case n == 1). Zero means "do not sleep on
+// this path", and the loop falls back to its own one-millisecond wait.
+uint32_t gIdleWaitTime = 0;
+void Engine_SetIdleWaitTime(uint32_t value)
+{
+	gIdleWaitTime = value;
+}
+
+// Sys1 0x60 (fureraba.exe 0x0048C260 -> 0x004611C0) fills one of the engine's eight
+// display-mode slots. The original keeps two parallel eight-entry arrays, widths at
+// 0x00506B8C and heights at 0x00506BAC; the window-creation path at 0x004612A0 reads
+// slot 0x00506B88 out of them and adds the window border extents before sizing the
+// window, which is what identifies the two arrays as width and height. The return
+// value is a status the script reads back: 1 for a slot out of range, 2 if either
+// dimension is zero, 0 on success. Nothing is written in the two failure cases.
+uint32_t gDisplayModeWidth[8] = { 0 };
+uint32_t gDisplayModeHeight[8] = { 0 };
+uint32_t Engine_SetDisplayModeSize(uint32_t index, uint32_t width, uint32_t height)
+{
+	if(index >= 8)
+		return 1;
+	if(width == 0 || height == 0)
+		return 2;
+	gDisplayModeWidth[index] = width;
+	gDisplayModeHeight[index] = height;
+	return 0;
+}
+
+// Sys1 0x62 (fureraba.exe 0x0048C2C0 -> 0x0045E9B0) sets a display flag at
+// 0x0050721C, rejecting anything above 1 and reporting success as 1 / failure as 0.
+// Two places read it back through the getter at 0x0045E9D0: the adapter chooser at
+// 0x0045E670 only walks IDirect3D9::GetAdapterMonitor to find the adapter holding
+// the game window when the flag is 1, and the dialog scopes at 0x00460140 and
+// 0x0045F6A0 only call IDirect3DDevice9::SetDialogBoxMode when it is 0. What the
+// game calls this option is not established from the binary, so it keeps the
+// engine's own numbering.
+uint32_t gDisplayFlagUnknown98 = 0;
+uint32_t Engine_SetDisplayFlagUnknown98(uint32_t value)
+{
+	if(value > 1)
+		return 0;
+	gDisplayFlagUnknown98 = value;
+	return 1;
+}
+
+// Grp0 0x06 (fureraba.exe 0x004796B0 -> 0x00461FB0 -> 0x00442F50) moves the mouse
+// cursor. It writes x and y into the input object at +0x40 and +0x44 and raises the
+// pending flag at +0x4C of its child object, so the move is applied by the input
+// pump rather than immediately. The reader at 0x00442F70 only hands the position
+// back when both coordinates are inside the client area, which is what pins +0x40
+// as x and +0x44 as y. The original stores the request unclamped; the clamp is on
+// the read side, so this does the same.
+int gMousePosX = 0;
+int gMousePosY = 0;
+int gMousePosPending = 0;
+void Engine_SetMousePosition(int x, int y)
+{
+	gMousePosX = x;
+	gMousePosY = y;
+	gMousePosPending = 1;
 }
 
 int Engine_InitGlobalMemory(Engine_t* engine, uint32_t level)

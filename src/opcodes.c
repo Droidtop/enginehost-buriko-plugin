@@ -4,6 +4,7 @@
 #include <string.h>
 #include "opcodes.h"
 #include "opcodes_sys0.h"
+#include "opcodes_sys1.h"
 #include "opcodes_grp0.h"
 #include "opcodes_grp1.h"
 #include "opcodes_grp2.h"
@@ -143,7 +144,7 @@ char* OpcodesMnemonics[256] = {
 	/* 0x7E 126 */ "Unknown",
 	/* 0x7F 127 */ "Unknown",
 	/* 0x80 128 */ "Sys0",
-	/* 0x81 129 */ "Unknown",
+	/* 0x81 129 */ "Sys1",
 	/* 0x82 130 */ "Unknown",
 	/* 0x83 131 */ "Unknown",
 	/* 0x84 132 */ "Unknown",
@@ -402,7 +403,7 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0x7E 126 */ 0,
 	/* 0x7F 127 */ 0,
 	/* 0x80 128 */ Opcode_Sys0,
-	/* 0x81 129 */ 0,
+	/* 0x81 129 */ Opcode_Sys1,
 	/* 0x82 130 */ 0,
 	/* 0x83 131 */ 0,
 	/* 0x84 132 */ 0,
@@ -683,6 +684,24 @@ uint32_t Opcode_Sys0(Thread_t* thread)
 		return 0xFFFFFFFF;
 	}
 	uint32_t res = OpcodesSys0[opcode](thread);
+	thread->level--;
+	return res;
+}
+
+uint32_t Opcode_Sys1(Thread_t* thread)
+{
+	uint8_t opcode = Thread_ReadCode8(thread);
+	thread->inBasicOpcode = 0;
+	thread->opcode = (thread->opcode << 8) | opcode;
+	printf("[Thread %d]: %sSys1 Executing opcode Sys1.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesSys1Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
+	thread->level++;
+	if(OpcodesSys1[opcode] == NULL)
+	{
+		thread->level--;
+		printf("[Thread %d]: %sError: opcode 0x81%.2X (%d) not implemented\n", thread->threadId, TLevel[thread->level], opcode, opcode);
+		return 0xFFFFFFFF;
+	}
+	uint32_t res = OpcodesSys1[opcode](thread);
 	thread->level--;
 	return res;
 }

@@ -90,7 +90,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x4F  79 */ "--Unknown--",
 	/* 0x50  80 */ "Unknown_80",
 	/* 0x51  81 */ "--Unknown--",
-	/* 0x52  82 */ "--Unknown--",
+	/* 0x52  82 */ "SetIdleWaitTime",
 	/* 0x53  83 */ "--Unknown--",
 	/* 0x54  84 */ "Unknown_84",
 	/* 0x55  85 */ "--Unknown--",
@@ -349,7 +349,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x4F  79 */ NULL,
 	/* 0x50  80 */ Opcode_Sys0_Unknown_80,
 	/* 0x51  81 */ NULL,
-	/* 0x52  82 */ NULL,
+	/* 0x52  82 */ Opcode_Sys0_SetIdleWaitTime,
 	/* 0x53  83 */ NULL,
 	/* 0x54  84 */ Opcode_Sys0_Unknown_84,
 	/* 0x55  85 */ NULL,
@@ -1071,6 +1071,13 @@ uint32_t Opcode_Sys0_Unknown_103(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
+
+uint32_t Opcode_Sys0_SetIdleWaitTime(Thread_t* thread)
+{
+	uint32_t value = Thread_PopStack(thread);
+	Engine_SetIdleWaitTime(value);
+	return 0;
+}
 
 uint32_t Opcode_Sys0_SetGlobalUnknownVal001(Thread_t* thread)
 {
