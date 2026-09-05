@@ -27,6 +27,10 @@ struct Memory
 
 
 typedef struct Thread Thread_t;
+// Bit 31 of a thread's flags, which the scheduler sets when the thread's
+// outermost frame returns. Same bit the original sets at 0x0048D06C.
+#define THREAD_FLAG_TERMINATED 0x80000000
+
 struct Thread
 {
 	uint32_t programId;

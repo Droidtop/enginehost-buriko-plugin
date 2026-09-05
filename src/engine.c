@@ -349,6 +349,18 @@ void Engine_Sleep(int microseconds)
 }
 
 int totalTicks = 0;
+// A thread that has ended stays in the list so its id still resolves, but it must
+// never be scheduled again.
+static int Engine_HasRunnableThread(Engine_t* engine)
+{
+	for(Thread_t* thread = engine->threads; thread != NULL; thread = thread->previousThread)
+	{
+		if(!(thread->flags & THREAD_FLAG_TERMINATED))
+			return 1;
+	}
+	return 0;
+}
+
 void Engine_Execute(Engine_t* engine)
 {
 	engine->isRunning = 1;
@@ -389,6 +401,20 @@ void Engine_Execute(Engine_t* engine)
 			nextThread = Engine_GetThreadById(engine, thread->threadId + 1);
 		if(nextThread == NULL)
 			nextThread = Engine_GetThreadById(engine, 2);
+
+		if(!Engine_HasRunnableThread(engine))
+		{
+			printf("[Engine]: Every thread has ended.\n");
+			engine->isRunning = 0;
+			break;
+		}
+		while(nextThread == NULL || (nextThread->flags & THREAD_FLAG_TERMINATED))
+		{
+			uint32_t after = (nextThread == NULL) ? 1 : nextThread->threadId;
+			nextThread = Engine_GetThreadById(engine, after + 1);
+			if(nextThread == NULL)
+				nextThread = Engine_GetThreadById(engine, 2);
+		}
 		thread = nextThread;
 	}
 	printf("[Engine]: Engine stopped. Executed %d ticks...\n", totalTicks);
@@ -437,9 +463,20 @@ void Engine_ExecuteThread(Engine_t* engine, uint32_t threadId, int ticks)
 			engine->isRunning = 0;
 			break;
 		}
+		// Result 4 is the outermost frame returning: the thread is over. The
+		// original handles it at 0x0048D06C by setting bit 31 of the thread's flags
+		// word at +0x70 and, unlike a yield, staying where it is instead of stepping
+		// on; the scheduler sees the mark on its next visit and unlinks the thread.
+		if(res == 4)
+		{
+			thread->flags |= THREAD_FLAG_TERMINATED;
+			thread->running = 0;
+			printf("[Engine]: Thread %d has ended.\n", thread->threadId);
+			break;
+		}
 		if(res != 0 && res != 1 && res != 2 && res != 3)
 		{
-			printf("[Engine]: Non-zero result from opcode. Stopping.\n");
+			printf("[Engine]: Non-zero result from opcode (%u / 0x%.8X). Stopping.\n", res, res);
 			engine->isRunning = 0;
 			break;
 		}
