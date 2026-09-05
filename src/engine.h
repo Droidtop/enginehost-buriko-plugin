@@ -184,6 +184,10 @@ int Engine_DefineUserInstruction(Engine_t* engine, uint32_t number, const char* 
 int Engine_UndefineUserInstruction(uint32_t number);
 void Engine_FreeUserInstructions(void);
 
+extern uint32_t gLoadWaitTimeout;
+extern uint32_t gLoadWaitDeadline;
+void Engine_SetLoadWaitTimeout(uint32_t timeout);
+
 #define ENGINE_GAME_ID_SIZE 16
 extern char gGameId[ENGINE_GAME_ID_SIZE];
 void Engine_SetGameId(const char* id);

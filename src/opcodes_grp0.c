@@ -16,7 +16,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x04   4 */ "Unknown_4",
 	/* 0x05   5 */ "Unknown_5",
 	/* 0x06   6 */ "SetMousePosition",
-	/* 0x07   7 */ "--Unknown--",
+	/* 0x07   7 */ "SetLoadWaitTimeout",
 	/* 0x08   8 */ "Unknown_8",
 	/* 0x09   9 */ "Unknown_9",
 	/* 0x0A  10 */ "Unknown_10",
@@ -275,7 +275,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x04   4 */ Opcode_Grp0_Unknown_4,
 	/* 0x05   5 */ Opcode_Grp0_Unknown_5,
 	/* 0x06   6 */ Opcode_Grp0_SetMousePosition,
-	/* 0x07   7 */ NULL,
+	/* 0x07   7 */ Opcode_Grp0_SetLoadWaitTimeout,
 	/* 0x08   8 */ Opcode_Grp0_Unknown_8,
 	/* 0x09   9 */ Opcode_Grp0_Unknown_9,
 	/* 0x0A  10 */ Opcode_Grp0_Unknown_10,
@@ -1879,4 +1879,13 @@ uint32_t Opcode_Grp0_Unknown_252(Thread_t* thread)
 uint32_t Opcode_Grp0_Unknown_253(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
+}
+
+// Grp0 0x07 (0x004796E0) sets how long the loader may keep waiting for something that
+// is not ready yet. It pops one value and pushes nothing.
+uint32_t Opcode_Grp0_SetLoadWaitTimeout(Thread_t* thread)
+{
+	uint32_t timeout = Thread_PopStack(thread);
+	Engine_SetLoadWaitTimeout(timeout);
+	return 0;
 }

@@ -1772,3 +1772,34 @@ void Engine_Free(Engine_t* engine)
 		gSearchPaths = next;
 	}
 }
+
+// Grp0 0x07 (0x004796E0) pops one value and hands it to 0x00402070, which stores it
+// at 0x00565AE0 and clears the companion at 0x00565AE4. The pair is a wait window,
+// and its only consumer is Grp0 0x10 (0x00479960), the loader: the poll at
+// 0x00402080 is called with the loader's own "not ready" answer and behaves as
+//
+//   if(timeout > 0)
+//   {
+//       if(deadline == 0) { deadline = now + timeout; return 1; }  // start waiting
+//       if(ready) return 1;                                        // nothing to wait for
+//       if(deadline > now) return 1;                               // still inside the window
+//       deadline = 0; return 0;                                    // window expired
+//   }
+//   if(!ready) deadline = 0;
+//   return ready;
+//
+// so a timeout of zero means "do not wait at all" and the loader's answer passes
+// straight through. Setting the timeout always restarts the window, which is why the
+// deadline is cleared here rather than recomputed: the first poll arms it.
+uint32_t gLoadWaitTimeout = 0;
+uint32_t gLoadWaitDeadline = 0;
+
+void Engine_SetLoadWaitTimeout(uint32_t timeout)
+{
+	gLoadWaitTimeout = timeout;
+	gLoadWaitDeadline = 0;
+	if(timeout == 0)
+		printf("[Engine]: Load wait window disabled\n");
+	else
+		printf("[Engine]: Load wait window set to %u ms\n", timeout);
+}
