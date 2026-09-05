@@ -67,7 +67,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x36  54 */ "EnableSearchPaths",
 	/* 0x37  55 */ "AddSearchPath",
 	/* 0x38  56 */ "Unknown_56",
-	/* 0x39  57 */ "--Unknown--",
+	/* 0x39  57 */ "SetUserDirectory",
 	/* 0x3A  58 */ "Unknown_58",
 	/* 0x3B  59 */ "Unknown_59",
 	/* 0x3C  60 */ "Unknown_60",
@@ -326,7 +326,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x36  54 */ Opcode_Sys0_EnableSearchPaths,
 	/* 0x37  55 */ Opcode_Sys0_AddSearchPath,
 	/* 0x38  56 */ Opcode_Sys0_Unknown_56,
-	/* 0x39  57 */ NULL,
+	/* 0x39  57 */ Opcode_Sys0_SetUserDirectory,
 	/* 0x3A  58 */ Opcode_Sys0_Unknown_58,
 	/* 0x3B  59 */ Opcode_Sys0_Unknown_59,
 	/* 0x3C  60 */ Opcode_Sys0_Unknown_60,
@@ -1615,4 +1615,11 @@ uint32_t Opcode_Sys0_IsLauncher(Thread_t* thread)
 uint32_t Opcode_Sys0_Unknown_254(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
+}
+
+uint32_t Opcode_Sys0_SetUserDirectory(Thread_t* thread)
+{
+	const char* path = (const char*)Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, Engine_SetUserDirectory(path));
+	return 0;
 }

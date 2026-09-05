@@ -1143,6 +1143,51 @@ void Engine_FreeUserInstructions(void)
 		Engine_UndefineUserInstruction(i);
 }
 
+// Sys0 0x39 (fureraba.exe 0x00488B80 -> 0x0046B510) points the engine at a directory
+// and answers whether it took. The original asks GetFileAttributesA for the path and
+// refuses it unless it exists and has the directory bit set - so, unlike Sys0 0x34,
+// this one wants a directory and nothing else. It then stores the path in the buffer
+// at 0x00518978, appending a separator with "%s\" unless the path already ends in
+// one, and pushes 1; a path that is not a directory is stored nowhere and pushes 0.
+char gUserDirectory[512] = { 0 };
+
+int Engine_SetUserDirectory(const char* path)
+{
+	if(path == NULL || path[0] == 0)
+		return 0;
+
+	char resolved[512];
+	int length = snprintf(resolved, sizeof(resolved), "%s", path);
+	if(length < 0 || length >= (int)sizeof(resolved))
+		return 0;
+	for(char* c = resolved; *c != 0; c++)
+	{
+		if(*c == '\\')
+			*c = '/';
+	}
+
+	struct stat info;
+	if(stat(resolved, &info) != 0 || !S_ISDIR(info.st_mode))
+	{
+		printf("[Engine]: \"%s\" is not a directory\n", path);
+		return 0;
+	}
+
+	// The original keeps the trailing separator so the path can be pasted straight
+	// in front of a file name. Separators are '/' here, as everywhere else.
+	if(length > 0 && resolved[length - 1] != '/')
+	{
+		if(length + 1 >= (int)sizeof(resolved))
+			return 0;
+		resolved[length] = '/';
+		resolved[length + 1] = 0;
+	}
+
+	strcpy(gUserDirectory, resolved);
+	printf("[Engine]: User directory is now \"%s\"\n", gUserDirectory);
+	return 1;
+}
+
 SearchPathNode_t* gSearchPaths = NULL;
 void Engine_AddSearchPath(char* path)
 {

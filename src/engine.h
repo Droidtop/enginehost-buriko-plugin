@@ -143,6 +143,9 @@ void Engine_SetEnableSearchPaths(int value);
 
 int Engine_FileExists(const char* archive, const char* filename);
 
+extern char gUserDirectory[512];
+int Engine_SetUserDirectory(const char* path);
+
 #define USER_INSTRUCTION_COUNT 0xF0
 typedef struct UserInstruction UserInstruction_t;
 struct UserInstruction
