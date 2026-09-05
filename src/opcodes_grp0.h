@@ -27,7 +27,7 @@ uint32_t Opcode_Grp0_Unknown_0x13(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_20(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_21(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_22(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_24(Thread_t* thread);
+uint32_t Opcode_Grp0_BlitBitmap(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_25(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_26(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_27(Thread_t* thread);

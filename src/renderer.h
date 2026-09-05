@@ -70,6 +70,18 @@ void Renderer_DestroyBitmap(Renderer_t* renderer, int id);
 uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filename, const char* archive);
 // 0 on success, 1 invalid destination, 2 invalid source, 3 invalid range (0x004033A0).
 int Renderer_CopyBitmap(Renderer_t* renderer, int destination, int source, int offsetX, int offsetY, int width, int height);
+// The original's own blend modes (0x0040AC9C), of which these are written.
+#define BITMAP_BLEND_ALPHA        0x00
+// The same, with a uniform transparency on top (0x0040B320); 0x20 shares it.
+#define BITMAP_BLEND_ALPHA_TRANS  0x01
+#define BITMAP_BLEND_ALPHA_TRANS2 0x20
+#define BITMAP_BLEND_COPY         0x80
+// Draws the source onto the destination with its top left corner at (x, y)
+// (0x00402720). 0 on success, 1 no destination, 2 no source, 3 incompatible
+// pixel modes, 4 nothing left after clipping (success to the caller), 5 a blend
+// mode that is not written yet, 6 a transparency that mode 0x01 does not take yet.
+int Renderer_BlitBitmap(Renderer_t* renderer, int destination, int x, int y,
+                        int source, int mode, int transparency);
 // The whole of one bitmap, its offset pair included, into another slot
 // (0x00403450). 0 on success, 1 invalid destination, 2 invalid source.
 int Renderer_DuplicateBitmap(Renderer_t* renderer, int destination, int source);

@@ -33,7 +33,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x15  21 */ "Unknown_21",
 	/* 0x16  22 */ "Unknown_22",
 	/* 0x17  23 */ "--Unknown--",
-	/* 0x18  24 */ "Unknown_24",
+	/* 0x18  24 */ "BlitBitmap",
 	/* 0x19  25 */ "Unknown_25",
 	/* 0x1A  26 */ "Unknown_26",
 	/* 0x1B  27 */ "Unknown_27",
@@ -292,7 +292,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x15  21 */ Opcode_Grp0_Unknown_21,
 	/* 0x16  22 */ Opcode_Grp0_Unknown_22,
 	/* 0x17  23 */ NULL,
-	/* 0x18  24 */ Opcode_Grp0_Unknown_24,
+	/* 0x18  24 */ Opcode_Grp0_BlitBitmap,
 	/* 0x19  25 */ Opcode_Grp0_Unknown_25,
 	/* 0x1A  26 */ Opcode_Grp0_Unknown_26,
 	/* 0x1B  27 */ Opcode_Grp0_Unknown_27,
@@ -731,9 +731,59 @@ uint32_t Opcode_Grp0_Unknown_22(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_24(Thread_t* thread)
+/*
+ * Grp0 0x18 (0x00479DF0 -> 0x00402720) draws one bitmap onto another. The script
+ * pushes the destination, the position, the source, the blend mode and the
+ * transparency,
+ * so they pop back to front; the original checks the two bitmap numbers, the mode and
+ * the opacity before it resolves anything (0x00497CF0, 0x00497DD0, 0x00497F40).
+ * A missing destination, a missing source and a pixel-mode pair that cannot work
+ * together are fatal (0x004E8558, 0x004E858C, 0x004E85C0); a blit that clips away to
+ * nothing is not, and the original returns quietly from it.
+ */
+uint32_t Opcode_Grp0_BlitBitmap(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int transparency = (int)Thread_PopStack(thread);
+	int mode        = (int)Thread_PopStack(thread);
+	int source      = (int)Thread_PopStack(thread);
+	int y           = (int)Thread_PopStack(thread);
+	int x           = (int)Thread_PopStack(thread);
+	int destination = (int)Thread_PopStack(thread);
+
+	if(transparency < 0 || transparency > 0x100)
+	{
+		printf("[Thread %d]: %sError: an invalid effect level / transparency / opacity / addition level [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], transparency);
+		return 0xFFFFFFFF;
+	}
+
+	Engine_t* engine = thread->engine;
+	switch(Renderer_BlitBitmap(engine->renderer, destination, x, y, source, mode, transparency))
+	{
+		case 0:
+		case 4: // clipped away to nothing, which the original lets through
+			return 0;
+		case 1:
+			printf("[Thread %d]: %sError: the specified destination bitmap [ %d ] does not exist\n",
+			       thread->threadId, TLevel[thread->level], destination);
+			return 0xFFFFFFFF;
+		case 2:
+			printf("[Thread %d]: %sError: the specified source bitmap [ %d ] does not exist\n",
+			       thread->threadId, TLevel[thread->level], source);
+			return 0xFFFFFFFF;
+		case 3:
+			printf("[Thread %d]: %sError: the pixel modes of destination bitmap [ %d ] and source bitmap [ %d ] are not compatible\n",
+			       thread->threadId, TLevel[thread->level], destination, source);
+			return 0xFFFFFFFF;
+		case 6:
+			printf("[Thread %d]: %sError: blend mode [ 0x%02X ] does not take transparency [ %d ] yet\n",
+			       thread->threadId, TLevel[thread->level], mode, transparency);
+			return 0xFFFFFFFF;
+		default:
+			printf("[Thread %d]: %sError: blend mode [ 0x%02X ] is not written yet\n",
+			       thread->threadId, TLevel[thread->level], mode);
+			return 0xFFFFFFFF;
+	}
 }
 
 uint32_t Opcode_Grp0_Unknown_25(Thread_t* thread)

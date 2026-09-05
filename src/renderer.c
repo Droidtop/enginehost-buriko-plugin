@@ -351,6 +351,136 @@ uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filenam
  * (offsetX, offsetY, width, height) rectangle. Source pixels outside the source stay
  * as the fresh bitmap's cleared bytes.
  */
+/*
+ * 0x0040A9A0: two pixel modes work together when they are the same, or when one is
+ * 24-bit and the other 32-bit. Anything else is the original's fatal "the pixel modes
+ * of destination [ %d ] and source [ %d ] are not compatible".
+ */
+static int Renderer_ModesCompatible(int destinationMode, int sourceMode)
+{
+	if(destinationMode == sourceMode)
+		return 1;
+	if(destinationMode == BITMAP_MODE_24 && sourceMode == BITMAP_MODE_32)
+		return 1;
+	if(destinationMode == BITMAP_MODE_32 && sourceMode == BITMAP_MODE_24)
+		return 1;
+	return 0;
+}
+
+// 0x0040B200: source over destination, both 32-bit, in the original's fixed point.
+static uint32_t Renderer_BlendOver(uint32_t destination, uint32_t source)
+{
+	uint32_t sa = source >> 24;
+	if(sa == 0)
+		return destination;
+	if(sa == 0xFF)
+		return source;
+
+	uint32_t da = destination >> 24;
+	uint32_t inv = 0x100 - sa;
+	uint32_t denominator = (sa << 8) + da * inv;
+	uint32_t destinationWeight = ((da * inv) << 8) / denominator;
+	uint32_t sourceWeight = (sa << 16) / denominator;
+
+	uint32_t out = (denominator >> 8) << 24;
+	for(int channel = 0; channel < 3; channel++)
+	{
+		uint32_t d = (destination >> (channel * 8)) & 0xFF;
+		uint32_t s = (source >> (channel * 8)) & 0xFF;
+		uint32_t v = (d * destinationWeight + s * sourceWeight) >> 8;
+		if(v > 0xFF)
+			v = 0xFF;
+		out |= v << (channel * 8);
+	}
+	return out;
+}
+
+// 0x0040B130: source over an opaque destination, on a 7-bit alpha.
+static uint32_t Renderer_BlendOverOpaque(uint32_t destination, uint32_t source)
+{
+	uint32_t a = (source >> 25) & 0x7F;
+	if(a == 0)
+		return destination;
+	if(a == 0x7F)
+		return source & 0x00FFFFFF;
+
+	uint32_t out = destination & 0xFF000000;
+	for(int channel = 0; channel < 3; channel++)
+	{
+		int d = (int)((destination >> (channel * 8)) & 0xFF);
+		int s = (int)((source >> (channel * 8)) & 0xFF);
+		int v = d + (((s - d) * (int)a) >> 7);
+		if(v < 0)
+			v = 0;
+		if(v > 0xFF)
+			v = 0xFF;
+		out |= (uint32_t)v << (channel * 8);
+	}
+	return out;
+}
+
+int Renderer_BlitBitmap(Renderer_t* renderer, int destination, int x, int y,
+                        int source, int mode, int transparency)
+{
+	Bitmap_t* dst = Renderer_ResolveBitmap(renderer, destination);
+	if(dst == NULL)
+		return 1;
+	Bitmap_t* src = Renderer_ResolveBitmap(renderer, source);
+	if(src == NULL)
+		return 2;
+	if(!Renderer_ModesCompatible(dst->mode, src->mode))
+		return 3;
+	if(mode == BITMAP_BLEND_ALPHA_TRANS || mode == BITMAP_BLEND_ALPHA_TRANS2)
+	{
+		// 0x0040B320: no transparency at all is mode 0x00, and full transparency
+		// draws nothing; what lies between is 0x0040B6F0, which is not read yet.
+		if(transparency >= 0x100)
+			return 4;
+		if(transparency != 0)
+			return 6;
+		mode = BITMAP_BLEND_ALPHA;
+	}
+	if(mode != BITMAP_BLEND_ALPHA && mode != BITMAP_BLEND_COPY)
+		return 5;
+	if(Renderer_ModePixelBytes(dst->mode) != 4)
+		return 5;
+
+	// The intersection 0x0040A530 takes, in the destination's coordinates.
+	int left   = x < 0 ? 0 : x;
+	int top    = y < 0 ? 0 : y;
+	int right  = x + src->width;
+	int bottom = y + src->height;
+	if(right > dst->width)
+		right = dst->width;
+	if(bottom > dst->height)
+		bottom = dst->height;
+	if(left >= right || top >= bottom)
+		return 4;
+
+	// 0x0040B080 and 0x0040AF50: what happens per pixel is decided once, by the mode
+	// and the two pixel modes, not per pixel.
+	int blend = (mode == BITMAP_BLEND_ALPHA && src->mode == BITMAP_MODE_32);
+	int destinationIsOpaque = (dst->mode == BITMAP_MODE_24);
+
+	for(int row = top; row < bottom; row++)
+	{
+		uint32_t* dstRow = (uint32_t*)(dst->bitmap + (size_t)row * dst->stride);
+		uint32_t* srcRow = (uint32_t*)(src->bitmap + (size_t)(row - y) * src->stride);
+		for(int column = left; column < right; column++)
+		{
+			uint32_t pixel = srcRow[column - x];
+			if(blend)
+				pixel = destinationIsOpaque
+				      ? Renderer_BlendOverOpaque(dstRow[column], pixel)
+				      : Renderer_BlendOver(dstRow[column], pixel);
+			else if(destinationIsOpaque)
+				pixel |= 0xFF000000;
+			dstRow[column] = pixel;
+		}
+	}
+	return 0;
+}
+
 int Renderer_DuplicateBitmap(Renderer_t* renderer, int destination, int source)
 {
 	Bitmap_t* src = Renderer_ResolveBitmap(renderer, source);
