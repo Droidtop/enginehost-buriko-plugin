@@ -124,6 +124,9 @@ void Engine_SetWindowTitle(const char* title);
 
 extern int gCursorShape;
 
+extern int gWindowVisible;
+void Engine_SetWindowVisible(uint32_t visible);
+
 extern int gAudioResumeOnActivate;
 uint32_t Engine_SetAudioResumeOnActivate(uint32_t value);
 

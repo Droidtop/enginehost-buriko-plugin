@@ -110,7 +110,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x61  97 */ "Unknown_97",
 	/* 0x62  98 */ "SetKeySlots",
 	/* 0x63  99 */ "SetScreenMappingModeFlag",
-	/* 0x64 100 */ "Unknown_100",
+	/* 0x64 100 */ "SetWindowVisible",
 	/* 0x65 101 */ "Unknown_101",
 	/* 0x66 102 */ "SetWindowTitle",
 	/* 0x67 103 */ "SetCursorShape",
@@ -369,7 +369,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x61  97 */ Opcode_Sys0_Unknown_97,
 	/* 0x62  98 */ Opcode_Sys0_SetKeySlots,
 	/* 0x63  99 */ Opcode_Sys0_SetScreenMappingModeFlag,
-	/* 0x64 100 */ Opcode_Sys0_Unknown_100,
+	/* 0x64 100 */ Opcode_Sys0_SetWindowVisible,
 	/* 0x65 101 */ Opcode_Sys0_Unknown_101,
 	/* 0x66 102 */ Opcode_Sys0_SetWindowTitle,
 	/* 0x67 103 */ Opcode_Sys0_SetCursorShape,
@@ -1090,9 +1090,11 @@ uint32_t Opcode_Sys0_SetScreenMappingModeFlag(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_100(Thread_t* thread)
+uint32_t Opcode_Sys0_SetWindowVisible(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t visible = Thread_PopStack(thread);
+	Engine_SetWindowVisible(visible);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_101(Thread_t* thread)

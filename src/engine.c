@@ -1002,6 +1002,28 @@ void Engine_SetWindowTitle(const char* title)
 
 int gCursorShape = 0;
 
+// Whether the game window is shown. Sys0 0x64 (0x00489540) pops a value, hands it to
+// 0x0049A300 and then flushes the input state table at 0x0046DBA0. It pushes nothing.
+//
+// 0x0049A300 does nothing at all until graphics are up (0x005666F0). Otherwise a zero
+// hides the window with ShowWindow(SW_HIDE) and a non-zero shows it with
+// ShowWindow(SW_SHOWNORMAL), preceded by a SetWindowPos to the current display size
+// when the pending-reposition flag at 0x00566A6C is set, and followed by a clear of
+// that flag. Either way it records the new state at 0x00566A70 (read back by
+// 0x0049A3B0) and recomputes "this window is the active one" at 0x005666E8 from
+// GetActiveWindow.
+//
+// The flush at 0x0046DBA0 walks 256 entries of 0x18 bytes from 0x00518C98 and zeroes
+// four dwords of each, so no key or button is left looking held across the change.
+// OpenBGI keeps no such table yet; when it does, this is where it is cleared.
+int gWindowVisible = 1;
+
+void Engine_SetWindowVisible(uint32_t visible)
+{
+	gWindowVisible = visible != 0;
+	printf("[Engine]: Set WindowVisible to %d\n", gWindowVisible);
+}
+
 // Whether sound resumes when the window is activated again. Sys1 0x68 (0x0048C370)
 // pops a value, stores it at 0x00566A4C and pushes back what was there before, so it
 // is a swap rather than a plain set and a script can save and restore it.

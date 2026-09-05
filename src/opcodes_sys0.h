@@ -83,7 +83,7 @@ uint32_t Opcode_Sys0_SetDisplayMode(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_97(Thread_t* thread);
 uint32_t Opcode_Sys0_SetKeySlots(Thread_t* thread);
 uint32_t Opcode_Sys0_SetScreenMappingModeFlag(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_100(Thread_t* thread);
+uint32_t Opcode_Sys0_SetWindowVisible(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_101(Thread_t* thread);
 uint32_t Opcode_Sys0_SetCursorShape(Thread_t* thread);
 uint32_t Opcode_Sys0_SetWindowTitle(Thread_t* thread);
