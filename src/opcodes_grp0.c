@@ -5,6 +5,7 @@
 #include "renderer.h"
 #include "opcodes.h"
 #include "opcodes_grp0.h"
+#include "sprite.h"
 #include "thread.h"
 
 char* OpcodesGrp0Mnemonics[256] = {
@@ -88,11 +89,11 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x4D  77 */ "Unknown_77",
 	/* 0x4E  78 */ "--Unknown--",
 	/* 0x4F  79 */ "--Unknown--",
-	/* 0x50  80 */ "Unknown_80",
+	/* 0x50  80 */ "CreateSpriteObject",
 	/* 0x51  81 */ "Unknown_81",
 	/* 0x52  82 */ "--Unknown--",
 	/* 0x53  83 */ "Unknown_83",
-	/* 0x54  84 */ "Unknown_84",
+	/* 0x54  84 */ "SetSpriteVisible",
 	/* 0x55  85 */ "Unknown_85",
 	/* 0x56  86 */ "Unknown_86",
 	/* 0x57  87 */ "Unknown_87",
@@ -347,11 +348,11 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x4D  77 */ Opcode_Grp0_Unknown_77,
 	/* 0x4E  78 */ NULL,
 	/* 0x4F  79 */ NULL,
-	/* 0x50  80 */ Opcode_Grp0_Unknown_80,
+	/* 0x50  80 */ Opcode_Grp0_CreateSpriteObject,
 	/* 0x51  81 */ Opcode_Grp0_Unknown_81,
 	/* 0x52  82 */ NULL,
 	/* 0x53  83 */ Opcode_Grp0_Unknown_83,
-	/* 0x54  84 */ Opcode_Grp0_Unknown_84,
+	/* 0x54  84 */ Opcode_Grp0_SetSpriteVisible,
 	/* 0x55  85 */ Opcode_Grp0_Unknown_85,
 	/* 0x56  86 */ Opcode_Grp0_Unknown_86,
 	/* 0x57  87 */ Opcode_Grp0_Unknown_87,
@@ -928,13 +929,19 @@ uint32_t Opcode_Grp0_Unknown_77(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_80(Thread_t* thread)
+// Grp0 0x50 (0x0047C260 -> 0x004624D0 -> 0x0043E5F0) makes a sprite object and pushes
+// its handle. Running out of slots is fatal in the original, with its own message:
+// "no more sprite objects can be created" (0x004E9384).
+uint32_t Opcode_Grp0_CreateSpriteObject(Thread_t* thread)
 {
-	// CreateSpriteObject
-	uint32_t handle = thread->engine->spriteObjectHandle;
-	thread->engine->spriteObjectHandle++;
+	uint32_t handle = Sprite_Create();
+	if(handle == 0)
+	{
+		printf("[Thread %d]: %sError: no more sprite objects can be created (%d in use)\n", thread->threadId, TLevel[thread->level], SPRITE_SLOT_COUNT);
+		return 0xFFFFFFFF;
+	}
+
 	Thread_PushStack(thread, handle);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
 	return 0;
 }
 
@@ -948,9 +955,22 @@ uint32_t Opcode_Grp0_Unknown_83(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_84(Thread_t* thread)
+// Grp0 0x54 (0x0047C370 -> 0x004626C0 -> 0x0043EF50) shows or hides a sprite. The
+// script pushes the handle and then the flag, so the flag is popped first. A handle
+// that does not resolve is fatal in the original: "an invalid sprite handle was
+// specified" (0x004E7FBC). It pushes nothing back.
+uint32_t Opcode_Grp0_SetSpriteVisible(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t visible = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(!Sprite_SetVisibleByHandle(handle, (int)visible))
+	{
+		printf("[Thread %d]: %sError: an invalid sprite handle was specified (0x%.8X)\n", thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_85(Thread_t* thread)

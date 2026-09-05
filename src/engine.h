@@ -22,7 +22,6 @@ struct Engine
 
     uint32_t windowObjectHandle;
     uint32_t filterObjectHandle;
-    uint32_t spriteObjectHandle;
     uint32_t knobObjectHandle;
 
     uint32_t nextThreadRequest;

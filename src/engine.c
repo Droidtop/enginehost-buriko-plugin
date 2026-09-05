@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include <time.h>
 #include "engine.h"
+#include "sprite.h"
 #include "arc.h"
 #include "renderer.h"
 #include "golden_log.h"
@@ -27,7 +28,6 @@ void Engine_Init(Engine_t* engine)
 	engine->globalMem = NULL;
 	engine->windowObjectHandle = 0xC0000000;
 	engine->filterObjectHandle = 0x90000000;
-	engine->spriteObjectHandle = 0x80000000;
 	engine->knobObjectHandle = 0xE0000000;
 	engine->nextThreadRequest = 0;
 	engine->renderer = Renderer_Init(engine);
@@ -1763,6 +1763,7 @@ void Engine_Free(Engine_t* engine)
 	Renderer_Free(engine->renderer);
 
 	Engine_FreeUserInstructions();
+	Sprite_FreeAll();
 	while(gSearchPaths)
 	{
 		SearchPathNode_t* next = gSearchPaths->next;
