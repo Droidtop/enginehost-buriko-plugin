@@ -161,7 +161,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x97 151 */ "--Unknown--",
     /* 0x98 152 */ "SetPhoneticMargin",
     /* 0x99 153 */ "--Unknown--",
-    /* 0x9A 154 */ "--Unknown--",
+    /* 0x9A 154 */ "SetFunctionParameter",
     /* 0x9B 155 */ "--Unknown--",
     /* 0x9C 156 */ "Unknown_156",
     /* 0x9D 157 */ "Unknown_157",
@@ -420,7 +420,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x97 151 */ NULL,
     /* 0x98 152 */ Opcode_Grp1_SetPhoneticMargin,
     /* 0x99 153 */ NULL,
-    /* 0x9A 154 */ NULL,
+    /* 0x9A 154 */ Opcode_Grp1_SetFunctionParameter,
     /* 0x9B 155 */ NULL,
     /* 0x9C 156 */ Opcode_Grp1_Unknown_156,
     /* 0x9D 157 */ Opcode_Grp1_Unknown_157,
@@ -523,6 +523,25 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0xFE 254 */ NULL,
     /* 0xFF 255 */ NULL,
 };
+
+uint32_t Opcode_Grp1_SetFunctionParameter(Thread_t* thread)
+{
+	int32_t value = (int32_t)Thread_PopStack(thread);
+	uint32_t function = Thread_PopStack(thread);
+
+	uint32_t result = Engine_SetFunctionParameter(function, value);
+	if(result == 0x80000007)
+	{
+		printf("[Thread %d]: %sError: 0x%.8X is not a valid function number\n", thread->threadId, TLevel[thread->level], function);
+		return 0xFFFFFFFF;
+	}
+	if(result == 0x80000008)
+	{
+		printf("[Thread %d]: %sError: %d is not a valid parameter for function 0x%.8X\n", thread->threadId, TLevel[thread->level], value, function);
+		return 0xFFFFFFFF;
+	}
+	return 0;
+}
 
 uint32_t Opcode_Grp1_SetFontAdjust(Thread_t* thread)
 {

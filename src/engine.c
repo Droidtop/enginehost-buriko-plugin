@@ -770,6 +770,36 @@ uint32_t Engine_SetFontAdjust(const char* name, uint32_t scaleX, uint32_t scaleY
 	return 0;
 }
 
+// Grp1 0x9A (fureraba.exe 0x00484A90 -> 0x00463490 -> 0x00434490) sets one of four
+// values by number. The engine calls the selector a "function number" and the value
+// a "function parameter" in its own two error messages, and rejects anything else:
+// an unknown number is fatal, and so is a negative value for function 0x80000001,
+// which is the only one that checks its parameter. The four destinations are
+// 0x0050764C, 0x00565CF4, 0x00507654 and 0x00565D30; what they mean is not
+// established from the binary, so they are held by number here.
+uint32_t gFunctionParameters[4] = { 0 };
+
+uint32_t Engine_SetFunctionParameter(uint32_t function, int32_t value)
+{
+	int slot;
+	switch(function)
+	{
+		case 0x00000000: slot = 0; break;
+		case 0x80000000: slot = 1; break;
+		case 0x80000001:
+			if(value < 0)
+				return 0x80000008;
+			slot = 2;
+			break;
+		case 0x80000002: slot = 3; break;
+		default:
+			return 0x80000007;
+	}
+
+	gFunctionParameters[slot] = (uint32_t)value;
+	return 0;
+}
+
 uint32_t Engine_EnumerateFontFamilies(char* buffer)
 {
 	Font_Init();
@@ -927,6 +957,25 @@ void Engine_SetAntialiasingLevel(int level)
 	printf("[Engine]: Set antialiasing level to %d\n", level);
 
 	return;
+}
+
+// Sys0 0x66 (fureraba.exe 0x00489580) is the window title, not the cursor shape:
+// it resolves one script address and hands the string to SetWindowTextA on the game
+// window, then, if that worked, caches it in a 256-byte buffer at 0x00506A88. A
+// title of 256 characters or more is not cached, though the window still gets it.
+//
+// Sys0 0x67 (0x004895B0) is the cursor shape. It accepts 0 to 4, which the window
+// procedure at 0x00498FBC uses to index the cursor handles at 0x005666C4 before
+// calling SetCursor; anything higher is fatal, with its own message about an invalid
+// mouse cursor shape number.
+char gWindowTitle[256] = { 0 };
+void Engine_SetWindowTitle(const char* title)
+{
+	if(title == NULL)
+		return;
+	if(strlen(title) < sizeof(gWindowTitle))
+		strcpy(gWindowTitle, title);
+	printf("[Engine]: Window title is now \"%s\"\n", title);
 }
 
 int gCursorShape = 0;

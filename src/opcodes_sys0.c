@@ -112,8 +112,8 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x63  99 */ "Unknown_99",
 	/* 0x64 100 */ "Unknown_100",
 	/* 0x65 101 */ "Unknown_101",
-	/* 0x66 102 */ "SetCursorShape",
-	/* 0x67 103 */ "Unknown_103",
+	/* 0x66 102 */ "SetWindowTitle",
+	/* 0x67 103 */ "SetCursorShape",
 	/* 0x68 104 */ "SetGlobalUnknownVal001",
 	/* 0x69 105 */ "Unknown_105",
 	/* 0x6A 106 */ "Unknown_106",
@@ -371,8 +371,8 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x63  99 */ Opcode_Sys0_Unknown_99,
 	/* 0x64 100 */ Opcode_Sys0_Unknown_100,
 	/* 0x65 101 */ Opcode_Sys0_Unknown_101,
-	/* 0x66 102 */ Opcode_Sys0_SetCursorShape,
-	/* 0x67 103 */ Opcode_Sys0_Unknown_103,
+	/* 0x66 102 */ Opcode_Sys0_SetWindowTitle,
+	/* 0x67 103 */ Opcode_Sys0_SetCursorShape,
 	/* 0x68 104 */ Opcode_Sys0_SetGlobalUnknownVal001,
 	/* 0x69 105 */ Opcode_Sys0_Unknown_105,
 	/* 0x6A 106 */ Opcode_Sys0_Unknown_106,
@@ -1104,16 +1104,23 @@ uint32_t Opcode_Sys0_Unknown_101(Thread_t* thread)
 }
 
 
-uint32_t Opcode_Sys0_SetCursorShape(Thread_t* thread)
+uint32_t Opcode_Sys0_SetWindowTitle(Thread_t* thread)
 {
-	uint32_t shapeType = Thread_PopStack(thread);
-	gCursorShape = shapeType;
+	const char* title = (const char*)Thread_PopAndResolveAddress(thread);
+	Engine_SetWindowTitle(title);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_103(Thread_t* thread)
+uint32_t Opcode_Sys0_SetCursorShape(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t shapeType = Thread_PopStack(thread);
+	if(shapeType > 4)
+	{
+		printf("[Thread %d]: %sError: %d is not a valid cursor shape\n", thread->threadId, TLevel[thread->level], shapeType);
+		return 0xFFFFFFFF;
+	}
+	gCursorShape = shapeType;
+	return 0;
 }
 
 

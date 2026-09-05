@@ -5,6 +5,7 @@
 
 typedef struct Thread Thread_t;
 
+uint32_t Opcode_Grp1_SetFunctionParameter(Thread_t* thread);
 uint32_t Opcode_Grp1_SetFontAdjust(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_13(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_16(Thread_t* thread);

@@ -84,6 +84,8 @@ extern char* gFontSubstitutionDefault;
 void Engine_SetFontSubstitution(const char* name, const char* replacement);
 const char* Engine_GetFontSubstitution(const char* name);
 uint32_t Engine_EnumerateFontFamilies(char* buffer);
+extern uint32_t gFunctionParameters[4];
+uint32_t Engine_SetFunctionParameter(uint32_t function, int32_t value);
 void Engine_SetFontCharset(const char* name, int charset);
 extern FontName_t* gFontNames;
 uint32_t Engine_InternFontName(const char* name);
@@ -116,6 +118,9 @@ extern int gAntiAliasing1;
 extern int gAntiAliasing2;
 extern int gAntiAliasing3;
 void Engine_SetAntialiasingLevel(int level);
+
+extern char gWindowTitle[256];
+void Engine_SetWindowTitle(const char* title);
 
 extern int gCursorShape;
 extern int gFlagUnknown10;
