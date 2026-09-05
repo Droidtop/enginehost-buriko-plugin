@@ -6,6 +6,11 @@
 
 Engine_t* osEngine = NULL;
 
+uint32_t OS_GetTicks()
+{
+	return SDL_GetTicks();
+}
+
 int OS_Init(Engine_t* engine)
 {
 	osEngine = engine;

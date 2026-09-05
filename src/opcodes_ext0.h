@@ -10,7 +10,7 @@ uint32_t Opcode_Ext0_EnumerateFontFamilies(Thread_t* thread);
 uint32_t Opcode_Ext0_SetFontSubstitution(Thread_t* thread);
 uint32_t Opcode_Ext0_Unknown_0(Thread_t* thread);
 uint32_t Opcode_Ext0_Unknown_4(Thread_t* thread);
-uint32_t Opcode_Ext0_Unknown_5(Thread_t* thread);
+uint32_t Opcode_Ext0_SetCursorAutoHideTimeout(Thread_t* thread);
 uint32_t Opcode_Ext0_Unknown_8(Thread_t* thread);
 uint32_t Opcode_Ext0_Unknown_16(Thread_t* thread);
 uint32_t Opcode_Ext0_Unknown_17(Thread_t* thread);

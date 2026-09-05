@@ -124,6 +124,14 @@ void Engine_SetWindowTitle(const char* title);
 
 extern int gCursorShape;
 
+extern int gCursorAutoHideTimeout;
+extern int gCursorAutoHideActive;
+extern int gCursorShown;
+extern uint32_t gCursorAutoHideDeadline;
+extern int gCursorLastX;
+extern int gCursorLastY;
+void Engine_SetCursorAutoHideTimeout(uint32_t timeout);
+
 extern int gControlMode;
 uint32_t Engine_SetControlMode(uint32_t mode);
 

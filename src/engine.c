@@ -1002,6 +1002,62 @@ void Engine_SetWindowTitle(const char* title)
 
 int gCursorShape = 0;
 
+// Cursor auto-hide. Ext0 0x05 (0x00478340) pops a timeout in milliseconds and hands
+// it to the setter at 0x0048E9E0. A non-zero timeout arms the mechanism: it records
+// the timeout, sets the deadline to now + timeout (the clock at 0x004988B0, which is
+// timeGetTime or GetTickCount depending on 0x00566A48), marks the cursor as shown,
+// and clears the remembered cursor position to 0x80000000 in both axes so the first
+// sample counts as a move. Re-arming while already active only refreshes the timeout
+// and the deadline. A zero timeout disables it and, if the cursor is currently
+// hidden, shows it again; if the cursor was already shown, nothing else happens.
+//
+// The watcher itself is the per-frame routine at 0x0048EC40. While the window is
+// active it samples the cursor in client coordinates and, if the position changed or
+// left the client area, or any mouse button is down, it shows the cursor and pushes
+// the deadline out again; otherwise, once the deadline passes, it hides the cursor.
+// While the window is not active the cursor is always shown. That watcher is not
+// wired up here: OpenBGI has no per-frame engine tick and no cursor visibility to
+// drive yet, so this records the state the original records and nothing pretends to
+// hide anything.
+#define ENGINE_CURSOR_POSITION_UNKNOWN ((int)0x80000000)
+
+int gCursorAutoHideTimeout = 0;
+int gCursorAutoHideActive = 0;
+int gCursorShown = 0;
+uint32_t gCursorAutoHideDeadline = 0;
+int gCursorLastX = ENGINE_CURSOR_POSITION_UNKNOWN;
+int gCursorLastY = ENGINE_CURSOR_POSITION_UNKNOWN;
+
+void Engine_SetCursorAutoHideTimeout(uint32_t timeout)
+{
+	if(!gCursorAutoHideActive)
+	{
+		if(timeout == 0)
+			return;
+		gCursorAutoHideActive = 1;
+		gCursorShown = 1;
+		gCursorAutoHideTimeout = (int)timeout;
+		gCursorAutoHideDeadline = OS_GetTicks() + timeout;
+		gCursorLastX = ENGINE_CURSOR_POSITION_UNKNOWN;
+		gCursorLastY = ENGINE_CURSOR_POSITION_UNKNOWN;
+		printf("[Engine]: Cursor auto-hide armed at %d ms\n", (int)timeout);
+		return;
+	}
+
+	if(timeout != 0)
+	{
+		gCursorAutoHideTimeout = (int)timeout;
+		gCursorAutoHideDeadline = OS_GetTicks() + timeout;
+		printf("[Engine]: Cursor auto-hide re-armed at %d ms\n", (int)timeout);
+		return;
+	}
+
+	gCursorAutoHideActive = 0;
+	if(!gCursorShown)
+		gCursorShown = 1;
+	printf("[Engine]: Cursor auto-hide disabled\n");
+}
+
 // Ext1 0x1F (fureraba.exe 0x004760A0 -> 0x00491270) selects the engine's "control
 // mode", which is the name its own error message uses. The setter takes 0, 1 or 2
 // and nothing else; a larger number is fatal and names itself in the message.

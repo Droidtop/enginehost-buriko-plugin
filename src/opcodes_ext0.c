@@ -12,7 +12,7 @@ char* OpcodesExt0Mnemonics[256] = {
     /* 0x02   2 */ "--Unknown--",
     /* 0x03   3 */ "--Unknown--",
     /* 0x04   4 */ "Unknown_4",
-    /* 0x05   5 */ "Unknown_5",
+    /* 0x05   5 */ "SetCursorAutoHideTimeout",
     /* 0x06   6 */ "--Unknown--",
     /* 0x07   7 */ "--Unknown--",
     /* 0x08   8 */ "Unknown_8",
@@ -271,7 +271,7 @@ OpcodePtr_t OpcodesExt0[256] = {
     /* 0x02   2 */ NULL,
     /* 0x03   3 */ NULL,
     /* 0x04   4 */ Opcode_Ext0_Unknown_4,
-    /* 0x05   5 */ Opcode_Ext0_Unknown_5,
+    /* 0x05   5 */ Opcode_Ext0_SetCursorAutoHideTimeout,
     /* 0x06   6 */ NULL,
     /* 0x07   7 */ NULL,
     /* 0x08   8 */ Opcode_Ext0_Unknown_8,
@@ -564,9 +564,11 @@ uint32_t Opcode_Ext0_Unknown_4(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Ext0_Unknown_5(Thread_t* thread)
+uint32_t Opcode_Ext0_SetCursorAutoHideTimeout(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t timeout = Thread_PopStack(thread);
+	Engine_SetCursorAutoHideTimeout(timeout);
+	return 0;
 }
 
 uint32_t Opcode_Ext0_Unknown_8(Thread_t* thread)
