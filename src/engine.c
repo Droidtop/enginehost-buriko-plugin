@@ -1015,6 +1015,32 @@ void Engine_SetFlagUnknown1to4(int value)
 	printf("[Engine]: Set FlagUnknown4 to %d\n", value);
 }
 
+// Sys0 0xE8 (fureraba.exe 0x0048ACE0) writes the game's own identifier into the
+// address the script hands it. In the original it is a compile-time constant of the
+// executable, four dwords at 0x004EBDAC that spell "FriendToLoverHD" with its
+// terminator, copied out as exactly 16 bytes; the same constant is handed to the
+// startup call at 0x00472610. Fureraba's ipl script carries two copies of the same
+// literal in its string pool, next to "UserData" and "%s%s", which is how the save
+// files come to be named UserData\FriendToLoverHD000.sud.
+//
+// There is no general place to read it from: it is not in the game's data and not in
+// the executable's version resource, so OpenBGI has to be told it per game. Until it
+// is, this is empty, which is at least honest about not knowing.
+char gGameId[ENGINE_GAME_ID_SIZE] = { 0 };
+
+void Engine_SetGameId(const char* id)
+{
+	memset(gGameId, 0, sizeof(gGameId));
+	if(id == NULL)
+		return;
+	// The original copies a fixed 16 bytes, so an identifier that fills the field
+	// leaves no terminator; do the same rather than truncating to 15.
+	size_t length = strlen(id);
+	if(length > sizeof(gGameId))
+		length = sizeof(gGameId);
+	memcpy(gGameId, id, length);
+}
+
 SearchPathNode_t* gSearchPaths = NULL;
 void Engine_AddSearchPath(char* path)
 {

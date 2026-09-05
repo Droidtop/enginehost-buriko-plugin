@@ -143,6 +143,10 @@ void Engine_SetEnableSearchPaths(int value);
 
 int Engine_FileExists(const char* archive, const char* filename);
 
+#define ENGINE_GAME_ID_SIZE 16
+extern char gGameId[ENGINE_GAME_ID_SIZE];
+void Engine_SetGameId(const char* id);
+
 extern int gFlagUnknown2;
 extern int gFlagUnknown3;
 extern int gFlagUnknown4;

@@ -242,7 +242,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0xE5 229 */ "--Unknown--",
 	/* 0xE6 230 */ "--Unknown--",
 	/* 0xE7 231 */ "--Unknown--",
-	/* 0xE8 232 */ "Unknown_232",
+	/* 0xE8 232 */ "GetGameId",
 	/* 0xE9 233 */ "--Unknown--",
 	/* 0xEA 234 */ "--Unknown--",
 	/* 0xEB 235 */ "--Unknown--",
@@ -501,7 +501,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0xE5 229 */ NULL,
 	/* 0xE6 230 */ NULL,
 	/* 0xE7 231 */ NULL,
-	/* 0xE8 232 */ Opcode_Sys0_Unknown_232,
+	/* 0xE8 232 */ Opcode_Sys0_GetGameId,
 	/* 0xE9 233 */ NULL,
 	/* 0xEA 234 */ NULL,
 	/* 0xEB 235 */ NULL,
@@ -1494,9 +1494,12 @@ uint32_t Opcode_Sys0_Unknown_227(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_232(Thread_t* thread)
+uint32_t Opcode_Sys0_GetGameId(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint8_t* destination = Thread_PopAndResolveAddress(thread);
+	memcpy(destination, gGameId, ENGINE_GAME_ID_SIZE);
+	printf("[Thread %d]: %sGame id is \"%.*s\"\n", thread->threadId, TLevel[thread->level], ENGINE_GAME_ID_SIZE, gGameId);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_236(Thread_t* thread)
