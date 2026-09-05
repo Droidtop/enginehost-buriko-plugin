@@ -36,6 +36,12 @@ int main(int argc, char** argv)
 		return 2;
 	}
 
+	// The game's identifier is a constant of each original executable and is not
+	// recorded anywhere in the game's data, so it has to be supplied. Fureraba's
+	// ipl takes a different branch without it and never loads the programs it names.
+	if(argc > 2 && argv[2] != NULL)
+		Engine_SetGameId(argv[2]);
+
 	PrintVersion();
 
 
