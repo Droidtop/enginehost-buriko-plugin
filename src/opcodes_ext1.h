@@ -17,6 +17,7 @@ uint32_t Opcode_Ext1_Unknown_12(Thread_t* thread);
 uint32_t Opcode_Ext1_Unknown_13(Thread_t* thread);
 uint32_t Opcode_Ext1_Unknown_15(Thread_t* thread);
 uint32_t Opcode_Ext1_Unknown_16(Thread_t* thread);
+uint32_t Opcode_Ext1_SetControlMode(Thread_t* thread);
 uint32_t Opcode_Ext1_Unknown_32(Thread_t* thread);
 uint32_t Opcode_Ext1_Unknown_36(Thread_t* thread);
 uint32_t Opcode_Ext1_Unknown_37(Thread_t* thread);

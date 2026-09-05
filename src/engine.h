@@ -123,6 +123,9 @@ extern char gWindowTitle[256];
 void Engine_SetWindowTitle(const char* title);
 
 extern int gCursorShape;
+
+extern int gControlMode;
+uint32_t Engine_SetControlMode(uint32_t mode);
 extern int gFlagUnknown10;
 void Engine_SetFlagUnknown10(int value);
 

@@ -979,6 +979,30 @@ void Engine_SetWindowTitle(const char* title)
 }
 
 int gCursorShape = 0;
+
+// Ext1 0x1F (fureraba.exe 0x004760A0 -> 0x00491270) selects the engine's "control
+// mode", which is the name its own error message uses. The setter takes 0, 1 or 2
+// and nothing else; a larger number is fatal and names itself in the message.
+//
+// The mode is read by the routine at 0x00490F90, which Ext1 0x18, 0x24 and 0x2C all
+// call, and it decides how that routine derives its second 16.16 rate from a total
+// (t) and two counts (a, b). The first rate is always (t << 16) / a; the second is
+//   mode 0: (t << 16) / b                      - the two counts are rated apart
+//   mode 1: (t << 16) / (a + b) - (t << 16) / a - the shortfall against the pair
+//   mode 2: ((t << 16) / a) * b / a            - the first rate scaled by b / a
+// A zero divisor anywhere makes the whole result zero rather than faulting, and
+// mode 1's second rate is a signed difference, so it is normally negative.
+// An unset mode is 0, which is what the engine starts in.
+int gControlMode = 0;
+
+uint32_t Engine_SetControlMode(uint32_t mode)
+{
+	if(mode > 2)
+		return 0;
+	gControlMode = (int)mode;
+	printf("[Engine]: Set ControlMode to %d\n", (int)mode);
+	return 1;
+}
 int gFlagUnknown10 = 0;
 void Engine_SetFlagUnknown10(int value)
 {
