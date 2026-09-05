@@ -119,7 +119,7 @@ char* OpcodesSys1Mnemonics[256] = {
 	/* 0x65 101 */ "Unknown_101",
 	/* 0x66 102 */ "--Unknown--",
 	/* 0x67 103 */ "--Unknown--",
-	/* 0x68 104 */ "Unknown_104",
+	/* 0x68 104 */ "SetAudioResumeOnActivate",
 	/* 0x69 105 */ "Unknown_105",
 	/* 0x6A 106 */ "Unknown_106",
 	/* 0x6B 107 */ "Unknown_107",
@@ -378,7 +378,7 @@ OpcodePtr_t OpcodesSys1[256] = {
 	/* 0x65 101 */ Opcode_Sys1_Unknown_101,
 	/* 0x66 102 */ NULL,
 	/* 0x67 103 */ NULL,
-	/* 0x68 104 */ Opcode_Sys1_Unknown_104,
+	/* 0x68 104 */ Opcode_Sys1_SetAudioResumeOnActivate,
 	/* 0x69 105 */ Opcode_Sys1_Unknown_105,
 	/* 0x6A 106 */ Opcode_Sys1_Unknown_106,
 	/* 0x6B 107 */ Opcode_Sys1_Unknown_107,
@@ -780,9 +780,11 @@ uint32_t Opcode_Sys1_Unknown_101(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys1_Unknown_104(Thread_t* thread)
+uint32_t Opcode_Sys1_SetAudioResumeOnActivate(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value = Thread_PopStack(thread);
+	Thread_PushStack(thread, Engine_SetAudioResumeOnActivate(value));
+	return 0;
 }
 
 uint32_t Opcode_Sys1_Unknown_105(Thread_t* thread)

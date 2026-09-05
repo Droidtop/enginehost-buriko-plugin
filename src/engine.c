@@ -1002,6 +1002,30 @@ void Engine_SetWindowTitle(const char* title)
 
 int gCursorShape = 0;
 
+// Whether sound resumes when the window is activated again. Sys1 0x68 (0x0048C370)
+// pops a value, stores it at 0x00566A4C and pushes back what was there before, so it
+// is a swap rather than a plain set and a script can save and restore it.
+//
+// The flag is read in two places. The window activation handler at 0x00499020 stops
+// every sound object in the list at 0x005076C8 whenever the window is deactivated,
+// but restarts them on activation only through 0x00461E10, which does nothing at all
+// unless this flag is set. The idle bookkeeping at 0x00498900 also consults it before
+// stamping a resume time. Nothing gates the per-frame sound update at 0x00461E00,
+// which the frame loop calls at 0x0048CDB9 either way.
+//
+// OpenBGI has neither the sound object list nor the activation handler yet, so the
+// flag is only recorded here; there is nothing for it to gate.
+int gAudioResumeOnActivate = 0;
+
+uint32_t Engine_SetAudioResumeOnActivate(uint32_t value)
+{
+	uint32_t previous = (uint32_t)gAudioResumeOnActivate;
+	gAudioResumeOnActivate = (int)value;
+	printf("[Engine]: Set AudioResumeOnActivate to %d (was %d)\n",
+		(int)value, (int)previous);
+	return previous;
+}
+
 // Cursor auto-hide. Ext0 0x05 (0x00478340) pops a timeout in milliseconds and hands
 // it to the setter at 0x0048E9E0. A non-zero timeout arms the mechanism: it records
 // the timeout, sets the deadline to now + timeout (the clock at 0x004988B0, which is
