@@ -32,6 +32,14 @@
 int CBG_IsCompressedBG(const uint8_t* file, size_t size);
 
 /*
+ * The image's own offset pair, which the original's loader reads straight out of
+ * the header at 0x00401F80: the u16 at 0x1A is a flag and the u16s at 0x1C and
+ * 0x1E are the offset. Returns 0 and leaves the outputs alone when the flag is
+ * not set, which is the usual case.
+ */
+int CBG_ReadOffset(const uint8_t* file, size_t size, int* outX, int* outY);
+
+/*
  * Decodes into a freshly allocated buffer of width * height * (bits / 8) bytes, or
  * returns NULL and leaves the outputs alone when the file is not a well-formed
  * CompressedBG. Never partially succeeds.

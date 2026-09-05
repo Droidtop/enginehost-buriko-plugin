@@ -4,6 +4,7 @@
 #include "engine.h"
 #include "opcodes.h"
 #include "opcodes_grp1.h"
+#include "renderer.h"
 #include "thread.h"
 
 char* OpcodesGrp1Mnemonics[256] = {
@@ -38,7 +39,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x1C  28 */ "Unknown_28",
     /* 0x1D  29 */ "--Unknown--",
     /* 0x1E  30 */ "Unknown_30",
-    /* 0x1F  31 */ "Unknown_31",
+    /* 0x1F  31 */ "DuplicateBitmap",
     /* 0x20  32 */ "--Unknown--",
     /* 0x21  33 */ "--Unknown--",
     /* 0x22  34 */ "--Unknown--",
@@ -297,7 +298,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x1C  28 */ Opcode_Grp1_Unknown_28,
     /* 0x1D  29 */ NULL,
     /* 0x1E  30 */ Opcode_Grp1_Unknown_30,
-    /* 0x1F  31 */ Opcode_Grp1_Unknown_31,
+    /* 0x1F  31 */ Opcode_Grp1_DuplicateBitmap,
     /* 0x20  32 */ NULL,
     /* 0x21  33 */ NULL,
     /* 0x22  34 */ NULL,
@@ -619,9 +620,32 @@ uint32_t Opcode_Grp1_Unknown_30(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_31(Thread_t* thread)
+/*
+ * Grp1 0x1F (0x00481A50 -> 0x00403450) makes one bitmap a copy of another. The
+ * source pops first and the destination second; the destination is created at the
+ * source's own size and pixel mode, the whole surface is copied, and the source's
+ * offset pair goes with it. Both failures are fatal in the original and name the
+ * bitmap that caused them (0x004E8B74, 0x004E8B44).
+ */
+uint32_t Opcode_Grp1_DuplicateBitmap(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int source      = (int)Thread_PopStack(thread);
+	int destination = (int)Thread_PopStack(thread);
+
+	Engine_t* engine = thread->engine;
+	switch(Renderer_DuplicateBitmap(engine->renderer, destination, source))
+	{
+		case 0:
+			return 0;
+		case 1:
+			printf("[Thread %d]: %sError: the specified destination bitmap [ %d ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], destination);
+			return 0xFFFFFFFF;
+		default:
+			printf("[Thread %d]: %sError: the specified source bitmap [ %d ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], source);
+			return 0xFFFFFFFF;
+	}
 }
 
 uint32_t Opcode_Grp1_Unknown_51(Thread_t* thread)

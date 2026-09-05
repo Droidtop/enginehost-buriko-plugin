@@ -41,6 +41,10 @@ typedef struct Bitmap
 	int mode;
 	int stride;
 	uint8_t* bitmap;
+	// The pair at +0x28 / +0x2C of the original's table entry: an offset carried
+	// with the image, set by the loader from the image header (0x00401F80).
+	int offsetX;
+	int offsetY;
 } Bitmap_t;
 
 typedef struct Engine Engine_t;
@@ -66,6 +70,9 @@ void Renderer_DestroyBitmap(Renderer_t* renderer, int id);
 uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filename, const char* archive);
 // 0 on success, 1 invalid destination, 2 invalid source, 3 invalid range (0x004033A0).
 int Renderer_CopyBitmap(Renderer_t* renderer, int destination, int source, int offsetX, int offsetY, int width, int height);
+// The whole of one bitmap, its offset pair included, into another slot
+// (0x00403450). 0 on success, 1 invalid destination, 2 invalid source.
+int Renderer_DuplicateBitmap(Renderer_t* renderer, int destination, int source);
 uint32_t Renderer_CreateScreen(Renderer_t* renderer, int width, int height);
 void Renderer_DestroyScreen(Renderer_t* renderer, uint32_t handle);
 void Renderer_DrawBitmapToScreen(Renderer_t* renderer, uint32_t bitmapId, int screenId);

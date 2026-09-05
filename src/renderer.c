@@ -236,6 +236,10 @@ Bitmap_t* Renderer_CreateBitmap(Renderer_t* renderer, int id, int width, int hei
 	bitmap->height = height;
 	bitmap->mode   = mode;
 	bitmap->stride = width * pixelBytes;
+	// 0x00407DA0 rewrites only the first eight fields of the table entry, so a slot
+	// that is recreated keeps the offset it already had.
+	bitmap->offsetX = renderer->bitmaps[id] != NULL ? renderer->bitmaps[id]->offsetX : 0;
+	bitmap->offsetY = renderer->bitmaps[id] != NULL ? renderer->bitmaps[id]->offsetY : 0;
 	bitmap->bitmap = (uint8_t*)calloc(1, (size_t)bitmap->stride * (size_t)height);
 	if(bitmap->bitmap == NULL)
 	{
@@ -267,11 +271,14 @@ uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filenam
 	int width = 0;
 	int height = 0;
 	int bits = 0;
+	int offsetX = 0;
+	int offsetY = 0;
 	uint8_t* pixels = NULL;
 
 	if(CBG_IsCompressedBG(file, fileSize))
 	{
 		pixels = CBG_Decode(file, fileSize, &width, &height, &bits);
+		CBG_ReadOffset(file, fileSize, &offsetX, &offsetY);
 	}
 	else if(fileSize > 4 && file[0] == 0x89 && file[1] == 'P' && file[2] == 'N' && file[3] == 'G')
 	{
@@ -307,6 +314,8 @@ uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filenam
 		free(pixels);
 		return 0x80000008; // "not enough memory"
 	}
+	bitmap->offsetX = offsetX;
+	bitmap->offsetY = offsetY;
 
 	int pixelBytes = Renderer_ModePixelBytes(mode);
 	if(bits / 8 == pixelBytes)
@@ -342,6 +351,28 @@ uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filenam
  * (offsetX, offsetY, width, height) rectangle. Source pixels outside the source stay
  * as the fresh bitmap's cleared bytes.
  */
+int Renderer_DuplicateBitmap(Renderer_t* renderer, int destination, int source)
+{
+	Bitmap_t* src = Renderer_ResolveBitmap(renderer, source);
+	if(src == NULL)
+		return 2;
+
+	int offsetX = src->offsetX;
+	int offsetY = src->offsetY;
+	Bitmap_t* dst = Renderer_CreateBitmap(renderer, destination, src->width, src->height, src->mode);
+	if(dst == NULL)
+		return 1;
+
+	// Same size, same mode, so the whole surface goes across in one piece; the
+	// source is re-resolved because the destination may have been the same slot.
+	src = Renderer_ResolveBitmap(renderer, source);
+	if(src != NULL && src != dst)
+		memcpy(dst->bitmap, src->bitmap, (size_t)dst->stride * (size_t)dst->height);
+	dst->offsetX = offsetX;
+	dst->offsetY = offsetY;
+	return 0;
+}
+
 int Renderer_CopyBitmap(Renderer_t* renderer, int destination, int source, int offsetX, int offsetY, int width, int height)
 {
 	Bitmap_t* src = Renderer_ResolveBitmap(renderer, source);

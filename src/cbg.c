@@ -281,3 +281,16 @@ uint8_t* CBG_Decode(const uint8_t* file, size_t size, int* outWidth, int* outHei
 	*outBits   = (int)bits;
 	return out;
 }
+
+int CBG_ReadOffset(const uint8_t* file, size_t size, int* outX, int* outY)
+{
+	if(!CBG_IsCompressedBG(file, size) || size < 0x30)
+		return 0;
+	if(((uint16_t)file[0x1A] | ((uint16_t)file[0x1B] << 8)) != 1)
+		return 0;
+	if(outX != NULL)
+		*outX = (int)((uint16_t)file[0x1C] | ((uint16_t)file[0x1D] << 8));
+	if(outY != NULL)
+		*outY = (int)((uint16_t)file[0x1E] | ((uint16_t)file[0x1F] << 8));
+	return 1;
+}

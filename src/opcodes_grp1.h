@@ -18,7 +18,7 @@ uint32_t Opcode_Grp1_Unknown_24(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_25(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_28(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_30(Thread_t* thread);
-uint32_t Opcode_Grp1_Unknown_31(Thread_t* thread);
+uint32_t Opcode_Grp1_DuplicateBitmap(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_51(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_64(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_65(Thread_t* thread);
