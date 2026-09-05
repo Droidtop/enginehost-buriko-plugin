@@ -123,6 +123,11 @@ void Engine_SetWindowTitle(const char* title);
 
 extern int gCursorShape;
 
+// 0x00507204. Set, the mouse wheel goes to the objects registered as wheel
+// targets; clear, the window turns it into key 0x0E (down) and 0x0F (up).
+// The original's startup sets it at 0x0048CC30, before a line of script runs.
+extern int gWheelToObjects;
+
 uint32_t Engine_CreateRecordTable(uint32_t recordSize, uint32_t* idOut);
 uint32_t Engine_DestroyRecordTable(uint32_t id);
 uint32_t Engine_SetRecord(uint32_t id, const char* key, const uint8_t* value);

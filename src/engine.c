@@ -15,6 +15,8 @@
 #include "font.h"
 #include "os.h"
 
+int gWheelToObjects = 1;
+
 void Engine_Init(Engine_t* engine)
 {
 	engine->threadCounter = 2;

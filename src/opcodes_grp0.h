@@ -151,7 +151,7 @@ uint32_t Opcode_Grp0_Unknown_217(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_218(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_219(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_220(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_221(Thread_t* thread);
+uint32_t Opcode_Grp0_SetWheelToObjects(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_222(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_223(Thread_t* thread);
 uint32_t Opcode_Grp0_CreateGroupObject(Thread_t* thread);

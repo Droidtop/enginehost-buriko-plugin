@@ -230,7 +230,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xDA 218 */ "Unknown_218",
 	/* 0xDB 219 */ "Unknown_219",
 	/* 0xDC 220 */ "Unknown_220",
-	/* 0xDD 221 */ "Unknown_221",
+	/* 0xDD 221 */ "SetWheelToObjects",
 	/* 0xDE 222 */ "Unknown_222",
 	/* 0xDF 223 */ "Unknown_223",
 	/* 0xE0 224 */ "CreateGroupObject",
@@ -489,7 +489,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xDA 218 */ Opcode_Grp0_Unknown_218,
 	/* 0xDB 219 */ Opcode_Grp0_Unknown_219,
 	/* 0xDC 220 */ Opcode_Grp0_Unknown_220,
-	/* 0xDD 221 */ Opcode_Grp0_Unknown_221,
+	/* 0xDD 221 */ Opcode_Grp0_SetWheelToObjects,
 	/* 0xDE 222 */ Opcode_Grp0_Unknown_222,
 	/* 0xDF 223 */ Opcode_Grp0_Unknown_223,
 	/* 0xE0 224 */ Opcode_Grp0_CreateGroupObject,
@@ -1938,9 +1938,19 @@ uint32_t Opcode_Grp0_Unknown_220(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_221(Thread_t* thread)
+uint32_t Opcode_Grp0_SetWheelToObjects(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x00480050: exchange, not assign - the old setting is what it pushes,
+	// so a script can put back what it found.
+	int value = (int)Thread_PopStack(thread);
+	int previous = gWheelToObjects;
+	gWheelToObjects = value;
+	printf("[Thread %d]: %sThe mouse wheel goes to %s (it went to %s)\n",
+	       thread->threadId, TLevel[thread->level],
+	       value ? "the registered objects" : "the keyboard as 0x0E and 0x0F",
+	       previous ? "the registered objects" : "the keyboard as 0x0E and 0x0F");
+	Thread_PushStack(thread, (uint32_t)previous);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_222(Thread_t* thread)
