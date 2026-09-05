@@ -124,6 +124,10 @@ void Engine_SetWindowTitle(const char* title);
 
 extern int gCursorShape;
 
+uint32_t Engine_CreateRecordTable(uint32_t recordSize, uint32_t* idOut);
+uint32_t Engine_DestroyRecordTable(uint32_t id);
+uint32_t Engine_SetRecord(uint32_t id, const char* key, const uint8_t* value);
+
 extern int gWindowVisible;
 void Engine_SetWindowVisible(uint32_t visible);
 

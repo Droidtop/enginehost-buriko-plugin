@@ -218,9 +218,9 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0xCD 205 */ "--Unknown--",
 	/* 0xCE 206 */ "--Unknown--",
 	/* 0xCF 207 */ "--Unknown--",
-	/* 0xD0 208 */ "Unknown_208",
-	/* 0xD1 209 */ "Unknown_209",
-	/* 0xD2 210 */ "Unknown_210",
+	/* 0xD0 208 */ "CreateRecordTable",
+	/* 0xD1 209 */ "DestroyRecordTable",
+	/* 0xD2 210 */ "SetRecord",
 	/* 0xD3 211 */ "Unknown_211",
 	/* 0xD4 212 */ "Unknown_212",
 	/* 0xD5 213 */ "--Unknown--",
@@ -477,9 +477,9 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0xCD 205 */ NULL,
 	/* 0xCE 206 */ NULL,
 	/* 0xCF 207 */ NULL,
-	/* 0xD0 208 */ Opcode_Sys0_Unknown_208,
-	/* 0xD1 209 */ Opcode_Sys0_Unknown_209,
-	/* 0xD2 210 */ Opcode_Sys0_Unknown_210,
+	/* 0xD0 208 */ Opcode_Sys0_CreateRecordTable,
+	/* 0xD1 209 */ Opcode_Sys0_DestroyRecordTable,
+	/* 0xD2 210 */ Opcode_Sys0_SetRecord,
 	/* 0xD3 211 */ Opcode_Sys0_Unknown_211,
 	/* 0xD4 212 */ Opcode_Sys0_Unknown_212,
 	/* 0xD5 213 */ NULL,
@@ -1448,23 +1448,32 @@ uint32_t Opcode_Sys0_Unknown_197(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_208(Thread_t* thread)
+uint32_t Opcode_Sys0_CreateRecordTable(Thread_t* thread)
 {
-	uint32_t data = Thread_PopStack(thread);
-	uint8_t* ptr = Thread_PopAndResolveAddress(thread);
-	Thread_PushStack(thread, 0);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t recordSize = Thread_PopStack(thread);
+	uint8_t* idOut = Thread_PopAndResolveAddress(thread);
+	uint32_t id = 0;
+	uint32_t result = Engine_CreateRecordTable(recordSize, &id);
+	if(result == 0)
+		memcpy(idOut, &id, sizeof(id));
+	Thread_PushStack(thread, result);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_209(Thread_t* thread)
+uint32_t Opcode_Sys0_DestroyRecordTable(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, Engine_DestroyRecordTable(id));
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_210(Thread_t* thread)
+uint32_t Opcode_Sys0_SetRecord(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	const uint8_t* value = Thread_PopAndResolveAddress(thread);
+	const char* key = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, Engine_SetRecord(id, key, value));
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_211(Thread_t* thread)

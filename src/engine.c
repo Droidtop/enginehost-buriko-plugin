@@ -1002,6 +1002,141 @@ void Engine_SetWindowTitle(const char* title)
 
 int gCursorShape = 0;
 
+// Named record tables. A script creates a table of fixed-size records keyed by name,
+// then writes records into it by name. The engine keeps them as a singly linked list
+// of tables at 0x005669A4, each 12 bytes: the id, the container, and the next table.
+// Ids come from the counter at 0x0056699C, which is incremented before use, so the
+// first table is 1 and an id is never reused while the engine runs. The container is
+// the 0x14-byte structure initialised by 0x00452910: the record size at +0x00 (with
+// a size of zero replaced by 0x400) and the record list head at +0x10. Each record
+// (0x00452960) is 16 bytes: the key's hash, a copy of the key string, a buffer of
+// exactly one record's bytes, and the next record.
+//
+// The opcodes and the error codes they push back:
+//   Sys0 0xD0 (0x0048A860 -> 0x00496230) create: pops the record size and then the
+//       address to write the new id to. A record size of 0 or 1 is refused with
+//       0x80000001 and nothing is created.
+//   Sys0 0xD1 (0x0048A8A0 -> 0x004962E0) destroy: pops an id. An id that is not
+//       there is 0x80000002.
+//   Sys0 0xD2 (0x0048A8D0 -> 0x00496350) set: pops the address to read the record
+//       from, then the key, then the id. An unknown id is 0x80000002. An existing
+//       key is overwritten in place, a new one is added.
+// Success is 0 in every case. Two more opcodes belong to this family and are not
+// implemented here because nothing has reached them yet: Sys0 0xD3 (0x00496380)
+// looks a key up and answers 0x80000003 when it is missing, and Sys0 0xD4
+// (0x004963B0) reads a record back. Sys0 0xCF builds an 0x28-byte iterator over a
+// table and is a larger piece again.
+
+typedef struct RecordTableEntry
+{
+	char* key;
+	uint8_t* value;
+	struct RecordTableEntry* next;
+} RecordTableEntry_t;
+
+typedef struct RecordTable
+{
+	uint32_t id;
+	uint32_t recordSize;
+	RecordTableEntry_t* entries;
+	struct RecordTable* next;
+} RecordTable_t;
+
+static RecordTable_t* gRecordTables = NULL;
+static uint32_t gRecordTableCounter = 0;
+
+static RecordTable_t* Engine_FindRecordTable(uint32_t id)
+{
+	RecordTable_t* table = gRecordTables;
+	while(table != NULL && table->id != id)
+		table = table->next;
+	return table;
+}
+
+uint32_t Engine_CreateRecordTable(uint32_t recordSize, uint32_t* idOut)
+{
+	RecordTable_t* table;
+
+	// The original refuses a record size of 0 or 1 outright ("cmp edi, 1; jbe").
+	if(recordSize <= 1)
+		return 0x80000001;
+
+	table = (RecordTable_t*)malloc(sizeof(RecordTable_t));
+	if(table == NULL)
+		return 0x80000001;
+
+	table->id = ++gRecordTableCounter;
+	table->recordSize = recordSize;
+	table->entries = NULL;
+	table->next = gRecordTables;
+	gRecordTables = table;
+	*idOut = table->id;
+	printf("[Engine]: Created record table %d, %d bytes per record\n",
+		table->id, recordSize);
+	return 0;
+}
+
+uint32_t Engine_DestroyRecordTable(uint32_t id)
+{
+	RecordTable_t** link = &gRecordTables;
+	RecordTable_t* table;
+
+	while(*link != NULL && (*link)->id != id)
+		link = &(*link)->next;
+	if(*link == NULL)
+		return 0x80000002;
+
+	table = *link;
+	*link = table->next;
+	while(table->entries != NULL)
+	{
+		RecordTableEntry_t* entry = table->entries;
+		table->entries = entry->next;
+		free(entry->key);
+		free(entry->value);
+		free(entry);
+	}
+	free(table);
+	printf("[Engine]: Destroyed record table %d\n", id);
+	return 0;
+}
+
+uint32_t Engine_SetRecord(uint32_t id, const char* key, const uint8_t* value)
+{
+	RecordTable_t* table = Engine_FindRecordTable(id);
+	RecordTableEntry_t* entry;
+
+	if(table == NULL)
+		return 0x80000002;
+
+	for(entry = table->entries; entry != NULL; entry = entry->next)
+	{
+		if(strcmp(entry->key, key) == 0)
+		{
+			memcpy(entry->value, value, table->recordSize);
+			return 0;
+		}
+	}
+
+	entry = (RecordTableEntry_t*)malloc(sizeof(RecordTableEntry_t));
+	if(entry == NULL)
+		return 0x80000002;
+	entry->key = strdup(key);
+	entry->value = (uint8_t*)malloc(table->recordSize);
+	if(entry->key == NULL || entry->value == NULL)
+	{
+		free(entry->key);
+		free(entry->value);
+		free(entry);
+		return 0x80000002;
+	}
+	memcpy(entry->value, value, table->recordSize);
+	entry->next = table->entries;
+	table->entries = entry;
+	printf("[Engine]: Record table %d: added key %s\n", id, key);
+	return 0;
+}
+
 // Whether the game window is shown. Sys0 0x64 (0x00489540) pops a value, hands it to
 // 0x0049A300 and then flushes the input state table at 0x0046DBA0. It pushes nothing.
 //
