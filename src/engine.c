@@ -1055,6 +1055,170 @@ static RecordTable_t* Engine_FindRecordTable(uint32_t id)
 	return table;
 }
 
+static Ring_t*  gRings = NULL;
+static uint32_t gRingCounter = 0;
+
+static Ring_t* Engine_FindRing(uint32_t id)
+{
+	for(Ring_t* ring = gRings; ring != NULL; ring = ring->next)
+	{
+		if(ring->id == id)
+			return ring;
+	}
+	return NULL;
+}
+
+static void Engine_FreeRingItem(RingItem_t* item)
+{
+	free(item->record);
+	free(item);
+}
+
+// 0x0046C350. A zero capacity or record size is refused with 2, before
+// anything is allocated and before the id counter moves.
+uint32_t Engine_CreateRing(uint32_t capacity, uint32_t recordSize, uint32_t* idOut)
+{
+	if(capacity == 0 || recordSize == 0)
+		return 2;
+	Ring_t* ring = (Ring_t*)malloc(sizeof(Ring_t));
+	if(ring == NULL)
+		return 2;
+	ring->id = ++gRingCounter;
+	ring->capacity = capacity;
+	ring->recordSize = recordSize;
+	ring->items = NULL;
+	ring->next = gRings;
+	gRings = ring;
+	if(idOut != NULL)
+		*idOut = ring->id;
+	printf("[Engine]: Created record list %d, %d records of %d bytes\n",
+		ring->id, capacity, recordSize);
+	return 0;
+}
+
+// 0x0046C3A0, which frees every record with the list itself.
+uint32_t Engine_DestroyRing(uint32_t id)
+{
+	Ring_t** link = &gRings;
+	while(*link != NULL)
+	{
+		Ring_t* ring = *link;
+		if(ring->id != id)
+		{
+			link = &ring->next;
+			continue;
+		}
+		*link = ring->next;
+		while(ring->items != NULL)
+		{
+			RingItem_t* item = ring->items;
+			ring->items = item->next;
+			Engine_FreeRingItem(item);
+		}
+		free(ring);
+		printf("[Engine]: Destroyed record list %d\n", id);
+		return 0;
+	}
+	return 1;
+}
+
+// 0x0046C420.
+uint32_t Engine_RingCount(uint32_t id, uint32_t* countOut)
+{
+	Ring_t* ring = Engine_FindRing(id);
+	if(ring == NULL)
+		return 1;
+	uint32_t count = 0;
+	for(RingItem_t* item = ring->items; item != NULL; item = item->next)
+		count++;
+	if(countOut != NULL)
+		*countOut = count;
+	return 0;
+}
+
+// 0x0046C460: the new record goes to the front, and everything from the
+// capacity onwards is freed, so index 0 is always the newest.
+uint32_t Engine_RingAdd(uint32_t id, const uint8_t* record)
+{
+	Ring_t* ring = Engine_FindRing(id);
+	if(ring == NULL)
+		return 1;
+	RingItem_t* item = (RingItem_t*)malloc(sizeof(RingItem_t));
+	if(item == NULL)
+		return 1;
+	item->record = (uint8_t*)malloc(ring->recordSize);
+	if(item->record == NULL)
+	{
+		free(item);
+		return 1;
+	}
+	memcpy(item->record, record, ring->recordSize);
+	item->next = ring->items;
+	ring->items = item;
+
+	RingItem_t** link = &ring->items;
+	for(uint32_t index = 0; *link != NULL; index++)
+	{
+		if(index < ring->capacity)
+		{
+			link = &(*link)->next;
+			continue;
+		}
+		RingItem_t* extra = *link;
+		*link = NULL;
+		while(extra != NULL)
+		{
+			RingItem_t* next = extra->next;
+			Engine_FreeRingItem(extra);
+			extra = next;
+		}
+		break;
+	}
+	return 0;
+}
+
+// 0x0046C500. 2 when the list is shorter than the index.
+uint32_t Engine_RingRead(uint32_t id, uint32_t index, uint8_t* out)
+{
+	Ring_t* ring = Engine_FindRing(id);
+	if(ring == NULL)
+		return 1;
+	RingItem_t* item = ring->items;
+	for(uint32_t i = 0; item != NULL && i < index; i++)
+		item = item->next;
+	if(item == NULL)
+		return 2;
+	if(out != NULL)
+		memcpy(out, item->record, ring->recordSize);
+	return 0;
+}
+
+// 0x0046C560: drop count records from index onwards, or as many as are left.
+uint32_t Engine_RingDrop(uint32_t id, uint32_t index, uint32_t count)
+{
+	Ring_t* ring = Engine_FindRing(id);
+	if(ring == NULL)
+		return 1;
+	RingItem_t** link = &ring->items;
+	for(uint32_t i = 0; i < index; i++)
+	{
+		if(*link == NULL)
+			return 2;
+		link = &(*link)->next;
+	}
+	if(*link == NULL)
+		return 2;
+	RingItem_t* item = *link;
+	for(uint32_t i = 0; i < count && item != NULL; i++)
+	{
+		RingItem_t* next = item->next;
+		Engine_FreeRingItem(item);
+		item = next;
+	}
+	*link = item;
+	return 0;
+}
+
 uint32_t Engine_CreateRecordTable(uint32_t recordSize, uint32_t* idOut)
 {
 	RecordTable_t* table;

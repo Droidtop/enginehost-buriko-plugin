@@ -129,6 +129,37 @@ extern int gCursorShape;
 extern int gWheelToObjects;
 
 uint32_t Engine_CreateRecordTable(uint32_t recordSize, uint32_t* idOut);
+
+/*
+ * The bounded record lists (0x005667D8, ids from 0x005667C8). A list holds
+ * fixed-size records, newest first, and never more than its capacity: adding
+ * one past that frees the tail. Sys0 0x98 makes one, 0x99 destroys it, 0x9A
+ * counts it, 0x9C adds to it, 0x9D reads an index and 0x9E drops a run.
+ * Results are the original's: 0 done, 1 no such list, 2 refused.
+ */
+typedef struct RingItem RingItem_t;
+struct RingItem
+{
+	uint8_t*    record;
+	RingItem_t* next;
+};
+
+typedef struct Ring Ring_t;
+struct Ring
+{
+	uint32_t    id;
+	uint32_t    capacity;
+	uint32_t    recordSize;
+	RingItem_t* items;
+	Ring_t*     next;
+};
+
+uint32_t Engine_CreateRing(uint32_t capacity, uint32_t recordSize, uint32_t* idOut);
+uint32_t Engine_DestroyRing(uint32_t id);
+uint32_t Engine_RingCount(uint32_t id, uint32_t* countOut);
+uint32_t Engine_RingAdd(uint32_t id, const uint8_t* record);
+uint32_t Engine_RingRead(uint32_t id, uint32_t index, uint8_t* out);
+uint32_t Engine_RingDrop(uint32_t id, uint32_t index, uint32_t count);
 uint32_t Engine_DestroyRecordTable(uint32_t id);
 uint32_t Engine_SetRecord(uint32_t id, const char* key, const uint8_t* value);
 

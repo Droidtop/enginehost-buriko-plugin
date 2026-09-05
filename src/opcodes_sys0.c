@@ -167,13 +167,13 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x95 149 */ "Unknown_149",
 	/* 0x96 150 */ "Unknown_150",
 	/* 0x97 151 */ "Unknown_151",
-	/* 0x98 152 */ "Unknown_152",
-	/* 0x99 153 */ "Unknown_153",
-	/* 0x9A 154 */ "Unknown_154",
+	/* 0x98 152 */ "CreateRecordList",
+	/* 0x99 153 */ "DestroyRecordList",
+	/* 0x9A 154 */ "RecordListCount",
 	/* 0x9B 155 */ "--Unknown--",
-	/* 0x9C 156 */ "Unknown_156",
-	/* 0x9D 157 */ "Unknown_157",
-	/* 0x9E 158 */ "--Unknown--",
+	/* 0x9C 156 */ "AddToRecordList",
+	/* 0x9D 157 */ "ReadRecordList",
+	/* 0x9E 158 */ "DropFromRecordList",
 	/* 0x9F 159 */ "--Unknown--",
 	/* 0xA0 160 */ "PopGlobalList",
 	/* 0xA1 161 */ "PushGlobalList",
@@ -426,13 +426,13 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x95 149 */ Opcode_Sys0_Unknown_149,
 	/* 0x96 150 */ Opcode_Sys0_Unknown_150,
 	/* 0x97 151 */ Opcode_Sys0_Unknown_151,
-	/* 0x98 152 */ Opcode_Sys0_Unknown_152,
-	/* 0x99 153 */ Opcode_Sys0_Unknown_153,
-	/* 0x9A 154 */ Opcode_Sys0_Unknown_154,
+	/* 0x98 152 */ Opcode_Sys0_CreateRecordList,
+	/* 0x99 153 */ Opcode_Sys0_DestroyRecordList,
+	/* 0x9A 154 */ Opcode_Sys0_RecordListCount,
 	/* 0x9B 155 */ NULL,
-	/* 0x9C 156 */ Opcode_Sys0_Unknown_156,
-	/* 0x9D 157 */ Opcode_Sys0_Unknown_157,
-	/* 0x9E 158 */ NULL,
+	/* 0x9C 156 */ Opcode_Sys0_AddToRecordList,
+	/* 0x9D 157 */ Opcode_Sys0_ReadRecordList,
+	/* 0x9E 158 */ Opcode_Sys0_DropFromRecordList,
 	/* 0x9F 159 */ NULL,
 	/* 0xA0 160 */ Opcode_Sys0_PopGlobalList,
 	/* 0xA1 161 */ Opcode_Sys0_PushGlobalList,
@@ -1505,29 +1505,70 @@ uint32_t Opcode_Sys0_Unknown_151(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_152(Thread_t* thread)
+uint32_t Opcode_Sys0_CreateRecordList(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A160: record size, then capacity, then where to put the id.
+	uint32_t recordSize = Thread_PopStack(thread);
+	uint32_t capacity = Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	uint32_t id = 0;
+	uint32_t result = Engine_CreateRing(capacity, recordSize, &id);
+	if(result == 0 && out != NULL)
+		Thread_WriteIntToMemory(thread, out, 4, id);
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_153(Thread_t* thread)
+uint32_t Opcode_Sys0_DestroyRecordList(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A1A0.
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, Engine_DestroyRing(id));
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_154(Thread_t* thread)
+uint32_t Opcode_Sys0_RecordListCount(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A1D0: the id, then where to put the count.
+	uint32_t id = Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	uint32_t count = 0;
+	uint32_t result = Engine_RingCount(id, &count);
+	if(result == 0 && out != NULL)
+		Thread_WriteIntToMemory(thread, out, 4, count);
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_156(Thread_t* thread)
+uint32_t Opcode_Sys0_AddToRecordList(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A210: the record, then the id.
+	uint8_t* record = Thread_PopAndResolveAddress(thread);
+	uint32_t id = Thread_PopStack(thread);
+	if(record == NULL)
+		return 0xFFFFFFFF;
+	Thread_PushStack(thread, Engine_RingAdd(id, record));
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_157(Thread_t* thread)
+uint32_t Opcode_Sys0_DropFromRecordList(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A290: how many, then from where, then the id.
+	uint32_t count = Thread_PopStack(thread);
+	uint32_t index = Thread_PopStack(thread);
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, Engine_RingDrop(id, index, count));
+	return 0;
+}
+
+uint32_t Opcode_Sys0_ReadRecordList(Thread_t* thread)
+{
+	// 0x0048A250: the index, then the id, then where to put the record.
+	uint32_t index = Thread_PopStack(thread);
+	uint32_t id = Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, Engine_RingRead(id, index, out));
+	return 0;
 }
 
 uint32_t Opcode_Sys0_PopGlobalList(Thread_t* thread)
