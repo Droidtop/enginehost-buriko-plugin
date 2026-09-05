@@ -123,6 +123,12 @@ void Engine_SetWindowTitle(const char* title);
 
 extern int gCursorShape;
 
+// 0x00565B90 and 0x00565B94, what a new message display starts with: the
+// interval it keeps as it stands, and the delay it counts from the current
+// tick for its first deadline. Grp0 0x9B sets both.
+extern uint32_t gMessageInterval;
+extern uint32_t gMessageDelay;
+
 // 0x00507204. Set, the mouse wheel goes to the objects registered as wheel
 // targets; clear, the window turns it into key 0x0E (down) and 0x0F (up).
 // The original's startup sets it at 0x0048CC30, before a line of script runs.

@@ -29,6 +29,12 @@ struct Sprite
 	Sprite_t* nextSibling;
 };
 
+// The priority the screen object draws at, +0x48 of the object at root+0x14,
+// held as the original holds it: the priority shifted up sixteen places, so the
+// low half orders what shares a priority. Grp0 0x09 sets it.
+#define SPRITE_MAX_PRIORITY 0x10000
+extern uint32_t gDrawPriority;
+
 extern Sprite_t* gSprites[SPRITE_SLOT_COUNT];
 extern uint32_t  gSpriteCount;
 extern uint32_t  gSpriteSerial;

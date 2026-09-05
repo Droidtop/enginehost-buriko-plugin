@@ -16,6 +16,8 @@
 #include "os.h"
 
 int gWheelToObjects = 1;
+uint32_t gMessageInterval = 0;
+uint32_t gMessageDelay = 0;
 
 void Engine_Init(Engine_t* engine)
 {

@@ -48,6 +48,7 @@ uint32_t  gSpriteSerial = 0;
 // an image, so the damage is only counted for now - the count is what a renderer
 // would consume, and it is not a made-up answer to anybody's question.
 uint32_t  gSpriteDamage = 0;
+uint32_t  gDrawPriority = 0;
 
 uint32_t Sprite_Create(void)
 {

@@ -81,7 +81,10 @@ int main(int argc, char** argv)
 	Engine_Init(&engine);
 	OS_Init(&engine);
 
-	uint32_t mainThreadId = Engine_LoadProgram(gEngine, "system", "ipl._bp", 0x1000, 0x20000, 0x20000);
+	// 0x0048CCF1 makes the boot thread with a 0x1000 stack, 0x80000 of code
+	// space and 0x40000 of local memory. Fureraba's boot loads twelve programs
+	// into that code space one after another and needs every byte of it.
+	uint32_t mainThreadId = Engine_LoadProgram(gEngine, "system", "ipl._bp", 0x1000, 0x80000, 0x40000);
 
 	//Engine_ExecuteThread(gEngine, mainThreadId);
 	Engine_Execute(gEngine);

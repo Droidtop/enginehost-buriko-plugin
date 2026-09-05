@@ -18,7 +18,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x06   6 */ "SetMousePosition",
 	/* 0x07   7 */ "SetLoadWaitTimeout",
 	/* 0x08   8 */ "Unknown_8",
-	/* 0x09   9 */ "Unknown_9",
+	/* 0x09   9 */ "SetDrawPriority",
 	/* 0x0A  10 */ "Unknown_10",
 	/* 0x0B  11 */ "Unknown_11",
 	/* 0x0C  12 */ "SetOpacity",
@@ -164,7 +164,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x98 152 */ "Unknown_152",
 	/* 0x99 153 */ "Unknown_153",
 	/* 0x9A 154 */ "Unknown_154",
-	/* 0x9B 155 */ "Unknown_155",
+	/* 0x9B 155 */ "SetMessageTiming",
 	/* 0x9C 156 */ "Unknown_156",
 	/* 0x9D 157 */ "Unknown_157",
 	/* 0x9E 158 */ "Unknown_158",
@@ -277,7 +277,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x06   6 */ Opcode_Grp0_SetMousePosition,
 	/* 0x07   7 */ Opcode_Grp0_SetLoadWaitTimeout,
 	/* 0x08   8 */ Opcode_Grp0_Unknown_8,
-	/* 0x09   9 */ Opcode_Grp0_Unknown_9,
+	/* 0x09   9 */ Opcode_Grp0_SetDrawPriority,
 	/* 0x0A  10 */ Opcode_Grp0_Unknown_10,
 	/* 0x0B  11 */ Opcode_Grp0_Unknown_11,
 	/* 0x0C  12 */ Opcode_Grp0_SetOpacity,
@@ -423,7 +423,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x98 152 */ Opcode_Grp0_Unknown_152,
 	/* 0x99 153 */ Opcode_Grp0_Unknown_153,
 	/* 0x9A 154 */ Opcode_Grp0_Unknown_154,
-	/* 0x9B 155 */ Opcode_Grp0_Unknown_155,
+	/* 0x9B 155 */ Opcode_Grp0_SetMessageTiming,
 	/* 0x9C 156 */ Opcode_Grp0_Unknown_156,
 	/* 0x9D 157 */ Opcode_Grp0_Unknown_157,
 	/* 0x9E 158 */ Opcode_Grp0_Unknown_158,
@@ -580,9 +580,26 @@ uint32_t Opcode_Grp0_Unknown_8(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_9(Thread_t* thread)
+/*
+ * Grp0 0x09 (0x00479720) sets the priority the screen draws at. The value is
+ * range-checked first (0x00497D40) and 0x10000 or more is fatal, naming the
+ * priority; it is then kept shifted up sixteen places (0x00430E00) and the
+ * scene is marked as needing to be put in order again (0x00430DF0).
+ */
+uint32_t Opcode_Grp0_SetDrawPriority(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t priority = Thread_PopStack(thread);
+	if(priority >= SPRITE_MAX_PRIORITY)
+	{
+		printf("[Thread %d]: %sError: an invalid priority [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], priority);
+		return 0xFFFFFFFF;
+	}
+	gDrawPriority = priority << 16;
+	gSpriteDamage++;
+	printf("[Thread %d]: %sDrawing at priority %d\n",
+	       thread->threadId, TLevel[thread->level], priority);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_10(Thread_t* thread)
@@ -1431,9 +1448,20 @@ uint32_t Opcode_Grp0_Unknown_154(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_155(Thread_t* thread)
+/*
+ * Grp0 0x9B (0x0047E430) sets the pair every new message display starts with.
+ * The delay pops first; both are kept until a display asks for them, which is
+ * what CProcDspMsg's constructor does at 0x00432D79.
+ */
+uint32_t Opcode_Grp0_SetMessageTiming(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t delay = Thread_PopStack(thread);
+	uint32_t interval = Thread_PopStack(thread);
+	gMessageInterval = interval;
+	gMessageDelay = delay;
+	printf("[Thread %d]: %sMessages start at interval %d, first after %d\n",
+	       thread->threadId, TLevel[thread->level], interval, delay);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_156(Thread_t* thread)
