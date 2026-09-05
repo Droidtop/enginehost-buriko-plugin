@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
+#include <dirent.h>
 #include <time.h>
 #include "engine.h"
 #include "opcodes.h"
@@ -47,7 +51,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x22  34 */ "--Unknown--",
 	/* 0x23  35 */ "--Unknown--",
 	/* 0x24  36 */ "Unknown_36",
-	/* 0x25  37 */ "Unknown_37",
+	/* 0x25  37 */ "ListFiles",
 	/* 0x26  38 */ "--Unknown--",
 	/* 0x27  39 */ "--Unknown--",
 	/* 0x28  40 */ "CreateDirectory",
@@ -306,7 +310,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x22  34 */ NULL,
 	/* 0x23  35 */ NULL,
 	/* 0x24  36 */ Opcode_Sys0_Unknown_36,
-	/* 0x25  37 */ Opcode_Sys0_Unknown_37,
+	/* 0x25  37 */ Opcode_Sys0_ListFiles,
 	/* 0x26  38 */ NULL,
 	/* 0x27  39 */ NULL,
 	/* 0x28  40 */ Opcode_Sys0_CreateDirectory,
@@ -749,9 +753,142 @@ uint32_t Opcode_Sys0_Unknown_36(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_37(Thread_t* thread)
+/*
+ * The matching FindFirstFileA does: '*' for any run and '?' for any one character,
+ * without regard to case.
+ */
+static int Sys0_WildcardMatch(const char* pattern, const char* name)
 {
-	return 0xFFFFFFFF;
+	const char* star = NULL;
+	const char* retry = name;
+	while(*name != '\0')
+	{
+		if(*pattern == '?' ||
+		   (*pattern != '\0' && *pattern != '*' &&
+		    tolower((unsigned char)*pattern) == tolower((unsigned char)*name)))
+		{
+			pattern++;
+			name++;
+		}
+		else if(*pattern == '*')
+		{
+			star = pattern++;
+			retry = name;
+		}
+		else if(star != NULL)
+		{
+			pattern = star + 1;
+			name = ++retry;
+		}
+		else
+		{
+			return 0;
+		}
+	}
+	while(*pattern == '*')
+		pattern++;
+	return *pattern == '\0';
+}
+
+/*
+ * Sys0 0x25 (0x00488610 -> 0x00466D30) lists the files matching a pattern. The script
+ * pushes the buffer, its size, the pattern, a recurse flag and the maximum number of
+ * names, so they pop back to front. Directories are skipped, each name is copied bare
+ * and NUL-terminated one after another, and a name that does not fit ends the walk
+ * with a count of zero and no byte total written. With no buffer the opcode pushes
+ * the number of bytes the names would have taken; with one it pushes how many there
+ * were.
+ */
+uint32_t Opcode_Sys0_ListFiles(Thread_t* thread)
+{
+	int maximum = (int)Thread_PopStack(thread);
+	int recurse = (int)Thread_PopStack(thread);
+	const char* pattern = (const char*)Thread_PopAndResolveAddress(thread);
+	int size = (int)Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+
+	if(pattern == NULL)
+		return 0xFFFFFFFF;
+	if(recurse != 0)
+	{
+		printf("[Thread %d]: %sError: the recursive file listing (0x00466E7B) is not written yet\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	// The pattern is a Windows path; split it into a directory and a mask.
+	char path[512];
+	if(snprintf(path, sizeof(path), "%s", pattern) >= (int)sizeof(path))
+		return 0xFFFFFFFF;
+	for(char* c = path; *c != '\0'; c++)
+	{
+		if(*c == '\\')
+			*c = '/';
+	}
+	char* mask = strrchr(path, '/');
+	const char* directory = ".";
+	if(mask != NULL)
+	{
+		*mask++ = '\0';
+		directory = path[0] == '\0' ? "/" : path;
+	}
+	else
+	{
+		mask = path;
+	}
+
+	printf("[Thread %d]: %sListing \"%s\" in \"%s\"\n",
+	       thread->threadId, TLevel[thread->level], mask, directory);
+
+	int count = 0;
+	int written = 0;
+	int overflowed = 0;
+	DIR* dir = opendir(directory);
+	if(dir != NULL)
+	{
+		struct dirent* entry;
+		while((entry = readdir(dir)) != NULL)
+		{
+			if(maximum != 0 && count >= maximum)
+				break;
+			if(!Sys0_WildcardMatch(mask, entry->d_name))
+				continue;
+
+			char full[1024];
+			if(snprintf(full, sizeof(full), "%s/%s", directory, entry->d_name) >= (int)sizeof(full))
+				continue;
+			struct stat info;
+			if(stat(full, &info) != 0 || S_ISDIR(info.st_mode))
+				continue;
+
+			int length = (int)strlen(entry->d_name) + 1;
+			if(out != NULL)
+			{
+				if(length > size - written)
+				{
+					overflowed = 1;
+					break;
+				}
+				memcpy(out + written, entry->d_name, (size_t)length);
+			}
+			written += length;
+			count++;
+		}
+		closedir(dir);
+	}
+
+	if(overflowed)
+	{
+		printf("[Thread %d]: %sThe listing buffer (%d bytes) was too small\n",
+		       thread->threadId, TLevel[thread->level], size);
+		Thread_PushStack(thread, 0);
+		return 0;
+	}
+
+	printf("[Thread %d]: %sListed %d file%s (%d bytes)\n",
+	       thread->threadId, TLevel[thread->level], count, count == 1 ? "" : "s", written);
+	Thread_PushStack(thread, (uint32_t)(out != NULL ? count : written));
+	return 0;
 }
 
 
