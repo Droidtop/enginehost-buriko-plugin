@@ -162,7 +162,7 @@ uint32_t Opcode_Grp0_Unknown_233(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_240(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_241(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_242(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_243(Thread_t* thread);
+uint32_t Opcode_Grp0_SetMasterVolume(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_248(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_250(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_251(Thread_t* thread);

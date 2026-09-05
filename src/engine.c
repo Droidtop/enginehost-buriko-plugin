@@ -1058,6 +1058,34 @@ uint32_t Engine_SetScreenMappingMode(uint32_t mode)
 	printf("[Engine]: Set ScreenMappingMode to %d\n", (int)mode);
 	return 1;
 }
+
+// Master volume. Grp0 0xF3 (0x00480420) pops one value and hands it to the setter at
+// 0x0048F880, which takes 0 to 128 and rejects anything larger. The setter turns the
+// step into DirectSound attenuation in hundredths of a decibel:
+//   volume 0        -> -10000, DirectSound's silence, not the value the curve gives
+//   volume 1 to 128 -> -round((128 - volume) * 100 / 2.6666666666)
+// (the divisor is the double at 0x004EC8E0), so 128 is 0 and the scale is 37.5
+// hundredths of a decibel per step. The result is stored at 0x00566928 and pushed
+// into the sound device through its vtable slot +0x1C, except while the mute flag at
+// 0x0056692C is set, when the value is still recorded but the device is left alone.
+// The opcode itself discards the setter's success flag and pushes nothing.
+int gMasterVolume = 128;
+int gMasterVolumeAttenuation = 0;
+int gMasterVolumeMuted = 0;
+
+uint32_t Engine_SetMasterVolume(uint32_t volume)
+{
+	if(volume > 128)
+		return 0;
+	gMasterVolume = (int)volume;
+	gMasterVolumeAttenuation = volume == 0
+		? -10000
+		: -(int)((128 - volume) * 100 / 2.6666666666 + 0.5);
+	printf("[Engine]: Set MasterVolume to %d (%d hundredths of a dB)\n",
+		gMasterVolume, gMasterVolumeAttenuation);
+	return 1;
+}
+
 int gFlagUnknown10 = 0;
 void Engine_SetFlagUnknown10(int value)
 {

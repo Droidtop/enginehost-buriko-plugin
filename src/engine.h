@@ -132,6 +132,11 @@ uint32_t Engine_SetScreenMappingMode(uint32_t mode);
 extern int gFlagUnknown10;
 void Engine_SetFlagUnknown10(int value);
 
+extern int gMasterVolume;
+extern int gMasterVolumeAttenuation;
+extern int gMasterVolumeMuted;
+uint32_t Engine_SetMasterVolume(uint32_t volume);
+
 typedef struct SearchPathNode SearchPathNode_t;
 struct SearchPathNode
 {

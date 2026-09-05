@@ -251,7 +251,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xF0 240 */ "Unknown_240",
 	/* 0xF1 241 */ "Unknown_241",
 	/* 0xF2 242 */ "Unknown_242",
-	/* 0xF3 243 */ "Unknown_243",
+	/* 0xF3 243 */ "SetMasterVolume",
 	/* 0xF4 244 */ "--Unknown--",
 	/* 0xF5 245 */ "--Unknown--",
 	/* 0xF6 246 */ "--Unknown--",
@@ -510,7 +510,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xF0 240 */ Opcode_Grp0_Unknown_240,
 	/* 0xF1 241 */ Opcode_Grp0_Unknown_241,
 	/* 0xF2 242 */ Opcode_Grp0_Unknown_242,
-	/* 0xF3 243 */ Opcode_Grp0_Unknown_243,
+	/* 0xF3 243 */ Opcode_Grp0_SetMasterVolume,
 	/* 0xF4 244 */ NULL,
 	/* 0xF5 245 */ NULL,
 	/* 0xF6 246 */ NULL,
@@ -1829,9 +1829,11 @@ uint32_t Opcode_Grp0_Unknown_242(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_243(Thread_t* thread)
+uint32_t Opcode_Grp0_SetMasterVolume(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t volume = Thread_PopStack(thread);
+	Engine_SetMasterVolume(volume);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_248(Thread_t* thread)
