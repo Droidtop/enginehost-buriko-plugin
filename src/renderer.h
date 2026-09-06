@@ -86,6 +86,16 @@ typedef struct Renderer
 	Screen_t* screens[RENDERER_MAX_SCREENS];
 	int activeScreen;
 	int allocatedScreens;
+	// The animated cursor's frames: the count at 0x00565B7C and an array of
+	// 0x18-byte entries at 0x00565B80, each a bitmap of its own copied out of the
+	// bitmap table (0x004333E0). 0x00434080 is what plays them: it counts frames at
+	// +0x64 of the thing that owns it, waits the interval below between them and
+	// indexes this array by that counter.
+	Bitmap_t** animationFrames;
+	int animationFrameCount;
+	// 0x0050765C, the interval between two frames, which Grp0 0x99 sets (0x00433560)
+	// and 0x00434080 waits out. Fureraba's message window asks for 2000 / 6.
+	uint32_t animationInterval;
 	// +0x10 of the drawing device, the counter 0x00407DA0 hands serials out of.
 	uint32_t bitmapSerial;
 	// +0x14. 0x00407DA0 keeps a recreated slot's old serial only when this is set;
@@ -100,6 +110,10 @@ int Renderer_ModePixelBytes(int mode);
 int Renderer_ModeForBits(int bits);
 // NULL unless the id is in range and the slot holds a live bitmap (0x00407F20).
 Bitmap_t* Renderer_ResolveBitmap(Renderer_t* renderer, int id);
+// Replaces the animated cursor's frames with copies of `count` bitmaps named by
+// `ids` (0x004333E0), each in the screen's pixel mode. An id of -1 leaves that frame
+// empty. 1 on success; 0 when an id named no bitmap, with *badId set to it.
+int Renderer_SetAnimationFrames(Renderer_t* renderer, int count, const uint32_t* ids, int32_t* badId);
 // A bitmap slot's serial, or 0xFFFFFFFF when the slot is empty (0x00408300).
 uint32_t Renderer_BitmapSerial(Renderer_t* renderer, int id);
 // The device's own pixel mode (0x00565B14, read by 0x00407B10). Every display

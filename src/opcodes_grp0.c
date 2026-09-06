@@ -161,8 +161,8 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x95 149 */ "SetSplits2",
 	/* 0x96 150 */ "SetSplits",
 	/* 0x97 151 */ "SetUnknownGrp0Val1and2",
-	/* 0x98 152 */ "Unknown_152",
-	/* 0x99 153 */ "Unknown_153",
+	/* 0x98 152 */ "SetAnimationFrames",
+	/* 0x99 153 */ "SetAnimationInterval",
 	/* 0x9A 154 */ "Unknown_154",
 	/* 0x9B 155 */ "SetMessageTiming",
 	/* 0x9C 156 */ "Unknown_156",
@@ -420,8 +420,8 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x95 149 */ Opcode_Grp0_SetSplits2,
 	/* 0x96 150 */ Opcode_Grp0_SetSplits,
 	/* 0x97 151 */ Opcode_Grp0_SetUnknownGrp0Val1and2,
-	/* 0x98 152 */ Opcode_Grp0_Unknown_152,
-	/* 0x99 153 */ Opcode_Grp0_Unknown_153,
+	/* 0x98 152 */ Opcode_Grp0_SetAnimationFrames,
+	/* 0x99 153 */ Opcode_Grp0_SetAnimationInterval,
 	/* 0x9A 154 */ Opcode_Grp0_Unknown_154,
 	/* 0x9B 155 */ Opcode_Grp0_SetMessageTiming,
 	/* 0x9C 156 */ Opcode_Grp0_Unknown_156,
@@ -1591,14 +1591,36 @@ uint32_t Opcode_Grp0_SetUnknownGrp0Val1and2(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_152(Thread_t* thread)
+// Grp0 0x98 (0x0047E350 -> 0x00463340 -> 0x004333E0) gives the animated cursor its
+// frames: an array of bitmap numbers in the script's own memory and a count. The
+// address is popped first (0x0048E0E0 pops and resolves it), the count second. A
+// number that names no bitmap is fatal, with the number in the message: "the
+// specified bitmap [ %d ] does not exist or is not compatible with the screen"
+// (0x004E9D00).
+uint32_t Opcode_Grp0_SetAnimationFrames(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Engine_t* engine = thread->engine;
+	uint32_t* ids = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	uint32_t count = Thread_PopStack(thread);
+
+	int32_t badId = 0;
+	if(!Renderer_SetAnimationFrames(engine->renderer, (int)count, ids, &badId))
+	{
+		printf("[Thread %d]: %sError: the specified bitmap [ %d ] does not exist or is not compatible with the screen\n",
+		       thread->threadId, TLevel[thread->level], badId);
+		return 0xFFFFFFFF;
+	}
+
+	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_153(Thread_t* thread)
+// Grp0 0x99 (0x0047E3D0 -> 0x00463360 -> 0x00433560) is one store: the interval the
+// animated cursor waits between two frames, at 0x0050765C. It pushes nothing back.
+uint32_t Opcode_Grp0_SetAnimationInterval(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Engine_t* engine = thread->engine;
+	engine->renderer->animationInterval = Thread_PopStack(thread);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_154(Thread_t* thread)

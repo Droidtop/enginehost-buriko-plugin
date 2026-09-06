@@ -22,6 +22,9 @@ Renderer_t* Renderer_Init(Engine_t* engine)
 		renderer->screens[i] = NULL;
 	renderer->activeScreen = 0;
 	renderer->allocatedScreens = 0;
+	renderer->animationFrames = NULL;
+	renderer->animationFrameCount = 0;
+	renderer->animationInterval = 0;
 	renderer->bitmapSerial = 0;
 	renderer->keepBitmapSerial = 0;
 	return renderer;
@@ -269,6 +272,111 @@ int Renderer_FillBitmap(Renderer_t* renderer, int id, uint32_t colour)
 		for(int column = 0; column < bitmap->width; column++)
 			out[column] = colour;
 	}
+	return 1;
+}
+
+static int Renderer_BlitBitmaps(Bitmap_t* dst, int x, int y,
+                                Bitmap_t* src, int mode, int transparency);
+
+// 0x00409030: a bitmap that lives on its own rather than in a table slot. Its pixels
+// are left uninitialised, as there, because every caller fills them at once.
+static Bitmap_t* Renderer_MakeLooseBitmap(int width, int height, int mode)
+{
+	int pixelBytes = Renderer_ModePixelBytes(mode);
+	if(pixelBytes == 0 || width <= 0 || height <= 0)
+		return NULL;
+
+	Bitmap_t* bitmap = (Bitmap_t*)malloc(sizeof(Bitmap_t));
+	if(bitmap == NULL)
+		return NULL;
+	bitmap->width   = width;
+	bitmap->height  = height;
+	bitmap->mode    = mode;
+	bitmap->stride  = width * pixelBytes;
+	bitmap->offsetX = 0;
+	bitmap->offsetY = 0;
+	bitmap->serial  = 0xFFFFFFFFu;
+	bitmap->bitmap  = (uint8_t*)malloc((size_t)bitmap->stride * (size_t)height);
+	if(bitmap->bitmap == NULL)
+	{
+		free(bitmap);
+		return NULL;
+	}
+
+	return bitmap;
+}
+
+static void Renderer_FreeAnimationFrames(Renderer_t* renderer)
+{
+	for(int i = 0; renderer->animationFrames != NULL && i < renderer->animationFrameCount; i++)
+	{
+		if(renderer->animationFrames[i] == NULL)
+			continue;
+		free(renderer->animationFrames[i]->bitmap);
+		free(renderer->animationFrames[i]);
+	}
+	free(renderer->animationFrames);
+	renderer->animationFrames = NULL;
+	renderer->animationFrameCount = 0;
+}
+
+int Renderer_SetAnimationFrames(Renderer_t* renderer, int count, const uint32_t* ids, int32_t* badId)
+{
+	Renderer_FreeAnimationFrames(renderer);
+	renderer->animationFrameCount = count;
+
+	// 0x004333E0 keeps the count it was given and then allocates nothing at all
+	// unless the count is above one, so a list of a single frame ends up with the
+	// count set and no array behind it. That is what it does, deliberately kept.
+	if(count <= 1)
+		return 1;
+
+	renderer->animationFrames = (Bitmap_t**)calloc((size_t)count, sizeof(Bitmap_t*));
+	if(renderer->animationFrames == NULL)
+	{
+		renderer->animationFrameCount = 0;
+		return 1;
+	}
+
+	// The frames are made in the screen's pixel mode, except that a 24-bit screen
+	// gives 32-bit frames: 0x00409080 is called with its flag set, and upgrading a
+	// mode of 1 to 2 is the only thing that flag does.
+	int mode = Renderer_ScreenMode(renderer);
+	if(mode == BITMAP_MODE_24)
+		mode = BITMAP_MODE_32;
+
+	for(int i = 0; i < count; i++)
+	{
+		// -1 leaves the entry zeroed, which is a frame with no image at all.
+		if((int32_t)ids[i] == -1)
+			continue;
+
+		Bitmap_t* source = Renderer_ResolveBitmap(renderer, (int)ids[i]);
+		if(source == NULL)
+		{
+			if(badId != NULL)
+				*badId = (int32_t)ids[i];
+			return 0;
+		}
+
+		Bitmap_t* frame = Renderer_MakeLooseBitmap(source->width, source->height, mode);
+		if(frame == NULL)
+		{
+			if(badId != NULL)
+				*badId = (int32_t)ids[i];
+			return 0;
+		}
+		if(Renderer_BlitBitmaps(frame, 0, 0, source, BITMAP_BLEND_COPY, 0) != 0)
+		{
+			free(frame->bitmap);
+			free(frame);
+			if(badId != NULL)
+				*badId = (int32_t)ids[i];
+			return 0;
+		}
+		renderer->animationFrames[i] = frame;
+	}
+
 	return 1;
 }
 
@@ -587,15 +695,12 @@ static uint32_t Renderer_BlendOverWeighted(uint32_t destination, uint32_t source
 	return out | ((denominator >> 8) << 24);
 }
 
-int Renderer_BlitBitmap(Renderer_t* renderer, int destination, int x, int y,
-                        int source, int mode, int transparency)
+// The blit itself (0x0040A9E0), which the original also reaches with bitmaps that
+// are in no table slot at all - the animated cursor's frames are made that way. The
+// result codes are Renderer_BlitBitmap's, less the two for a slot that is empty.
+static int Renderer_BlitBitmaps(Bitmap_t* dst, int x, int y,
+                                Bitmap_t* src, int mode, int transparency)
 {
-	Bitmap_t* dst = Renderer_ResolveBitmap(renderer, destination);
-	if(dst == NULL)
-		return 1;
-	Bitmap_t* src = Renderer_ResolveBitmap(renderer, source);
-	if(src == NULL)
-		return 2;
 	if(!Renderer_ModesCompatible(dst->mode, src->mode))
 		return 3;
 	// 0x100 - the transparency, which 0x0040B6F0 computes once before its loop.
@@ -667,6 +772,19 @@ int Renderer_BlitBitmap(Renderer_t* renderer, int destination, int x, int y,
 		}
 	}
 	return 0;
+}
+
+int Renderer_BlitBitmap(Renderer_t* renderer, int destination, int x, int y,
+                        int source, int mode, int transparency)
+{
+	Bitmap_t* dst = Renderer_ResolveBitmap(renderer, destination);
+	if(dst == NULL)
+		return 1;
+	Bitmap_t* src = Renderer_ResolveBitmap(renderer, source);
+	if(src == NULL)
+		return 2;
+
+	return Renderer_BlitBitmaps(dst, x, y, src, mode, transparency);
 }
 
 /*
