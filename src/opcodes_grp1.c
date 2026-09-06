@@ -147,7 +147,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x88 136 */ "SetWindowFont",
     /* 0x89 137 */ "SetWindowGapCoefficient",
     /* 0x8A 138 */ "Unknown_138",
-    /* 0x8B 139 */ "Unknown_139",
+    /* 0x8B 139 */ "SetWindowSwingingStyle",
     /* 0x8C 140 */ "Unknown_140",
     /* 0x8D 141 */ "Unknown_141",
     /* 0x8E 142 */ "Unknown_142",
@@ -406,7 +406,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x88 136 */ Opcode_Grp1_SetWindowFont,
     /* 0x89 137 */ Opcode_Grp1_SetWindowGapCoefficient,
     /* 0x8A 138 */ Opcode_Grp1_Unknown_138,
-    /* 0x8B 139 */ Opcode_Grp1_Unknown_139,
+    /* 0x8B 139 */ Opcode_Grp1_SetWindowSwingingStyle,
     /* 0x8C 140 */ Opcode_Grp1_Unknown_140,
     /* 0x8D 141 */ Opcode_Grp1_Unknown_141,
     /* 0x8E 142 */ Opcode_Grp1_Unknown_142,
@@ -847,9 +847,26 @@ uint32_t Opcode_Grp1_Unknown_138(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_139(Thread_t* thread)
+uint32_t Opcode_Grp1_SetWindowSwingingStyle(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t style = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+	if(style > SCREEN_MAX_SWINGING_STYLE)
+	{
+		printf("[Thread %d]: %sError: an invalid message swinging style [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], style);
+		return 0xFFFFFFFF;
+	}
+	window->swingingStyle = (int)style;
+	return 0;
 }
 
 uint32_t Opcode_Grp1_Unknown_140(Thread_t* thread)

@@ -14,6 +14,8 @@
 
 // The largest gap coefficient 0x0042C550 accepts.
 #define SCREEN_MAX_GAP_COEFFICIENT 0x320
+// The largest message swinging style 0x0042C660 accepts.
+#define SCREEN_MAX_SWINGING_STYLE 2
 
 typedef struct Screen
 {
@@ -36,6 +38,8 @@ typedef struct Screen
 	int fontScaledWidth;
 	// +0x354 and +0x364, written by 0x0042C5F0 and 0x0042C610 from the
 	// same opcode. What reads them back is not read yet.
+	// +0x374, the message swinging style: 0, 1 or 2 only (0x0042C660).
+	int swingingStyle;
 	int field354;
 	int field364;
 	uint8_t* bitmap;

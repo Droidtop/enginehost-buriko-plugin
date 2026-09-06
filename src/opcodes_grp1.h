@@ -41,7 +41,7 @@ uint32_t Opcode_Grp1_Unknown_104(Thread_t* thread);
 uint32_t Opcode_Grp1_SetWindowFont(Thread_t* thread);
 uint32_t Opcode_Grp1_SetWindowGapCoefficient(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_138(Thread_t* thread);
-uint32_t Opcode_Grp1_Unknown_139(Thread_t* thread);
+uint32_t Opcode_Grp1_SetWindowSwingingStyle(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_140(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_141(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_142(Thread_t* thread);

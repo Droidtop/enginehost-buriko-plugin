@@ -53,6 +53,7 @@ uint32_t Renderer_CreateScreen(Renderer_t* renderer, int width, int height)
     screen->fontWidth = 0;
     screen->fontStyle = 0;
     screen->fontScaledWidth = 0;
+    screen->swingingStyle = 0;
     screen->field354 = 0;
     screen->field364 = 0;
     screen->bitmap = bitmap;
