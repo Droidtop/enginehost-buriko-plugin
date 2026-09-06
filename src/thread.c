@@ -6,6 +6,7 @@
 #include "engine.h"
 #include "opcodes.h"
 #include "golden_log.h"
+#include "process.h"
 
 char* TLevel[4] = {
 	"",
@@ -319,6 +320,60 @@ uint32_t Thread_PopStack(Thread_t* thread)
 		GoldenLogIndex++;
 	}
 	return data;
+}
+
+// 0x004452A0.
+void Thread_SetProcess(Thread_t* thread, Process_t* process)
+{
+	if(thread->process != NULL)
+		Process_Destroy(thread->process);
+	thread->process = process;
+	thread->flags |= THREAD_FLAG_WAITING;
+}
+
+// 0x004452D0.
+int Thread_RunProcess(Thread_t* thread)
+{
+	if(thread->process == NULL)
+		return -1;
+	int result = Process_Run(thread->process);
+	if(result != 0)
+	{
+		Process_Destroy(thread->process);
+		thread->process = NULL;
+		thread->flags &= ~THREAD_FLAG_WAITING;
+	}
+	return result;
+}
+
+// 0x004453A0: the new value goes on the tail, so messages arrive in order.
+void Thread_PostMessage(Thread_t* thread, uint32_t value)
+{
+	Message_t* message = (Message_t*)malloc(sizeof(Message_t));
+	if(message == NULL)
+		return;
+	message->value = value;
+	message->next = NULL;
+	if(thread->messagesTail == NULL)
+		thread->messages = message;
+	else
+		thread->messagesTail->next = message;
+	thread->messagesTail = message;
+}
+
+// 0x004453E0, which writes nothing when the queue is empty.
+int Thread_TakeMessage(Thread_t* thread, uint32_t* value)
+{
+	Message_t* message = thread->messages;
+	if(message == NULL)
+		return 0;
+	thread->messages = message->next;
+	if(thread->messages == NULL)
+		thread->messagesTail = NULL;
+	if(value != NULL)
+		*value = message->value;
+	free(message);
+	return 1;
 }
 
 void Thread_SchedulePush(Thread_t* thread, uint32_t data)

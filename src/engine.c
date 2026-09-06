@@ -84,6 +84,9 @@ Thread_t* Engine_CreateThread(Engine_t* engine, uint32_t stackSize, uint32_t cod
 	thread->engine = engine;
 	thread->opcode = 0;
 	thread->waitTicks = 0;
+	thread->process = NULL;
+	thread->messages = NULL;
+	thread->messagesTail = NULL;
 	thread->queuePush = 0;
 
 	thread->silenceBasicOpcodeLog = 1;
@@ -392,10 +395,18 @@ void Engine_Execute(Engine_t* engine)
 			}
 		}
 
-		if(thread->waitTicks == 0)
-			Engine_ExecuteThread(engine, thread->threadId, 1);
-		else
-			thread->waitTicks--;
+		// 0x0048CFB2: a thread waiting on a process runs the process instead of
+		// an instruction, and only runs again once the process is finished.
+		int waiting = 0;
+		if(thread->flags & THREAD_FLAG_WAITING)
+			waiting = (Thread_RunProcess(thread) == 0);
+		if(!waiting)
+		{
+			if(thread->waitTicks == 0)
+				Engine_ExecuteThread(engine, thread->threadId, 1);
+			else
+				thread->waitTicks--;
+		}
 		if(engine->nextThreadRequest)
 		{
 			nextThread = Engine_GetThreadById(engine, engine->nextThreadRequest);

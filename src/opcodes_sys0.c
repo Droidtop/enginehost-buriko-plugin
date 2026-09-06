@@ -9,6 +9,7 @@
 #include <time.h>
 #include "engine.h"
 #include "arc.h"
+#include "process.h"
 #include "opcodes.h"
 #include "opcodes_sys0.h"
 #include "os.h"
@@ -88,9 +89,9 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x46  70 */ "GetThreadID",
 	/* 0x47  71 */ "Unknown_71",
 	/* 0x48  72 */ "Unknown_72",
-	/* 0x49  73 */ "Unknown_73",
-	/* 0x4A  74 */ "Unknown_74",
-	/* 0x4B  75 */ "Unknown_75",
+	/* 0x49  73 */ "TakeMessage",
+	/* 0x4A  74 */ "PostMessages",
+	/* 0x4B  75 */ "TakeMessages",
 	/* 0x4C  76 */ "Unknown_76",
 	/* 0x4D  77 */ "--Unknown--",
 	/* 0x4E  78 */ "--Unknown--",
@@ -107,7 +108,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x59  89 */ "Unknown_89",
 	/* 0x5A  90 */ "Unknown_90",
 	/* 0x5B  91 */ "--Unknown--",
-	/* 0x5C  92 */ "Unknown_92",
+	/* 0x5C  92 */ "WaitTiming",
 	/* 0x5D  93 */ "Unknown_93",
 	/* 0x5E  94 */ "SwitchToThread",
 	/* 0x5F  95 */ "Yield",
@@ -347,9 +348,9 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x46  70 */ Opcode_Sys0_GetThreadID,
 	/* 0x47  71 */ Opcode_Sys0_Unknown_71,
 	/* 0x48  72 */ Opcode_Sys0_Unknown_72,
-	/* 0x49  73 */ Opcode_Sys0_Unknown_73,
-	/* 0x4A  74 */ Opcode_Sys0_Unknown_74,
-	/* 0x4B  75 */ Opcode_Sys0_Unknown_75,
+	/* 0x49  73 */ Opcode_Sys0_TakeMessage,
+	/* 0x4A  74 */ Opcode_Sys0_PostMessages,
+	/* 0x4B  75 */ Opcode_Sys0_TakeMessages,
 	/* 0x4C  76 */ Opcode_Sys0_Unknown_76,
 	/* 0x4D  77 */ NULL,
 	/* 0x4E  78 */ NULL,
@@ -366,7 +367,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x59  89 */ Opcode_Sys0_Unknown_89,
 	/* 0x5A  90 */ Opcode_Sys0_Unknown_90,
 	/* 0x5B  91 */ NULL,
-	/* 0x5C  92 */ Opcode_Sys0_Unknown_92,
+	/* 0x5C  92 */ Opcode_Sys0_WaitTiming,
 	/* 0x5D  93 */ Opcode_Sys0_Unknown_93,
 	/* 0x5E  94 */ Opcode_Sys0_SwitchToThread,
 	/* 0x5F  95 */ Opcode_Sys0_Yield,
@@ -550,12 +551,11 @@ uint32_t Opcode_Sys0_Unknown_2(Thread_t* thread)
 }
 
 
+// Sys0 0x04 (0x00487F30) pushes the tick count from 0x004988B0, the clock
+// every deadline in the engine is measured against.
 uint32_t Opcode_Sys0_GetSysTime(Thread_t* thread)
 {
-	// Dummy data
-	uint32_t data = 0xDEADBEEF;
-
-	Thread_PushStack(thread, data);
+	Thread_PushStack(thread, OS_GetTicks());
 	return 0;
 }
 
@@ -1148,22 +1148,83 @@ uint32_t Opcode_Sys0_Unknown_72(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_73(Thread_t* thread)
+/*
+ * Sys0 0x49 (0x00488FB0) takes one message for the running thread. It pushes
+ * whether there was one, and writes to the address only when there was.
+ */
+uint32_t Opcode_Sys0_TakeMessage(Thread_t* thread)
 {
-	uint8_t* ptr = Thread_PopAndResolveAddress(thread);
-	// Writes a uint32 to ptr from an unknown list in the thread, possibly a message queue being popped
-	Thread_PushStack(thread, 0);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	uint32_t value = 0;
+	int taken = Thread_TakeMessage(thread, &value);
+	if(taken && out != NULL)
+		Thread_WriteIntToMemory(thread, out, 4, value);
+	Thread_PushStack(thread, (uint32_t)taken);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_74(Thread_t* thread)
+/*
+ * Sys0 0x4A (0x00488FE0) posts a run of values to another thread's queue. The
+ * array of values pops first, then how many of them, then the thread's handle.
+ * An unknown handle and a count below 1 are both fatal, as in the original.
+ */
+uint32_t Opcode_Sys0_PostMessages(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t* values = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	int count = (int)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Thread_t* target = Engine_GetThreadById(thread->engine, handle);
+	if(target == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid thread handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+	if(count < 1)
+	{
+		printf("[Thread %d]: %sError: an invalid thread message count [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], count);
+		return 0xFFFFFFFF;
+	}
+	if(values == NULL)
+		return 0xFFFFFFFF;
+
+	for(int i = 0; i < count; i++)
+		Thread_PostMessage(target, values[i]);
+	printf("[Thread %d]: %sPosted %d message%s to thread %d\n",
+	       thread->threadId, TLevel[thread->level], count, count == 1 ? "" : "s", handle);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_75(Thread_t* thread)
+/*
+ * Sys0 0x4B (0x00489090) takes a run of messages into an array and pushes how
+ * many there were. The loop tests the previous take before taking again, so an
+ * empty queue ends the run; nothing is written for the take that failed.
+ */
+uint32_t Opcode_Sys0_TakeMessages(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	int count = (int)Thread_PopStack(thread);
+	if(count < 1)
+	{
+		printf("[Thread %d]: %sError: an invalid thread message count [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], count);
+		return 0xFFFFFFFF;
+	}
+
+	int taken = 0;
+	int more = 1;
+	for(int i = 0; i < count && more; i++)
+	{
+		uint32_t value = 0;
+		more = Thread_TakeMessage(thread, &value);
+		if(more && out != NULL)
+			Thread_WriteIntToMemory(thread, out + (size_t)i * 4, 4, value);
+		taken += more;
+	}
+	Thread_PushStack(thread, (uint32_t)taken);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_76(Thread_t* thread)
@@ -1207,14 +1268,24 @@ uint32_t Opcode_Sys0_Unknown_90(Thread_t* thread)
 	return 2;
 }
 
-uint32_t Opcode_Sys0_Unknown_92(Thread_t* thread)
+/*
+ * Sys0 0x5C (0x00489370) makes the thread wait. The key mask pops first, then
+ * whether a key may cut the wait short, then the delay; the process is joined
+ * to the thread (0x004452A0) and the handler returns 2, which is the result
+ * that means the thread is waiting. Nothing is pushed here: the process pushes
+ * its own result when it finishes, 1 if a key cut it short and 0 otherwise.
+ */
+uint32_t Opcode_Sys0_WaitTiming(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint32_t value3 = Thread_PopStack(thread);
-	//Thread_PushStack(thread, 0); // This push happens *after* execution! Find out where it happens!
-	Thread_SchedulePush(thread, 0);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t keyMask = Thread_PopStack(thread);
+	uint32_t allowKey = Thread_PopStack(thread);
+	uint32_t delay = Thread_PopStack(thread);
+
+	Process_t* process = Process_CreateWaitTiming(thread, delay, allowKey, keyMask);
+	if(process == NULL)
+		return 0xFFFFFFFF;
+	Thread_SetProcess(thread, process);
+	printf("[Thread %d]: %sWaiting %d ms\n", thread->threadId, TLevel[thread->level], delay);
 	return 2;
 }
 

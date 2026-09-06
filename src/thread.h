@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 typedef struct Engine Engine_t;
+struct Process;
 
 // Program structure:
 // 4 bytes - Code offset
@@ -26,10 +27,23 @@ struct Memory
 };
 
 
+// A thread's message queue, +0x5C and +0x60 of the original's thread object:
+// values arrive at the tail (0x004453A0) and are taken from the head
+// (0x004453E0).
+typedef struct Message Message_t;
+struct Message
+{
+	uint32_t   value;
+	Message_t* next;
+};
+
 typedef struct Thread Thread_t;
 // Bit 31 of a thread's flags, which the scheduler sets when the thread's
 // outermost frame returns. Same bit the original sets at 0x0048D06C.
 #define THREAD_FLAG_TERMINATED 0x80000000
+// Bit 0 of the same word: the thread is waiting on the process at +0x58 of
+// the original's thread object. 0x004452A0 sets it, 0x00445090 clears it.
+#define THREAD_FLAG_WAITING 0x00000001
 
 struct Thread
 {
@@ -66,6 +80,11 @@ struct Thread
 	Engine_t* engine;
 	uint16_t opcode;
 	int waitTicks;
+	struct Process* process;
+
+	Message_t* messages;
+	Message_t* messagesTail;
+
 	int queuePush;
 	int queuePushQueue[10];
 
@@ -100,5 +119,15 @@ uint32_t Thread_GetLocalMemSize(Thread_t* thread);
 uint32_t Thread_GetThreadID(Thread_t* thread);
 void Thread_Sprintf(Thread_t* thread, char* dst, const char* fmt);
 void Thread_SchedulePush(Thread_t* thread, uint32_t data);
+// 0x004452A0: the thread waits on this process from now on. Any process it
+// was already waiting on is destroyed, as there.
+void Thread_SetProcess(Thread_t* thread, struct Process* process);
+// 0x004452D0: run the process the thread is waiting on. 1 when it finished
+// (it is destroyed and the thread may run again), 0 while it is still
+// waiting, -1 when the thread had no process at all.
+int Thread_RunProcess(Thread_t* thread);
+void Thread_PostMessage(Thread_t* thread, uint32_t value);
+// 1 when a message was taken and written to value, 0 when the queue was empty.
+int Thread_TakeMessage(Thread_t* thread, uint32_t* value);
 
 #endif
