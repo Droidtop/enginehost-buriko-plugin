@@ -126,6 +126,8 @@ uint32_t Object_Create(uint32_t tag)
 	// +0x150 = -1, as the sprite constructor leaves it. +0x158 is not written by any
 	// constructor read so far; -1 here so that it can never accidentally equal a
 	// real bitmap serial before something has actually given this sprite content.
+	object->x = 0;
+	object->y = 0;
 	object->bitmapId = -1;
 	object->bitmapSerial = 0xFFFFFFFFu;
 	object->surfacePixels = NULL;
@@ -513,6 +515,34 @@ static void Object_SetTransparency(DisplayObject_t* object, uint32_t transparenc
 	object->transparency = transparency;
 	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
 		Object_SetTransparency(child, transparency);
+}
+
+// 0x0041B3A0: the two fields, and then the same virtual down every child, which is
+// how a group moves everything under it.
+static void Object_SetPosition(DisplayObject_t* object, int32_t x, int32_t y)
+{
+	object->x = x;
+	object->y = y;
+	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
+		Object_SetPosition(child, x, y);
+}
+
+void Object_ApplyPosition(DisplayObject_t* object, int32_t x, int32_t y)
+{
+	if(object == NULL)
+		return;
+
+	// 0x004437B0's bracket, the same one the content opcode uses: it asks once,
+	// before the move, whether the object would be drawn, and dirties the screen
+	// then and again afterwards on that same answer.
+	int drawable = Object_IsDrawable(object);
+	if(drawable)
+		gObjectDamage++;
+
+	Object_SetPosition(object, x, y);
+
+	if(drawable)
+		gObjectDamage++;
 }
 
 void Object_ApplyTransparency(DisplayObject_t* object, uint32_t transparency)

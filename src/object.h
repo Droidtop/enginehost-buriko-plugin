@@ -49,6 +49,10 @@ struct DisplayObject
 	int       hidden;      // +0x0C
 	int       propagateHidden; // +0x10
 	int       visible;            // +0x14
+	// +0x38 and +0x3C, the object's position, which vtable+0x38 (0x0041B3A0) writes
+	// and then writes down every child through the child's own virtual.
+	int32_t   x;
+	int32_t   y;
 	uint32_t  priority;           // +0x48
 	uint32_t  unknownA8;          // +0xA8
 	uint32_t  unknownAC;          // +0xAC
@@ -149,6 +153,9 @@ void Object_ApplyHidden(DisplayObject_t* object, int hidden);
 const char* Object_ApplyEffectLevel(DisplayObject_t* object, uint32_t level);
 // The transparency (Grp0 0x34, 0x00443690), which takes the same range.
 void Object_ApplyTransparency(DisplayObject_t* object, uint32_t transparency);
+// The position (Grp0 0x37, the virtual at vtable+0x38), bracketed as 0x004437B0
+// brackets it.
+void Object_ApplyPosition(DisplayObject_t* object, int32_t x, int32_t y);
 // ----------------------------------------------------------------------------------
 // Sprite content: the virtual-free function 0x004273C0, which is both the sprite
 // parameter 0x10 and the worker behind Grp0 0x57. It dispatches on the sprite's kind

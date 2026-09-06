@@ -64,7 +64,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x34  52 */ "SetObjectTransparency",
 	/* 0x35  53 */ "Unknown_53",
 	/* 0x36  54 */ "--Unknown--",
-	/* 0x37  55 */ "Unknown_55",
+	/* 0x37  55 */ "SetObjectPosition",
 	/* 0x38  56 */ "SetObjectParameter",
 	/* 0x39  57 */ "--Unknown--",
 	/* 0x3A  58 */ "--Unknown--",
@@ -323,7 +323,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x34  52 */ Opcode_Grp0_SetObjectTransparency,
 	/* 0x35  53 */ Opcode_Grp0_Unknown_53,
 	/* 0x36  54 */ NULL,
-	/* 0x37  55 */ Opcode_Grp0_Unknown_55,
+	/* 0x37  55 */ Opcode_Grp0_SetObjectPosition,
 	/* 0x38  56 */ Opcode_Grp0_SetObjectParameter,
 	/* 0x39  57 */ NULL,
 	/* 0x3A  58 */ NULL,
@@ -1086,9 +1086,27 @@ uint32_t Opcode_Grp0_Unknown_53(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_55(Thread_t* thread)
+// Grp0 0x37 (0x0047B470 -> 0x00462130 -> 0x004437B0) moves a display object. It
+// resolves every kind of object, not only sprites, and a handle that names none of
+// them is fatal: "an invalid object handle was specified" (0x004E8BD0). The script
+// pushes the handle, then x, then y, so they come off the stack the other way round.
+// It pushes nothing back.
+uint32_t Opcode_Grp0_SetObjectPosition(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	Object_ApplyPosition(object, x, y);
+	return 0;
 }
 
 // Grp0 0x38 (0x0047B4C0 -> 0x00462190 -> 0x00443990) sets one parameter of a display
