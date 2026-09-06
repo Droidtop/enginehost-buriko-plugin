@@ -72,7 +72,7 @@ uint32_t Opcode_Sys1_Unknown_211(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_212(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_213(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_224(Thread_t* thread);
-uint32_t Opcode_Sys1_Unknown_233(Thread_t* thread);
+uint32_t Opcode_Sys1_UpdateChecksum(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_234(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_236(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_237(Thread_t* thread);

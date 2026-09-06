@@ -248,7 +248,7 @@ char* OpcodesSys1Mnemonics[256] = {
 	/* 0xE6 230 */ "--Unknown--",
 	/* 0xE7 231 */ "--Unknown--",
 	/* 0xE8 232 */ "--Unknown--",
-	/* 0xE9 233 */ "Unknown_233",
+	/* 0xE9 233 */ "UpdateChecksum",
 	/* 0xEA 234 */ "Unknown_234",
 	/* 0xEB 235 */ "--Unknown--",
 	/* 0xEC 236 */ "Unknown_236",
@@ -507,7 +507,7 @@ OpcodePtr_t OpcodesSys1[256] = {
 	/* 0xE6 230 */ NULL,
 	/* 0xE7 231 */ NULL,
 	/* 0xE8 232 */ NULL,
-	/* 0xE9 233 */ Opcode_Sys1_Unknown_233,
+	/* 0xE9 233 */ Opcode_Sys1_UpdateChecksum,
 	/* 0xEA 234 */ Opcode_Sys1_Unknown_234,
 	/* 0xEB 235 */ NULL,
 	/* 0xEC 236 */ Opcode_Sys1_Unknown_236,
@@ -862,9 +862,50 @@ uint32_t Opcode_Sys1_Unknown_224(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys1_Unknown_233(Thread_t* thread)
+// Sys1 0xE9 (0x0048C700 -> 0x00401900) folds a block of the script's own memory into
+// a running eight-byte checksum. The length comes off the stack first, then the
+// address of the bytes and the address of the checksum, both resolved (0x0048E0E0).
+// A length of zero or less does nothing at all, and nothing is pushed back.
+//
+// The state is a 32-bit accumulator followed by four bytes, and per byte v it is
+// exactly: h = h * 0xE9 + v, then a += h, b ^= h, c += v, d ^= v, where a and b take
+// only the low byte of h. The original keeps a, b and d in locals across the loop and
+// writes all four out every time round, which comes to the same thing.
+uint32_t Opcode_Sys1_UpdateChecksum(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int32_t length = (int32_t)Thread_PopStack(thread);
+	const uint8_t* data = Thread_PopAndResolveAddress(thread);
+	uint8_t* state = Thread_PopAndResolveAddress(thread);
+
+	if(length <= 0 || data == NULL || state == NULL)
+		return 0;
+
+	uint32_t h = (uint32_t)state[0] | ((uint32_t)state[1] << 8)
+	           | ((uint32_t)state[2] << 16) | ((uint32_t)state[3] << 24);
+	uint8_t a = state[4];
+	uint8_t b = state[5];
+	uint8_t c = state[6];
+	uint8_t d = state[7];
+
+	for(int32_t i = 0; i < length; i++)
+	{
+		uint8_t v = data[i];
+		h = h * 0xE9u + v;
+		a = (uint8_t)(a + (uint8_t)h);
+		b = (uint8_t)(b ^ (uint8_t)h);
+		c = (uint8_t)(c + v);
+		d = (uint8_t)(d ^ v);
+	}
+
+	state[0] = (uint8_t)h;
+	state[1] = (uint8_t)(h >> 8);
+	state[2] = (uint8_t)(h >> 16);
+	state[3] = (uint8_t)(h >> 24);
+	state[4] = a;
+	state[5] = b;
+	state[6] = c;
+	state[7] = d;
+	return 0;
 }
 
 uint32_t Opcode_Sys1_Unknown_234(Thread_t* thread)
