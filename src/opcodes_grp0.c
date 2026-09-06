@@ -5,7 +5,7 @@
 #include "renderer.h"
 #include "opcodes.h"
 #include "opcodes_grp0.h"
-#include "sprite.h"
+#include "object.h"
 #include "thread.h"
 
 char* OpcodesGrp0Mnemonics[256] = {
@@ -596,7 +596,7 @@ uint32_t Opcode_Grp0_SetDrawPriority(Thread_t* thread)
 		return 0xFFFFFFFF;
 	}
 	gDrawPriority = priority << 16;
-	gSpriteDamage++;
+	gObjectDamage++;
 	printf("[Thread %d]: %sDrawing at priority %d\n",
 	       thread->threadId, TLevel[thread->level], priority);
 	return 0;
@@ -996,17 +996,17 @@ uint32_t Opcode_Grp0_SetObjectEnabled(Thread_t* thread)
 	uint32_t enabled = Thread_PopStack(thread);
 	uint32_t handle = Thread_PopStack(thread);
 
-	// Sprites are the only display objects that exist here; the original
-	// resolver (0x00443350) reaches every kind.
-	if(!Sprite_SetEnabledByHandle(handle, (int)enabled))
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
 	{
 		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
 		       thread->threadId, TLevel[thread->level]);
 		return 0xFFFFFFFF;
 	}
+
+	Object_ApplyEnabled(object, (int)enabled);
 	return 0;
 }
-
 uint32_t Opcode_Grp0_Unknown_50(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
@@ -1049,7 +1049,10 @@ uint32_t Opcode_Grp0_SetObjectParameter(Thread_t* thread)
 	uint32_t handle = Thread_PopStack(thread);
 
 	const char* unread = NULL;
-	uint32_t result = Sprite_SetParameterByHandle(handle, number, value1, value2, &unread);
+	DisplayObject_t* object = Object_Resolve(handle);
+	uint32_t result = object != NULL
+		? Object_ApplyParameter(object, number, value1, value2, &unread)
+		: OBJECT_SET_BAD_HANDLE;
 
 	switch(result)
 	{
@@ -1171,7 +1174,7 @@ uint32_t Opcode_Grp0_Unknown_77(Thread_t* thread)
 // "no more sprite objects can be created" (0x004E9384).
 uint32_t Opcode_Grp0_CreateSpriteObject(Thread_t* thread)
 {
-	uint32_t handle = Sprite_Create();
+	uint32_t handle = Object_Create(OBJECT_TAG_SPRITE);
 	if(handle == 0)
 	{
 		printf("[Thread %d]: %sError: no more sprite objects can be created (%d in use)\n", thread->threadId, TLevel[thread->level], SPRITE_SLOT_COUNT);
@@ -1181,7 +1184,6 @@ uint32_t Opcode_Grp0_CreateSpriteObject(Thread_t* thread)
 	Thread_PushStack(thread, handle);
 	return 0;
 }
-
 uint32_t Opcode_Grp0_Unknown_81(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
@@ -1201,15 +1203,17 @@ uint32_t Opcode_Grp0_SetSpriteVisible(Thread_t* thread)
 	uint32_t visible = Thread_PopStack(thread);
 	uint32_t handle = Thread_PopStack(thread);
 
-	if(!Sprite_SetVisibleByHandle(handle, (int)visible))
+	DisplayObject_t* sprite = Object_ResolveKind(handle, OBJECT_TYPE_SPRITE);
+	if(sprite == NULL)
 	{
-		printf("[Thread %d]: %sError: an invalid sprite handle was specified (0x%.8X)\n", thread->threadId, TLevel[thread->level], handle);
+		printf("[Thread %d]: %sError: an invalid sprite handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
 		return 0xFFFFFFFF;
 	}
 
+	Object_ApplyVisible(sprite, (int)visible);
 	return 0;
 }
-
 uint32_t Opcode_Grp0_Unknown_85(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
@@ -2045,12 +2049,24 @@ uint32_t Opcode_Grp0_Unknown_223(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
+// Grp0 0xE0 (0x004800E0 -> 0x004636C0 -> 0x00442640) makes a group object and pushes
+// its handle. A group is eight slots deep, its handle carries the tag 0xF1, and
+// running out is fatal with its own message: "no more group objects can be created"
+// (0x004EA470). The stub this replaces pushed the constant 0xF0000000, which is a
+// slot of a different kind of object altogether.
 uint32_t Opcode_Grp0_CreateGroupObject(Thread_t* thread)
 {
-	Thread_PushStack(thread, 0xf0000000);
+	uint32_t handle = Object_Create(OBJECT_TAG_GROUP);
+	if(handle == 0)
+	{
+		printf("[Thread %d]: %sError: no more group objects can be created (%d in use)\n",
+		       thread->threadId, TLevel[thread->level], GROUP_SLOT_COUNT);
+		return 0xFFFFFFFF;
+	}
+
+	Thread_PushStack(thread, handle);
 	return 0;
 }
-
 uint32_t Opcode_Grp0_Unknown_225(Thread_t* thread)
 {
 	return 0xFFFFFFFF;

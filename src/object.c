@@ -1,15 +1,17 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 
-#include "sprite.h"
+#include "object.h"
 
 // ----------------------------------------------------------------------------------
-// Sprite objects
+// Display objects
 //
 // The engine used to hand out 0x80000000, 0x80000001, ... from a counter with nothing
 // behind them, which is wrong twice over: nothing can be asked about a sprite, and the
-// original reuses freed indices instead of counting upwards.
+// original reuses freed indices instead of counting upwards. Groups had it worse: the
+// same constant handle every time, and the wrong tag byte for a group at that.
 //
 // The original's model (fureraba.exe):
 //   The display root is the object at 0x0056674C. Its slot array is root+0x5C with
@@ -38,136 +40,171 @@
 // already passes - which is why showing a new sprite is what changes the answer.
 // ----------------------------------------------------------------------------------
 
-Sprite_t* gSprites[SPRITE_SLOT_COUNT] = { NULL };
-uint32_t  gSpriteCount = 0;
-uint32_t  gSpriteSerial = 0;
+// One table per kind, each with the live count and the serial counter the original
+// keeps beside it (a sprite's at root+0x85C and root+0x860, a group's at root+0xA34
+// and root+0xA38).
+static DisplayObject_t* gSprites[SPRITE_SLOT_COUNT] = { NULL };
+static uint32_t gSpriteCount = 0;
+static uint32_t gSpriteSerial = 0;
+static DisplayObject_t* gGroups[GROUP_SLOT_COUNT] = { NULL };
+static uint32_t gGroupCount = 0;
+static uint32_t gGroupSerial = 0;
+
+typedef struct ObjectKind
+{
+	uint32_t          tag;
+	uint32_t          type;
+	uint32_t          slotCount;
+	DisplayObject_t** slots;
+	uint32_t*         count;
+	uint32_t*         serial;
+} ObjectKind_t;
+
+static const ObjectKind_t gKinds[] = {
+	{ OBJECT_TAG_SPRITE, OBJECT_TYPE_SPRITE, SPRITE_SLOT_COUNT, gSprites, &gSpriteCount, &gSpriteSerial },
+	{ OBJECT_TAG_GROUP,  OBJECT_TYPE_GROUP,  GROUP_SLOT_COUNT,  gGroups,  &gGroupCount,  &gGroupSerial  },
+};
+#define OBJECT_KIND_COUNT (sizeof(gKinds) / sizeof(gKinds[0]))
+
+static const ObjectKind_t* Object_KindForTag(uint32_t tag)
+{
+	for(size_t i = 0; i < OBJECT_KIND_COUNT; i++)
+		if(gKinds[i].tag == tag)
+			return &gKinds[i];
+	return NULL;
+}
 
 // The original unions the sprite's rectangle into the global dirty region at
 // 0x00565B2C (vtable +0x0C, 0x0041AF30, through the rectangle accessors at vtable
 // +0x24 and +0x1C). A sprite here has no rectangle yet, because nothing can give it
 // an image, so the damage is only counted for now - the count is what a renderer
 // would consume, and it is not a made-up answer to anybody's question.
-uint32_t  gSpriteDamage = 0;
+uint32_t  gObjectDamage = 0;
 uint32_t  gDrawPriority = 0;
 
-uint32_t Sprite_Create(void)
+uint32_t Object_Create(uint32_t tag)
 {
-	if(gSpriteCount >= SPRITE_SLOT_COUNT)
+	const ObjectKind_t* kind = Object_KindForTag(tag);
+	if(kind == NULL)
+		return 0;
+
+	if(*kind->count >= kind->slotCount)
 		return 0;
 
 	// The first free slot, not the next index: freed slots are reused.
 	uint32_t index = 0;
-	while(index < SPRITE_SLOT_COUNT && gSprites[index] != NULL)
+	while(index < kind->slotCount && kind->slots[index] != NULL)
 		index++;
-	if(index >= SPRITE_SLOT_COUNT)
+	if(index >= kind->slotCount)
 		return 0;
 
-	Sprite_t* sprite = (Sprite_t*)malloc(sizeof(Sprite_t));
-	if(sprite == NULL)
+	DisplayObject_t* object = (DisplayObject_t*)malloc(sizeof(DisplayObject_t));
+	if(object == NULL)
 		return 0;
 
-	memset(sprite, 0, sizeof(Sprite_t));
-	sprite->serial = gSpriteSerial++;
-	sprite->type = SPRITE_OBJECT_TYPE;
-	sprite->enabled = 1;
-	sprite->priority = 1;
-	sprite->unknownA8 = 0x80;
-	sprite->opacity = 0x100;
+	// What the base constructor (0x0041A4D0) leaves behind, whatever the kind: the
+	// type at +0x18 and the serial at +0x20 from its two arguments, then +0x04 = 1,
+	// +0x08 = 0, +0x0C = 0, +0x10 = 0, +0x14 = 0, +0x48 = 1, +0xA8 = 0x80,
+	// +0xAC = 0, +0xB0 = 0 and +0xB4 = 0x100.
+	memset(object, 0, sizeof(DisplayObject_t));
+	object->serial = (*kind->serial)++;
+	object->type = kind->type;
+	object->enabled = 1;
+	object->priority = 1;
+	object->unknownA8 = 0x80;
+	object->opacity = 0x100;
 
-	gSprites[index] = sprite;
-	gSpriteCount++;
+	kind->slots[index] = object;
+	(*kind->count)++;
 
-	return index | SPRITE_HANDLE_TAG;
+	return index | kind->tag;
 }
-
-Sprite_t* Sprite_Resolve(uint32_t handle)
+DisplayObject_t* Object_Resolve(uint32_t handle)
 {
-	if((handle & 0xFF000000u) != SPRITE_HANDLE_TAG)
+	const ObjectKind_t* kind = Object_KindForTag(handle & OBJECT_TAG_MASK);
+	if(kind == NULL)
 		return NULL;
 
-	uint32_t index = handle & SPRITE_HANDLE_MASK;
-	if(index >= SPRITE_SLOT_COUNT)
+	uint32_t index = handle & OBJECT_INDEX_MASK;
+	if(index >= kind->slotCount)
 		return NULL;
 
-	return gSprites[index];
+	return kind->slots[index];
 }
 
-int Sprite_IsDrawable(const Sprite_t* sprite)
+DisplayObject_t* Object_ResolveKind(uint32_t handle, uint32_t type)
 {
-	if(sprite == NULL)
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL || object->type != type)
+		return NULL;
+
+	return object;
+}
+int Object_IsDrawable(const DisplayObject_t* object)
+{
+	if(object == NULL)
 		return 0;
 
-	return sprite->visible != 0
-		&& sprite->enabled != 0
-		&& sprite->flagUnknown0C == 0
-		&& sprite->unknownB0 < 0x100
-		&& sprite->opacity > 0;
+	return object->visible != 0
+		&& object->enabled != 0
+		&& object->flagUnknown0C == 0
+		&& object->unknownB0 < 0x100
+		&& object->opacity > 0;
 }
-
-void Sprite_SetVisible(Sprite_t* sprite, int visible)
+void Object_SetVisible(DisplayObject_t* object, int visible)
 {
-	if(sprite == NULL)
+	if(object == NULL)
 		return;
 
 	// 0x0041AED0 stores the flag and passes the same call down every child, so a
 	// hidden parent hides its whole subtree. Nothing builds children yet; the walk is
 	// here because it is the operation, not because it has anything to do today.
-	sprite->visible = visible;
-	for(Sprite_t* child = sprite->firstChild; child != NULL; child = child->nextSibling)
-		Sprite_SetVisible(child, visible);
+	object->visible = visible;
+	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
+		Object_SetVisible(child, visible);
 }
-
-int Sprite_SetVisibleByHandle(uint32_t handle, int visible)
+void Object_ApplyVisible(DisplayObject_t* object, int visible)
 {
-	Sprite_t* sprite = Sprite_Resolve(handle);
-	if(sprite == NULL)
-		return 0;
+	if(object == NULL)
+		return;
 
-	// 0x0043EF50 asks whether the sprite would be drawn, sets the flag, asks again,
+	// 0x0043EF50 asks whether the object would be drawn, sets the flag, asks again,
 	// and dirties the screen only when the answer changed - not merely when the flag
 	// did, which are different things once opacity or a parent is involved.
-	int before = Sprite_IsDrawable(sprite);
-	Sprite_SetVisible(sprite, visible);
-	int after = Sprite_IsDrawable(sprite);
+	int before = Object_IsDrawable(object);
+	Object_SetVisible(object, visible);
+	int after = Object_IsDrawable(object);
 
 	if(before != after)
-		gSpriteDamage++;
-
-	return 1;
+		gObjectDamage++;
 }
-
-void Sprite_SetEnabled(Sprite_t* sprite, int enabled)
+void Object_SetEnabled(DisplayObject_t* object, int enabled)
 {
-	if(sprite == NULL)
+	if(object == NULL)
 		return;
 
 	// 0x0041AE30 stores the flag and walks the children only when +0x08 is
 	// set, unlike the visible flag, which always walks them.
-	sprite->enabled = enabled;
-	if(sprite->propagateEnabled == 0)
+	object->enabled = enabled;
+	if(object->propagateEnabled == 0)
 		return;
-	for(Sprite_t* child = sprite->firstChild; child != NULL; child = child->nextSibling)
-		Sprite_SetEnabled(child, enabled);
+	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
+		Object_SetEnabled(child, enabled);
 }
-
-int Sprite_SetEnabledByHandle(uint32_t handle, int enabled)
+void Object_ApplyEnabled(DisplayObject_t* object, int enabled)
 {
-	Sprite_t* sprite = Sprite_Resolve(handle);
-	if(sprite == NULL)
-		return 0;
+	if(object == NULL)
+		return;
 
 	// 0x00443460: would it be drawn, set the flag, would it be drawn now,
 	// and dirty the screen only when that answer changed.
-	int before = Sprite_IsDrawable(sprite);
-	Sprite_SetEnabled(sprite, enabled);
-	int after = Sprite_IsDrawable(sprite);
+	int before = Object_IsDrawable(object);
+	Object_SetEnabled(object, enabled);
+	int after = Object_IsDrawable(object);
 
 	if(before != after)
-		gSpriteDamage++;
-
-	return 1;
+		gObjectDamage++;
 }
-
 // ----------------------------------------------------------------------------------
 // Parameters (vtable+0x5C)
 //
@@ -208,23 +245,23 @@ int Sprite_SetEnabledByHandle(uint32_t handle, int enabled)
 // nothing here has yet - a sprite cannot be given an image, so its kind at +0x134 is
 // not modelled either - say so by name instead of being invented.
 // ----------------------------------------------------------------------------------
-static uint32_t Sprite_SetParameterBase(Sprite_t* sprite, uint32_t number, uint32_t value1, uint32_t value2, const char** unread)
+static uint32_t Object_SetParameterBase(DisplayObject_t* object, uint32_t number, uint32_t value1, uint32_t value2, const char** unread)
 {
 	(void)value2;
 
 	switch(number)
 	{
 	case 0x01:                              // 0x0041B6D0
-		sprite->unknownA8 = value1;
+		object->unknownA8 = value1;
 		return OBJECT_PARAM_OK;
 	case 0xC0:                              // 0x004932C0
-		sprite->propagateEnabled = (int)value1;
+		object->propagateEnabled = (int)value1;
 		return OBJECT_PARAM_OK;
 	case 0xC1:                              // 0x0041AEB0
-		sprite->propagateUnknown0C = (int)value1;
+		object->propagateUnknown0C = (int)value1;
 		return OBJECT_PARAM_OK;
 	case 0xC4:                              // 0x0041AEC0
-		sprite->priority = value1;
+		object->priority = value1;
 		return OBJECT_PARAM_OK;
 
 	case 0x00:
@@ -253,20 +290,21 @@ static uint32_t Sprite_SetParameterBase(Sprite_t* sprite, uint32_t number, uint3
 	return OBJECT_PARAM_UNSUPPORTED;
 }
 
-uint32_t Sprite_SetParameter(Sprite_t* sprite, uint32_t number, uint32_t value1, uint32_t value2, const char** unread)
+uint32_t Object_SetParameter(DisplayObject_t* object, uint32_t number, uint32_t value1, uint32_t value2, const char** unread)
 {
 	const char* ignored = NULL;
 	if(unread == NULL)
 		unread = &ignored;
 	*unread = NULL;
 
-	if(sprite == NULL)
+	if(object == NULL)
 		return OBJECT_PARAM_UNSUPPORTED;
 
-	// The sprite's own arms, none of which can be honoured until a sprite can hold
-	// an image: they either call a function that is still unread or write a field of
-	// the content the object's kind (+0x134) selects.
-	switch(number)
+	// The sprite's own arms, which only a sprite has: a group's vtable+0x5C is the
+	// base itself (0x0041B9B0), so a group answers none of these. None can be
+	// honoured until a sprite can hold an image anyway: they either call a function
+	// that is still unread or write a field of the content its kind (+0x134) selects.
+	switch(object->type == OBJECT_TYPE_SPRITE ? number : 0xFFFFFFFFu)
 	{
 	case 0x10:
 		*unread = "0x004273C0";
@@ -309,13 +347,12 @@ uint32_t Sprite_SetParameter(Sprite_t* sprite, uint32_t number, uint32_t value1,
 		return OBJECT_PARAM_UNREAD;
 	}
 
-	return Sprite_SetParameterBase(sprite, number, value1, value2, unread);
+	return Object_SetParameterBase(object, number, value1, value2, unread);
 }
 
-uint32_t Sprite_SetParameterByHandle(uint32_t handle, uint32_t number, uint32_t value1, uint32_t value2, const char** unread)
+uint32_t Object_ApplyParameter(DisplayObject_t* object, uint32_t number, uint32_t value1, uint32_t value2, const char** unread)
 {
-	Sprite_t* sprite = Sprite_Resolve(handle);
-	if(sprite == NULL)
+	if(object == NULL)
 		return OBJECT_SET_BAD_HANDLE;
 
 	// 0x00443990 brackets the write: it dirties the screen before the change when the
@@ -323,15 +360,15 @@ uint32_t Sprite_SetParameterByHandle(uint32_t handle, uint32_t number, uint32_t 
 	// between it also compares the object's draw-order key (vtable+0x1C, 0x0041B190)
 	// from before and after and re-sorts the display list through 0x004433E0 when it
 	// moved. There is no display list order here yet, and the key is built from the
-	// object's rectangle, which a sprite cannot have until it can hold an image, so
-	// that comparison is left out rather than faked.
-	if(Sprite_IsDrawable(sprite))
-		gSpriteDamage++;
+	// object's rectangle, which nothing here can have until an object can hold an
+	// image, so that comparison is left out rather than faked.
+	if(Object_IsDrawable(object))
+		gObjectDamage++;
 
-	uint32_t result = Sprite_SetParameter(sprite, number, value1, value2, unread);
+	uint32_t result = Object_SetParameter(object, number, value1, value2, unread);
 
-	if(result == OBJECT_PARAM_OK && Sprite_IsDrawable(sprite))
-		gSpriteDamage++;
+	if(result == OBJECT_PARAM_OK && Object_IsDrawable(object))
+		gObjectDamage++;
 
 	switch(result)
 	{
@@ -341,13 +378,15 @@ uint32_t Sprite_SetParameterByHandle(uint32_t handle, uint32_t number, uint32_t 
 	default:                        return OBJECT_SET_UNSUPPORTED;
 	}
 }
-
-void Sprite_FreeAll(void)
+void Object_FreeAll(void)
 {
-	for(uint32_t i = 0; i < SPRITE_SLOT_COUNT; i++)
+	for(size_t i = 0; i < OBJECT_KIND_COUNT; i++)
 	{
-		free(gSprites[i]);
-		gSprites[i] = NULL;
+		for(uint32_t slot = 0; slot < gKinds[i].slotCount; slot++)
+		{
+			free(gKinds[i].slots[slot]);
+			gKinds[i].slots[slot] = NULL;
+		}
+		*gKinds[i].count = 0;
 	}
-	gSpriteCount = 0;
 }

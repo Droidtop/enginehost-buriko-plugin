@@ -8,7 +8,7 @@
 #include <ctype.h>
 #include <time.h>
 #include "engine.h"
-#include "sprite.h"
+#include "object.h"
 #include "arc.h"
 #include "renderer.h"
 #include "golden_log.h"
@@ -1952,7 +1952,7 @@ void Engine_Free(Engine_t* engine)
 	Renderer_Free(engine->renderer);
 
 	Engine_FreeUserInstructions();
-	Sprite_FreeAll();
+	Object_FreeAll();
 	while(gSearchPaths)
 	{
 		SearchPathNode_t* next = gSearchPaths->next;
