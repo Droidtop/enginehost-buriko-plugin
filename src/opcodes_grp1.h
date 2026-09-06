@@ -51,7 +51,7 @@ uint32_t Opcode_Grp1_Unknown_146(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_147(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_148(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_149(Thread_t* thread);
-uint32_t Opcode_Grp1_Unknown_150(Thread_t* thread);
+uint32_t Opcode_Grp1_LoadNameTable(Thread_t* thread);
 uint32_t Opcode_Grp1_SetPhoneticMargin(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_156(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_157(Thread_t* thread);

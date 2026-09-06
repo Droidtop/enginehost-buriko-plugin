@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include <time.h>
 #include "engine.h"
+#include "nametable.h"
 #include "object.h"
 #include "arc.h"
 #include "renderer.h"
@@ -1952,6 +1953,7 @@ void Engine_Free(Engine_t* engine)
 
 	Engine_FreeUserInstructions();
 	Object_FreeAll();
+	NameTable_FreeAll();
 	while(gSearchPaths)
 	{
 		SearchPathNode_t* next = gSearchPaths->next;

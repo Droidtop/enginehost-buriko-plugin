@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 #include "engine.h"
 #include "opcodes.h"
+#include "nametable.h"
 #include "object.h"
 #include "opcodes_grp1.h"
 #include "renderer.h"
@@ -159,7 +161,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x93 147 */ "Unknown_147",
     /* 0x94 148 */ "Unknown_148",
     /* 0x95 149 */ "Unknown_149",
-    /* 0x96 150 */ "Unknown_150",
+    /* 0x96 150 */ "LoadNameTable",
     /* 0x97 151 */ "--Unknown--",
     /* 0x98 152 */ "SetPhoneticMargin",
     /* 0x99 153 */ "--Unknown--",
@@ -418,7 +420,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x93 147 */ Opcode_Grp1_Unknown_147,
     /* 0x94 148 */ Opcode_Grp1_Unknown_148,
     /* 0x95 149 */ Opcode_Grp1_Unknown_149,
-    /* 0x96 150 */ Opcode_Grp1_Unknown_150,
+    /* 0x96 150 */ Opcode_Grp1_LoadNameTable,
     /* 0x97 151 */ NULL,
     /* 0x98 152 */ Opcode_Grp1_SetPhoneticMargin,
     /* 0x99 153 */ NULL,
@@ -925,9 +927,15 @@ uint32_t Opcode_Grp1_Unknown_149(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_150(Thread_t* thread)
+uint32_t Opcode_Grp1_LoadNameTable(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+
+	uint32_t result = NameTable_Load(text);
+	printf("[Thread %d]: %sLoad the name table from %d bytes of text: %s\n", thread->threadId, TLevel[thread->level], text != NULL ? (int)strlen(text) : 0, result != 0 ? "all of it" : "stopped early");
+
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
 uint32_t Opcode_Grp1_SetPhoneticMargin(Thread_t* thread)
