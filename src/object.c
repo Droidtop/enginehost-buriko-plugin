@@ -147,7 +147,7 @@ int Object_IsDrawable(const DisplayObject_t* object)
 
 	return object->visible != 0
 		&& object->enabled != 0
-		&& object->flagUnknown0C == 0
+		&& object->hidden == 0
 		&& object->unknownB0 < 0x100
 		&& object->opacity > 0;
 }
@@ -258,7 +258,7 @@ static uint32_t Object_SetParameterBase(DisplayObject_t* object, uint32_t number
 		object->propagateEnabled = (int)value1;
 		return OBJECT_PARAM_OK;
 	case 0xC1:                              // 0x0041AEB0
-		object->propagateUnknown0C = (int)value1;
+		object->propagateHidden = (int)value1;
 		return OBJECT_PARAM_OK;
 	case 0xC4:                              // 0x0041AEC0
 		object->priority = value1;
@@ -378,6 +378,34 @@ uint32_t Object_ApplyParameter(DisplayObject_t* object, uint32_t number, uint32_
 	default:                        return OBJECT_SET_UNSUPPORTED;
 	}
 }
+void Object_SetHidden(DisplayObject_t* object, int hidden)
+{
+	if(object == NULL)
+		return;
+
+	// 0x0041AE70, the same shape as the enabled setter one field along: it stores
+	// the flag and walks the children only when +0x10 is set.
+	object->hidden = hidden;
+	if(object->propagateHidden == 0)
+		return;
+	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
+		Object_SetHidden(child, hidden);
+}
+
+void Object_ApplyHidden(DisplayObject_t* object, int hidden)
+{
+	if(object == NULL)
+		return;
+
+	// 0x004434D0, the same bracket as the other two.
+	int before = Object_IsDrawable(object);
+	Object_SetHidden(object, hidden);
+	int after = Object_IsDrawable(object);
+
+	if(before != after)
+		gObjectDamage++;
+}
+
 void Object_FreeAll(void)
 {
 	for(size_t i = 0; i < OBJECT_KIND_COUNT; i++)

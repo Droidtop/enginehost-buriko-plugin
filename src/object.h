@@ -39,8 +39,8 @@ struct DisplayObject
 	uint32_t  type;               // +0x18, 2 for a sprite
 	int       enabled;            // +0x04
 	int       propagateEnabled;   // +0x08
-	int       flagUnknown0C;      // +0x0C
-	int       propagateUnknown0C; // +0x10
+	int       hidden;      // +0x0C
+	int       propagateHidden; // +0x10
 	int       visible;            // +0x14
 	uint32_t  priority;           // +0x48
 	uint32_t  unknownA8;          // +0xA8
@@ -99,10 +99,12 @@ int  Object_IsDrawable(const DisplayObject_t* object);
 // The flag and the walk down the children, as the original's setters do it.
 void Object_SetVisible(DisplayObject_t* object, int visible);
 void Object_SetEnabled(DisplayObject_t* object, int enabled);
+void Object_SetHidden(DisplayObject_t* object, int hidden);
 // The same, bracketed the way the opcodes' workers bracket them: would it be drawn,
 // change it, would it be drawn now, and dirty the screen only when that answer moved.
 void Object_ApplyVisible(DisplayObject_t* object, int visible);
 void Object_ApplyEnabled(DisplayObject_t* object, int enabled);
+void Object_ApplyHidden(DisplayObject_t* object, int hidden);
 void Object_FreeAll(void);
 
 #endif // __OBJECT_H__

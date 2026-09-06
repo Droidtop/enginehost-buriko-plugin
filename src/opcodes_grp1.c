@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include "engine.h"
 #include "opcodes.h"
+#include "object.h"
 #include "opcodes_grp1.h"
 #include "renderer.h"
 #include "thread.h"
@@ -57,7 +58,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x2E  46 */ "--Unknown--",
     /* 0x2F  47 */ "--Unknown--",
     /* 0x30  48 */ "--Unknown--",
-    /* 0x31  49 */ "--Unknown--",
+    /* 0x31  49 */ "SetObjectHidden",
     /* 0x32  50 */ "--Unknown--",
     /* 0x33  51 */ "Unknown_51",
     /* 0x34  52 */ "--Unknown--",
@@ -316,7 +317,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x2E  46 */ NULL,
     /* 0x2F  47 */ NULL,
     /* 0x30  48 */ NULL,
-    /* 0x31  49 */ NULL,
+    /* 0x31  49 */ Opcode_Grp1_SetObjectHidden,
     /* 0x32  50 */ NULL,
     /* 0x33  51 */ Opcode_Grp1_Unknown_51,
     /* 0x34  52 */ NULL,
@@ -966,3 +967,26 @@ uint32_t Opcode_Grp1_Unknown_191(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
+// Grp1 0x31 (0x00481AE0 -> 0x004620B0 -> 0x004434D0) sets the display object's second
+// hiding flag, +0x0C. It is the twin of Grp0 0x31, which sets +0x04: an object is
+// drawn only when +0x04 is set and +0x0C is clear (0x0041AF00), and the two
+// propagation flags Grp0 0x38 writes decide which of them reaches the children.
+// The script pushes the handle and then the flag, so the flag is popped first, and
+// an unresolvable handle is fatal: "an invalid object handle was specified"
+// (0x004E8BD0).
+uint32_t Opcode_Grp1_SetObjectHidden(Thread_t* thread)
+{
+	uint32_t hidden = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	Object_ApplyHidden(object, (int)hidden);
+	return 0;
+}
