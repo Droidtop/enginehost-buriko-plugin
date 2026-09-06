@@ -595,7 +595,7 @@ uint32_t Opcode_Grp0_SetDrawPriority(Thread_t* thread)
 		       thread->threadId, TLevel[thread->level], priority);
 		return 0xFFFFFFFF;
 	}
-	gDrawPriority = priority << 16;
+	gRootList.priority = priority << 16;
 	gObjectDamage++;
 	printf("[Thread %d]: %sDrawing at priority %d\n",
 	       thread->threadId, TLevel[thread->level], priority);

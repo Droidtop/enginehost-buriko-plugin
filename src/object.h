@@ -147,13 +147,36 @@ struct DisplayObject
 	// children's: an object is in at most one list, so it has an owner and not a
 	// sibling link.
 	ObjectChild_t*   children;
+	// Which display list this object is filed in, or NULL. The original does not
+	// keep it: every one of its removals already has the list in hand, because it
+	// removes through the owner that put the object there (0x0042BCFF hands the
+	// window's list to 0x00430850). This engine's Object_Destroy does not, so the
+	// object remembers where it went in.
+	struct ObjectList* list;
 };
 
-// The priority the screen object draws at, +0x48 of the object at root+0x14,
-// held as the original holds it: the priority shifted up sixteen places, so the
-// low half orders what shares a priority. Grp0 0x09 sets it.
+// ----------------------------------------------------------------------------------
+// A display list (0x00430650, 0x70 bytes)
+//
+// There is more than one. The display root owns the one the frame is composed from
+// (root+0x14, built by 0x00442930), and every window that is given content owns a
+// second (window+0x340, built by 0x0042BE38 through the same constructor), whose
+// objects are drawn into that window's own pixels rather than into the screen. The
+// nodes, the ascending order, the walk and the draw priority are the list's, not the
+// engine's, which is why they live here rather than in a file-static head.
+// ----------------------------------------------------------------------------------
+typedef struct ObjectNode ObjectNode_t;
+typedef struct ObjectList
+{
+	ObjectNode_t* head;
+	// +0x48, the priority the screen object draws at, held as the original holds
+	// it: shifted up sixteen places, so the low half orders what shares a
+	// priority. Grp0 0x09 sets the root list's through 0x00462020.
+	uint32_t      priority;
+} ObjectList_t;
 #define SPRITE_MAX_PRIORITY 0x10000
-extern uint32_t gDrawPriority;
+// root+0x14: the list the frame is composed from.
+extern ObjectList_t gRootList;
 
 extern uint32_t gObjectDamage;
 
@@ -287,14 +310,24 @@ uint32_t Object_DrawKey(const DisplayObject_t* object);
 // own constructor calls it with both zero, so windows start invisible.
 extern uint32_t gWindowsVisible;
 extern uint32_t gWindowTransparency;
+// 0x004307D0 and 0x00430850 on a named list, which is how a window files its own
+// contents; the three below are the same on the root's.
+void Object_ListInsertInto(ObjectList_t* list, DisplayObject_t* object);
+void Object_ListRemoveFrom(ObjectList_t* list, DisplayObject_t* object);
 void Object_ListInsert(DisplayObject_t* object);
+// Out of whatever list it is in, which the object itself remembers.
 void Object_ListRemove(DisplayObject_t* object);
 // Out and back in, which is the only way a key that has moved reaches its new place.
 void Object_ListResort(DisplayObject_t* object);
 // 0x00431630: the walk that reads the list, drawing every object that is drawable
 // and reaches `clip` into `target`. `target` is the surface the frame is composed
 // into and `clip` is the part of it being redrawn.
+void Object_DrawListOf(ObjectList_t* list, Renderer_t* renderer, Bitmap_t* target, const Rect_t* clip);
+// The same on the root's list: the frame.
 void Object_DrawList(Renderer_t* renderer, Bitmap_t* target, const Rect_t* clip);
+// Every node out of a list, without touching the objects themselves - a window's
+// list owns no object in it, and neither does the root's.
+void Object_ListClear(ObjectList_t* list);
 
 void Object_FreeAll(void);
 

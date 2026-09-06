@@ -86,7 +86,6 @@ static const ObjectKind_t* Object_KindForTag(uint32_t tag)
 // an image, so the damage is only counted for now - the count is what a renderer
 // would consume, and it is not a made-up answer to anybody's question.
 uint32_t  gObjectDamage = 0;
-uint32_t  gDrawPriority = 0;
 
 // What the base constructor (0x0041A4D0) leaves behind, whatever the kind: the type
 // at +0x18 and the serial at +0x20 from its two arguments, then +0x04 = 1, +0x08 = 0,
@@ -117,14 +116,14 @@ static void Object_ConstructBase(DisplayObject_t* object, uint32_t type, uint32_
 // ----------------------------------------------------------------------------------
 // The display list
 // ----------------------------------------------------------------------------------
-typedef struct ObjectNode
+struct ObjectNode
 {
 	uint32_t           key;
 	DisplayObject_t*   object;
 	struct ObjectNode* next;
-} ObjectNode_t;
+};
 
-static ObjectNode_t* gDisplayList = NULL;
+ObjectList_t gRootList = { NULL, 0 };
 
 uint32_t Object_DrawKey(const DisplayObject_t* object)
 {
@@ -141,13 +140,13 @@ uint32_t Object_DrawKey(const DisplayObject_t* object)
 	return (((object->layer * 8) + type) << 13) + object->orderBase + (depth & 0x1FFF);
 }
 
-void Object_ListInsert(DisplayObject_t* object)
+void Object_ListInsertInto(ObjectList_t* list, DisplayObject_t* object)
 {
-	if(object == NULL)
+	if(list == NULL || object == NULL)
 		return;
 
 	uint32_t key = Object_DrawKey(object);
-	ObjectNode_t** link = &gDisplayList;
+	ObjectNode_t** link = &list->head;
 	// Before the first node whose key is strictly greater, so equal keys keep the
 	// order they arrived in.
 	while(*link != NULL && (*link)->key <= key)
@@ -160,25 +159,62 @@ void Object_ListInsert(DisplayObject_t* object)
 	node->object = object;
 	node->next = *link;
 	*link = node;
+	object->list = list;
 }
 
-void Object_ListRemove(DisplayObject_t* object)
+void Object_ListRemoveFrom(ObjectList_t* list, DisplayObject_t* object)
 {
-	for(ObjectNode_t** link = &gDisplayList; *link != NULL; link = &(*link)->next)
+	if(list == NULL || object == NULL)
+		return;
+
+	for(ObjectNode_t** link = &list->head; *link != NULL; link = &(*link)->next)
 	{
 		if((*link)->object != object)
 			continue;
 		ObjectNode_t* node = *link;
 		*link = node->next;
 		free(node);
+		object->list = NULL;
 		return;
 	}
 }
 
+void Object_ListInsert(DisplayObject_t* object)
+{
+	Object_ListInsertInto(&gRootList, object);
+}
+
+void Object_ListRemove(DisplayObject_t* object)
+{
+	if(object != NULL)
+		Object_ListRemoveFrom(object->list, object);
+}
+
 void Object_ListResort(DisplayObject_t* object)
 {
-	Object_ListRemove(object);
-	Object_ListInsert(object);
+	if(object == NULL)
+		return;
+
+	// 0x004433E0 puts it back into the list it came out of, which is the only one
+	// it was ever in.
+	ObjectList_t* list = object->list;
+	Object_ListRemoveFrom(list, object);
+	Object_ListInsertInto(list, object);
+}
+
+void Object_ListClear(ObjectList_t* list)
+{
+	if(list == NULL)
+		return;
+
+	while(list->head != NULL)
+	{
+		ObjectNode_t* node = list->head;
+		list->head = node->next;
+		if(node->object != NULL)
+			node->object->list = NULL;
+		free(node);
+	}
 }
 
 // root+0x50, built once with the display root and never freed while the engine runs.
@@ -1092,32 +1128,33 @@ static int Object_DrawTo(Renderer_t* renderer, DisplayObject_t* object,
 	return covered;
 }
 
-void Object_DrawList(Renderer_t* renderer, Bitmap_t* target, const Rect_t* clip)
+void Object_DrawListOf(ObjectList_t* list, Renderer_t* renderer, Bitmap_t* target, const Rect_t* clip)
 {
 	Rect_t bounds = { 0, 0, target->width - 1, target->height - 1 };
 
-	for(ObjectNode_t* node = gDisplayList; node != NULL; node = node->next)
+	for(ObjectNode_t* node = list->head; node != NULL; node = node->next)
 	{
 		// The draw priority (Grp0 0x09, which reaches the list's own +0x48 through
 		// 0x00462020) holds back everything below it that is not the screen itself;
 		// the original then draws those from the second list at list+0x20, which
 		// nothing builds yet - list+0x24, the flag that would enable it, is never
 		// set, and 0x00431530 returns on that flag before it looks at anything.
-		if(gDrawPriority > node->key && node->object->type != 0)
+		if(list->priority > node->key && node->object->type != 0)
 			continue;
 
 		Object_DrawTo(renderer, node->object, target, &bounds, clip);
 	}
 }
 
+void Object_DrawList(Renderer_t* renderer, Bitmap_t* target, const Rect_t* clip)
+{
+	Object_DrawListOf(&gRootList, renderer, target, clip);
+}
+
 void Object_FreeAll(void)
 {
-	while(gDisplayList != NULL)
-	{
-		ObjectNode_t* node = gDisplayList;
-		gDisplayList = node->next;
-		free(node);
-	}
+	Object_ListClear(&gRootList);
+	gRootList.priority = 0;
 	free(gScreenObject);
 	gScreenObject = NULL;
 
