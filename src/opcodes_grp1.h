@@ -56,7 +56,7 @@ uint32_t Opcode_Grp1_SetPhoneticMargin(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_156(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_157(Thread_t* thread);
 uint32_t Opcode_Grp1_CreateIconEx(Thread_t* thread);
-uint32_t Opcode_Grp1_Unknown_186(Thread_t* thread);
+uint32_t Opcode_Grp1_SetIconContent(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_191(Thread_t* thread);
 uint32_t Opcode_Grp1_SetObjectHidden(Thread_t* thread);
 

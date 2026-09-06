@@ -198,7 +198,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0xB7 183 */ "--Unknown--",
     /* 0xB8 184 */ "CreateIconEx",
     /* 0xB9 185 */ "--Unknown--",
-    /* 0xBA 186 */ "Unknown_186",
+    /* 0xBA 186 */ "SetIconContent",
     /* 0xBB 187 */ "--Unknown--",
     /* 0xBC 188 */ "--Unknown--",
     /* 0xBD 189 */ "--Unknown--",
@@ -457,7 +457,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0xB7 183 */ NULL,
     /* 0xB8 184 */ Opcode_Grp1_CreateIconEx,
     /* 0xB9 185 */ NULL,
-    /* 0xBA 186 */ Opcode_Grp1_Unknown_186,
+    /* 0xBA 186 */ Opcode_Grp1_SetIconContent,
     /* 0xBB 187 */ NULL,
     /* 0xBC 188 */ NULL,
     /* 0xBD 189 */ NULL,
@@ -975,8 +975,55 @@ uint32_t Opcode_Grp1_CreateIconEx(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp1_Unknown_186(Thread_t* thread)
+// Grp1 0xBA (0x004850A0) gives an Ex icon its content. It pops the address of the
+// descriptor tree and resolves it, pops the icon's handle, and pushes back what
+// 0x0046CCE0 answers: 0 when the icon took the content, 1 when the handle is not an
+// icon, 4 when it is a plain DCIPIcon rather than an Ex (0x00448590 reads +0x24 and
+// 0x0046CCF9 insists on 1), and 2 or 3 for the two malformed shapes of the tree.
+// The descriptor is freed either way: the icon copies what it keeps.
+uint32_t Opcode_Grp1_SetIconContent(Thread_t* thread)
 {
+	const uint32_t* root = (const uint32_t*)Thread_PopAndResolveAddress(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Icon_t* icon = Icon_Resolve(handle);
+	if(icon == NULL)
+	{
+		printf("[Thread %d]: %sIcon 0x%08X does not exist\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		Thread_PushStack(thread, 1);
+		return 0;
+	}
+	if(icon->kind != ICON_KIND_EX)
+	{
+		printf("[Thread %d]: %sIcon 0x%08X is not an Ex icon and has no content\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		Thread_PushStack(thread, 4);
+		return 0;
+	}
+
+	IconContent_t* content = NULL;
+	uint32_t status = Icon_ReadContent(thread, root, &content);
+	if(status != 0)
+	{
+		printf("[Thread %d]: %sIcon 0x%08X was given a malformed content descriptor (%u)\n",
+		       thread->threadId, TLevel[thread->level], handle, status);
+		Thread_PushStack(thread, status);
+		return 0;
+	}
+
+	printf("[Thread %d]: %sIcon 0x%08X content: %u entr%s (",
+	       thread->threadId, TLevel[thread->level], handle, content->entryCount,
+	       content->entryCount == 1 ? "y" : "ies");
+	for(uint32_t i = 0; i < content->entryCount; i++)
+		printf("%s%u parts", i == 0 ? "" : ", ", content->entries[i].partCount);
+	printf(")\n");
+
+	// 0x0044A9E0, which turns the descriptor into the icon's own state, is not
+	// written yet.
+	Icon_FreeContent(content);
+	printf("[Thread %d]: %sError: giving an icon its content (0x0044A9E0) is not implemented\n",
+	       thread->threadId, TLevel[thread->level]);
 	return 0xFFFFFFFF;
 }
 

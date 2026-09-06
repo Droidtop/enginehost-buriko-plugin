@@ -4,6 +4,7 @@
 
 #include "icon.h"
 #include "object.h"
+#include "thread.h"
 
 // The list at 0x005667E8, its count at 0x005667E0 and the serial at 0x00565D74.
 // 0x0046C620 pushes a new node onto the head, so the list is in reverse creation
@@ -15,6 +16,95 @@ static uint32_t gIconSerial = 0;
 uint32_t Icon_Count(void)
 {
 	return gIconCount;
+}
+
+// 0x0046CB00, which is called on every path out of 0x0046CB50 and again by the
+// opcode once the icon has taken what it wants: the parts of every entry, then the
+// entry array, then the root. It steps the entry array itself rather than the count
+// it was given, so a half-built copy frees cleanly.
+void Icon_FreeContent(IconContent_t* content)
+{
+	if(content == NULL)
+		return;
+	if(content->entries != NULL)
+	{
+		for(uint32_t i = 0; i < content->entryCount; i++)
+			free(content->entries[i].parts);
+		free(content->entries);
+	}
+	free(content);
+}
+
+// 0x0046CB50. `root` is already resolved (the opcode's own 0x0048E0E0 did that); the
+// two addresses inside the tree are resolved here, as the original does with
+// 0x0048DF60 and the thread it was handed.
+uint32_t Icon_ReadContent(Thread_t* thread, const uint32_t* root, IconContent_t** out)
+{
+	*out = NULL;
+	if(root == NULL)
+		return 2;
+
+	IconContent_t* content = (IconContent_t*)malloc(sizeof(IconContent_t));
+	if(content == NULL)
+		return 2;
+	memcpy(content->raw, root, sizeof(content->raw));
+	content->entryCount = 0;
+	content->entries = NULL;
+
+	uint32_t count = root[0];
+	const uint32_t* entries = (const uint32_t*)Thread_ResolveAddr(thread, root[1]);
+	if(entries == NULL || count == 0 || count > ICON_CONTENT_MAX_COUNT)
+	{
+		Icon_FreeContent(content);
+		return 2;
+	}
+
+	content->entries = (IconContentEntry_t*)calloc(count, sizeof(IconContentEntry_t));
+	if(content->entries == NULL)
+	{
+		Icon_FreeContent(content);
+		return 2;
+	}
+	content->entryCount = count;
+
+	uint32_t status = 0;
+	for(uint32_t i = 0; i < count; i++)
+	{
+		// Once an entry has failed the original stops resolving and leaves the
+		// remaining entries' part pointers null, which calloc has already done.
+		if(status != 0)
+			continue;
+
+		const uint32_t* source = entries + i * ICON_CONTENT_ENTRY_WORDS;
+		IconContentEntry_t* entry = &content->entries[i];
+		memcpy(entry->raw, source, sizeof(entry->raw));
+
+		uint32_t parts = source[0] & 0xFFFF;
+		const uint32_t* partSource = (const uint32_t*)Thread_ResolveAddr(thread, source[2]);
+		if(partSource == NULL || parts == 0 || parts > ICON_CONTENT_MAX_COUNT)
+		{
+			status = 3;
+			continue;
+		}
+
+		entry->parts = (uint32_t*)malloc((size_t)parts * ICON_CONTENT_PART_WORDS * sizeof(uint32_t));
+		if(entry->parts == NULL)
+		{
+			status = 3;
+			continue;
+		}
+		entry->partCount = parts;
+		memcpy(entry->parts, partSource, (size_t)parts * ICON_CONTENT_PART_WORDS * sizeof(uint32_t));
+	}
+
+	if(status != 0)
+	{
+		Icon_FreeContent(content);
+		return status;
+	}
+
+	*out = content;
+	return 0;
 }
 
 Icon_t* Icon_Resolve(uint32_t handle)

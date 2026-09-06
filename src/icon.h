@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "object.h"
+#include "thread.h"
 
 // ----------------------------------------------------------------------------------
 // Icons: DCIPIcon and DCIPIconEx (the names are the executable's own, out of the RTTI
@@ -43,6 +44,55 @@ struct Icon
 // +0x74 and +0x90 to -1 and +0x88 to 1, and the Ex zeroes +0xA4 through +0xD4. The
 // opcode that first reads one of them should add it here with its offset, as the
 // display object's own fields are named.
+
+// ----------------------------------------------------------------------------------
+// An icon's content descriptor (0x0046CB50)
+//
+// The script does not hand an Ex icon its content a field at a time: it builds a tree
+// in its own memory and hands over the address of its root, and the engine deep-copies
+// that tree into its own before it uses any of it. The three levels are:
+//
+//   the root, 0x28 bytes: the entry count at +0x00 and the script address of the
+//     entry array at +0x04, then eight more dwords that are carried along
+//   an entry, 0x40 bytes: the part count in the low half of +0x00 and the script
+//     address of the part array at +0x08, then thirteen more dwords
+//   a part, 0xC4 bytes, copied whole
+//
+// Both counts must be between 1 and 0x100 (0x0046CB9A / 0x0046CC23); the original
+// answers 2 when the root's count or its array is bad and 3 when an entry's is, and
+// in the second case it fills the rest of the copy with nothing rather than stopping
+// - the failure is only reported once the whole tree has been walked, and then the
+// copy is freed and nothing is returned. What the fields inside an entry and a part
+// mean is 0x0044A9E0's business and is not decided here: the copy is faithful to the
+// byte, so naming them can wait for the code that reads them.
+// ----------------------------------------------------------------------------------
+#define ICON_CONTENT_ROOT_WORDS  10   // 0x28
+#define ICON_CONTENT_ENTRY_WORDS 16   // 0x40
+#define ICON_CONTENT_PART_WORDS  49   // 0xC4
+#define ICON_CONTENT_MAX_COUNT   0x100
+
+typedef struct
+{
+	uint32_t  raw[ICON_CONTENT_ENTRY_WORDS];
+	// The part array the original writes back over the entry's own +0x08, replacing
+	// the script address it copied there. Kept beside the raw words instead, so the
+	// copy of the script's own bytes stays a copy.
+	uint32_t  partCount;
+	uint32_t* parts;   // partCount * ICON_CONTENT_PART_WORDS words
+} IconContentEntry_t;
+
+typedef struct
+{
+	uint32_t            raw[ICON_CONTENT_ROOT_WORDS];
+	uint32_t            entryCount;
+	IconContentEntry_t* entries;
+} IconContent_t;
+
+// 0x0046CB50. Copies the tree at the resolved address `root` into freshly allocated
+// memory. 0 and *out set on success; 2 or 3 and *out NULL on the two failures above.
+uint32_t Icon_ReadContent(Thread_t* thread, const uint32_t* root, IconContent_t** out);
+// 0x0046CB00. Frees what Icon_ReadContent built, parts first.
+void Icon_FreeContent(IconContent_t* content);
 
 // 0x0046C7B0. Returns the icon's handle, or 0 when the window handle is not a window
 // or the kind is neither 0 nor 1.
