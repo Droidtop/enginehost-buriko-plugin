@@ -115,7 +115,7 @@ char* OpcodesMnemonics[256] = {
 	/* 0x60  96 */ "Memcpy",
 	/* 0x61  97 */ "Memclr",
 	/* 0x62  98 */ "Unknown",
-	/* 0x63  99 */ "Unknown",
+	/* 0x63  99 */ "Memeq",
 	/* 0x64 100 */ "Unknown",
 	/* 0x65 101 */ "Unknown",
 	/* 0x66 102 */ "Unknown",
@@ -374,7 +374,7 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0x60  96 */ Opcode_Memcpy,
 	/* 0x61  97 */ Opcode_Memclr,
 	/* 0x62  98 */ 0,
-	/* 0x63  99 */ 0,
+	/* 0x63  99 */ Opcode_Memeq,
 	/* 0x64 100 */ 0,
 	/* 0x65 101 */ 0,
 	/* 0x66 102 */ 0,
@@ -1101,6 +1101,20 @@ uint32_t Opcode_DoubleAnyNotZero(Thread_t* thread)
 	uint32_t value1 = Thread_PopStack(thread);
 	uint32_t value2 = Thread_PopStack(thread);
 	Thread_PushStack(thread, value1 != 0 || value2 != 0);
+	return 0;
+}
+
+// 0x00474480: the length comes off the stack first, then the two addresses. The
+// original compares four bytes at a time and then the tail one byte at a time, and
+// pushes back whether the difference it ends with is zero - so this answers "the same",
+// not "which is bigger", however much of a memcmp its body looks like.
+uint32_t Opcode_Memeq(Thread_t* thread)
+{
+	uint32_t size = Thread_PopStack(thread);
+	const uint8_t* left = Thread_PopAndResolveAddress(thread);
+	const uint8_t* right = Thread_PopAndResolveAddress(thread);
+
+	Thread_PushStack(thread, memcmp(left, right, size) == 0);
 	return 0;
 }
 

@@ -54,6 +54,7 @@ uint32_t Opcode_Not(Thread_t* thread);
 uint32_t Opcode_Sprintf(Thread_t* thread);
 uint32_t Opcode_Memcpy(Thread_t* thread);
 uint32_t Opcode_Memclr(Thread_t* thread);
+uint32_t Opcode_Memeq(Thread_t* thread);
 uint32_t Opcode_DoubleNotZero(Thread_t* thread);
 uint32_t Opcode_DoubleAnyNotZero(Thread_t* thread);
 uint32_t Opcode_IsZero(Thread_t* thread);
