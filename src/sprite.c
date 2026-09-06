@@ -70,6 +70,7 @@ uint32_t Sprite_Create(void)
 	sprite->serial = gSpriteSerial++;
 	sprite->type = SPRITE_OBJECT_TYPE;
 	sprite->enabled = 1;
+	sprite->priority = 1;
 	sprite->unknownA8 = 0x80;
 	sprite->opacity = 0x100;
 
@@ -165,6 +166,180 @@ int Sprite_SetEnabledByHandle(uint32_t handle, int enabled)
 		gSpriteDamage++;
 
 	return 1;
+}
+
+// ----------------------------------------------------------------------------------
+// Parameters (vtable+0x5C)
+//
+// The sprite's own table is at 0x00428670: a byte index table at 0x004288C0 covering
+// the numbers 0x10 to 0x100 and a jump table of fourteen arms at 0x00428888. Its arms
+// are, in the original's order:
+//   0x10  0x004273C0(value1)
+//   0x11  0x0042AC30(value1 & 0xFF, (value1 >> 8) & 0xFF, value1 >> 16, value2)
+//   0x40  0x004280F0(value1, value2)   only when the object's kind (+0x134) is 2, 5 or 6
+//   0x41  0x00428130(value1)           same kinds
+//   0x42  0x00428200(value1, value2)   same kinds
+//   0x43  0x004281D0(value1, value2)   only kind 6
+//   0x60  0x00428610(value1 & 0xFFFF, value1 >> 16, value2)
+//   0x80  kinds 2/5/6: +0x2AC = value1, +0x2B0 = value2
+//   0x81  kinds 2/5: +0x2B4 = value1, +0x2CC = value2; kind 6: +0x2C0, +0x2CC
+//   0x82  kinds 2/5/6: +0x2C4 = value1, +0x2C8 = value2
+//   0x83  kind 6 only: +0x2B8 = value1, +0x2BC = value2
+//   0x8F  +0x2D0 = value1, whatever the kind
+//   0x100 0x00428EB0(value1, value2)
+// Everything else falls through to the base at 0x0041B9B0, whose own byte table at
+// 0x0041BAE4 covers 0x00 to 0xC1 and which then tests 0xC4, 0x8000, 0x8001, 0x8100,
+// 0x7FFF0000 and 0x7FFFFFFF one at a time before answering 0xFFFF0001:
+//   0x00        vtable+0x2C (0x0041B280 for a sprite) with (value1, value2)
+//   0x01        0x0041B6D0: +0xA8 = value1
+//   0x02        vtable+0x48 (0x00428450 for a sprite) with value1
+//   0xC0        0x004932C0: +0x08 = value1
+//   0xC1        0x0041AEB0: +0x10 = value1
+//   0xC4        0x0041AEC0: +0x48 = value1
+//   0x8000      0x0041BF80(value1, value2)
+//   0x8001      0x0041BFC0(value1)
+//   0x8100      0x0041BFE0(value1)
+//   0x7FFF0000  0x0041C290(value1)
+//   0x7FFFFFFF  0x0041C2B0(value1, value2), the one arm that can answer "wrong
+//               arguments" (0xFFFF0002)
+//
+// The plain field writes are here. The arms that call a function this engine has not
+// read, and the ones that write fields of a sprite's content (+0x2AC upwards) which
+// nothing here has yet - a sprite cannot be given an image, so its kind at +0x134 is
+// not modelled either - say so by name instead of being invented.
+// ----------------------------------------------------------------------------------
+static uint32_t Sprite_SetParameterBase(Sprite_t* sprite, uint32_t number, uint32_t value1, uint32_t value2, const char** unread)
+{
+	(void)value2;
+
+	switch(number)
+	{
+	case 0x01:                              // 0x0041B6D0
+		sprite->unknownA8 = value1;
+		return OBJECT_PARAM_OK;
+	case 0xC0:                              // 0x004932C0
+		sprite->propagateEnabled = (int)value1;
+		return OBJECT_PARAM_OK;
+	case 0xC1:                              // 0x0041AEB0
+		sprite->propagateUnknown0C = (int)value1;
+		return OBJECT_PARAM_OK;
+	case 0xC4:                              // 0x0041AEC0
+		sprite->priority = value1;
+		return OBJECT_PARAM_OK;
+
+	case 0x00:
+		*unread = "the pair set through vtable+0x2C (0x0041B280)";
+		return OBJECT_PARAM_UNREAD;
+	case 0x02:
+		*unread = "the value set through vtable+0x48 (0x00428450)";
+		return OBJECT_PARAM_UNREAD;
+	case 0x8000:
+		*unread = "0x0041BF80";
+		return OBJECT_PARAM_UNREAD;
+	case 0x8001:
+		*unread = "0x0041BFC0";
+		return OBJECT_PARAM_UNREAD;
+	case 0x8100:
+		*unread = "0x0041BFE0";
+		return OBJECT_PARAM_UNREAD;
+	case 0x7FFF0000:
+		*unread = "0x0041C290";
+		return OBJECT_PARAM_UNREAD;
+	case 0x7FFFFFFF:
+		*unread = "0x0041C2B0";
+		return OBJECT_PARAM_UNREAD;
+	}
+
+	return OBJECT_PARAM_UNSUPPORTED;
+}
+
+uint32_t Sprite_SetParameter(Sprite_t* sprite, uint32_t number, uint32_t value1, uint32_t value2, const char** unread)
+{
+	const char* ignored = NULL;
+	if(unread == NULL)
+		unread = &ignored;
+	*unread = NULL;
+
+	if(sprite == NULL)
+		return OBJECT_PARAM_UNSUPPORTED;
+
+	// The sprite's own arms, none of which can be honoured until a sprite can hold
+	// an image: they either call a function that is still unread or write a field of
+	// the content the object's kind (+0x134) selects.
+	switch(number)
+	{
+	case 0x10:
+		*unread = "0x004273C0";
+		return OBJECT_PARAM_UNREAD;
+	case 0x11:
+		*unread = "0x0042AC30";
+		return OBJECT_PARAM_UNREAD;
+	case 0x40:
+		*unread = "0x004280F0, on a sprite of kind 2, 5 or 6";
+		return OBJECT_PARAM_UNREAD;
+	case 0x41:
+		*unread = "0x00428130, on a sprite of kind 2, 5 or 6";
+		return OBJECT_PARAM_UNREAD;
+	case 0x42:
+		*unread = "0x00428200, on a sprite of kind 2, 5 or 6";
+		return OBJECT_PARAM_UNREAD;
+	case 0x43:
+		*unread = "0x004281D0, on a sprite of kind 6";
+		return OBJECT_PARAM_UNREAD;
+	case 0x60:
+		*unread = "0x00428610";
+		return OBJECT_PARAM_UNREAD;
+	case 0x80:
+		*unread = "the content fields +0x2AC and +0x2B0";
+		return OBJECT_PARAM_UNREAD;
+	case 0x81:
+		*unread = "the content fields +0x2B4/+0x2C0 and +0x2CC";
+		return OBJECT_PARAM_UNREAD;
+	case 0x82:
+		*unread = "the content fields +0x2C4 and +0x2C8";
+		return OBJECT_PARAM_UNREAD;
+	case 0x83:
+		*unread = "the content fields +0x2B8 and +0x2BC";
+		return OBJECT_PARAM_UNREAD;
+	case 0x8F:
+		*unread = "the content field +0x2D0";
+		return OBJECT_PARAM_UNREAD;
+	case 0x100:
+		*unread = "0x00428EB0";
+		return OBJECT_PARAM_UNREAD;
+	}
+
+	return Sprite_SetParameterBase(sprite, number, value1, value2, unread);
+}
+
+uint32_t Sprite_SetParameterByHandle(uint32_t handle, uint32_t number, uint32_t value1, uint32_t value2, const char** unread)
+{
+	Sprite_t* sprite = Sprite_Resolve(handle);
+	if(sprite == NULL)
+		return OBJECT_SET_BAD_HANDLE;
+
+	// 0x00443990 brackets the write: it dirties the screen before the change when the
+	// object would be drawn, sets the parameter, and dirties it again afterwards. In
+	// between it also compares the object's draw-order key (vtable+0x1C, 0x0041B190)
+	// from before and after and re-sorts the display list through 0x004433E0 when it
+	// moved. There is no display list order here yet, and the key is built from the
+	// object's rectangle, which a sprite cannot have until it can hold an image, so
+	// that comparison is left out rather than faked.
+	if(Sprite_IsDrawable(sprite))
+		gSpriteDamage++;
+
+	uint32_t result = Sprite_SetParameter(sprite, number, value1, value2, unread);
+
+	if(result == OBJECT_PARAM_OK && Sprite_IsDrawable(sprite))
+		gSpriteDamage++;
+
+	switch(result)
+	{
+	case OBJECT_PARAM_OK:           return OBJECT_SET_OK;
+	case OBJECT_PARAM_BAD_ARGUMENT: return OBJECT_SET_BAD_ARGUMENT;
+	case OBJECT_PARAM_UNREAD:       return OBJECT_SET_UNREAD;
+	default:                        return OBJECT_SET_UNSUPPORTED;
+	}
 }
 
 void Sprite_FreeAll(void)

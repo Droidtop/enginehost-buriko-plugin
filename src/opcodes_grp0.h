@@ -50,7 +50,7 @@ uint32_t Opcode_Grp0_Unknown_51(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_52(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_53(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_55(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_56(Thread_t* thread);
+uint32_t Opcode_Grp0_SetObjectParameter(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_60(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_61(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_63(Thread_t* thread);

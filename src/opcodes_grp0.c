@@ -65,7 +65,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x35  53 */ "Unknown_53",
 	/* 0x36  54 */ "--Unknown--",
 	/* 0x37  55 */ "Unknown_55",
-	/* 0x38  56 */ "Unknown_56",
+	/* 0x38  56 */ "SetObjectParameter",
 	/* 0x39  57 */ "--Unknown--",
 	/* 0x3A  58 */ "--Unknown--",
 	/* 0x3B  59 */ "--Unknown--",
@@ -324,7 +324,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x35  53 */ Opcode_Grp0_Unknown_53,
 	/* 0x36  54 */ NULL,
 	/* 0x37  55 */ Opcode_Grp0_Unknown_55,
-	/* 0x38  56 */ Opcode_Grp0_Unknown_56,
+	/* 0x38  56 */ Opcode_Grp0_SetObjectParameter,
 	/* 0x39  57 */ NULL,
 	/* 0x3A  58 */ NULL,
 	/* 0x3B  59 */ NULL,
@@ -1032,9 +1032,52 @@ uint32_t Opcode_Grp0_Unknown_55(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_56(Thread_t* thread)
+// Grp0 0x38 (0x0047B4C0 -> 0x00462190 -> 0x00443990) sets one parameter of a display
+// object. It pops four values: the last two pushed are the two arguments, then the
+// parameter number, then the object handle. 0x00443990 resolves the handle and calls
+// the object's virtual at vtable+0x5C with (number, value1, value2).
+//
+// Each of the original's three failures is fatal and names itself:
+//   invalid handle              0x004E8BD0
+//   unsupported parameter       0x004E8CF0, "[ 0x%.8X ]"
+//   wrong arguments             0x004E8D30, "[ 0x%.8X ] ... [ %d ( 0x%.8X ) , %d ( 0x%.8X ) ]"
+uint32_t Opcode_Grp0_SetObjectParameter(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value2 = Thread_PopStack(thread);
+	uint32_t value1 = Thread_PopStack(thread);
+	uint32_t number = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	const char* unread = NULL;
+	uint32_t result = Sprite_SetParameterByHandle(handle, number, value1, value2, &unread);
+
+	switch(result)
+	{
+	case OBJECT_SET_OK:
+		return 0;
+
+	case OBJECT_SET_BAD_HANDLE:
+		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+
+	case OBJECT_SET_BAD_ARGUMENT:
+		printf("[Thread %d]: %sError: the arguments of the parameter [ 0x%.8X ] are wrong [ %d ( 0x%.8X ) , %d ( 0x%.8X ) ]\n",
+		       thread->threadId, TLevel[thread->level], number,
+		       (int)value1, value1, (int)value2, value2);
+		return 0xFFFFFFFF;
+
+	case OBJECT_SET_UNREAD:
+		printf("[Thread %d]: %sError: parameter [ 0x%.8X ] is not implemented (%s)\n",
+		       thread->threadId, TLevel[thread->level], number,
+		       unread != NULL ? unread : "unread");
+		return 0xFFFFFFFF;
+
+	default:
+		printf("[Thread %d]: %sError: an unsupported parameter number [ 0x%.8X ] was set\n",
+		       thread->threadId, TLevel[thread->level], number);
+		return 0xFFFFFFFF;
+	}
 }
 
 uint32_t Opcode_Grp0_Unknown_60(Thread_t* thread)
