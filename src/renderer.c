@@ -471,6 +471,100 @@ static uint32_t Renderer_BlendOverOpaque(uint32_t destination, uint32_t source)
 	return out;
 }
 
+// 0x0040B6F0: a 32-bit source over a 24-bit destination, with a transparency
+// strictly between 0 and 0x100. `inverse` is the 0x100 - transparency the routine
+// computes once; the weight is the original's table entry for this pixel's alpha,
+// (alpha7 * inverse) >> 8, and the blend from there is 0x0040B130's.
+static uint32_t Renderer_BlendOverOpaqueWeighted(uint32_t destination, uint32_t source,
+                                                 uint32_t inverse)
+{
+	// The original's `test eax, 0xFE000000`: a source pixel whose seven-bit alpha
+	// is zero is left alone, whatever the transparency.
+	uint32_t a = (source >> 25) & 0x7F;
+	if(a == 0)
+		return destination;
+
+	int weight = (int)((a * inverse) >> 8);
+
+	// The destination is 24-bit, so its fourth byte is not a channel in the
+	// original and is left as it is here, the same choice 0x0040B130's transcription
+	// makes - this engine's bitmaps are handed to SDL as RGBA, where it would be one.
+	uint32_t out = destination & 0xFF000000;
+	for(int channel = 0; channel < 3; channel++)
+	{
+		int d = (int)((destination >> (channel * 8)) & 0xFF);
+		int s = (int)((source >> (channel * 8)) & 0xFF);
+		int v = d + (((s - d) * weight) >> 7);
+		if(v < 0)
+			v = 0;
+		if(v > 0xFF)
+			v = 0xFF;
+		out |= (uint32_t)v << (channel * 8);
+	}
+	return out;
+}
+
+// 0x0040B4B0: a 24-bit source over a 24-bit destination, which has no per-pixel
+// alpha to fold in, so it is the straight walk from the source towards the
+// destination by transparency >> 1 out of 0x80.
+static uint32_t Renderer_BlendTowardsDestination(uint32_t destination, uint32_t source,
+                                                 int transparency)
+{
+	int weight = transparency >> 1;
+
+	uint32_t out = destination & 0xFF000000;
+	for(int channel = 0; channel < 3; channel++)
+	{
+		int d = (int)((destination >> (channel * 8)) & 0xFF);
+		int s = (int)((source >> (channel * 8)) & 0xFF);
+		int v = s + (((d - s) * weight) >> 7);
+		if(v < 0)
+			v = 0;
+		if(v > 0xFF)
+			v = 0xFF;
+		out |= (uint32_t)v << (channel * 8);
+	}
+	return out;
+}
+
+// 0x0040B9B0: a 32-bit source over a 32-bit destination. This is 0x0040B200 with
+// the transparency folded into the source's alpha first, on the scale above it:
+// S = alpha * inverse, so 0x10000 is a wholly opaque source. Set the transparency
+// to 0 and every term below collapses into 0x0040B200's.
+static uint32_t Renderer_BlendOverWeighted(uint32_t destination, uint32_t source,
+                                           uint32_t inverse)
+{
+	// The original's `test dword [src], 0xFF000000`.
+	uint32_t sa = source >> 24;
+	if(sa == 0)
+		return destination;
+
+	uint32_t da = destination >> 24;
+	uint32_t sourceShare = sa * inverse;
+	uint32_t destinationShare = ((0x10000u - sourceShare) * da) >> 8;
+	uint32_t denominator = destinationShare + sourceShare;
+	if(denominator == 0)
+		return destination;
+
+	uint32_t destinationWeight = (destinationShare << 8) / denominator;
+	uint32_t sourceWeight = (sourceShare << 8) / denominator;
+
+	// All four channels go through the multiply, the shift and the saturating pack,
+	// the alpha included, and the denominator's own top byte is then ORed over it -
+	// which is what the original does, odd as the OR looks.
+	uint32_t out = 0;
+	for(int channel = 0; channel < 4; channel++)
+	{
+		uint32_t d = (destination >> (channel * 8)) & 0xFF;
+		uint32_t s = (source >> (channel * 8)) & 0xFF;
+		uint32_t v = (d * destinationWeight + s * sourceWeight) >> 8;
+		if(v > 0xFF)
+			v = 0xFF;
+		out |= v << (channel * 8);
+	}
+	return out | ((denominator >> 8) << 24);
+}
+
 int Renderer_BlitBitmap(Renderer_t* renderer, int destination, int x, int y,
                         int source, int mode, int transparency)
 {
@@ -482,14 +576,27 @@ int Renderer_BlitBitmap(Renderer_t* renderer, int destination, int x, int y,
 		return 2;
 	if(!Renderer_ModesCompatible(dst->mode, src->mode))
 		return 3;
+	// 0x100 - the transparency, which 0x0040B6F0 computes once before its loop.
+	// 0x100 means no transparency is in play at all.
+	uint32_t inverse = 0x100;
 	if(mode == BITMAP_BLEND_ALPHA_TRANS || mode == BITMAP_BLEND_ALPHA_TRANS2)
 	{
-		// 0x0040B320: no transparency at all is mode 0x00, and full transparency
-		// draws nothing; what lies between is 0x0040B6F0, which is not read yet.
+		// 0x0040B320: no transparency at all is the ordinary alpha row, and full
+		// transparency draws nothing. What lies between picks a routine by the pair
+		// of pixel modes; three of its five arms are read - 0x0040B4B0 (24 over 24),
+		// 0x0040B6F0 (32 over 24) and 0x0040B9B0 (32 over 32). 0x0040B3B0 (16 over
+		// 16) and 0x0040B5D0 (24 over 32) are refused by name.
 		if(transparency >= 0x100)
 			return 4;
 		if(transparency != 0)
-			return 6;
+		{
+			int written = (dst->mode == BITMAP_MODE_24
+			                && (src->mode == BITMAP_MODE_32 || src->mode == BITMAP_MODE_24))
+			           || (dst->mode == BITMAP_MODE_32 && src->mode == BITMAP_MODE_32);
+			if(!written)
+				return 6;
+			inverse = 0x100 - (uint32_t)transparency;
+		}
 		mode = BITMAP_BLEND_ALPHA;
 	}
 	if(mode != BITMAP_BLEND_ALPHA && mode != BITMAP_BLEND_COPY)
@@ -521,7 +628,14 @@ int Renderer_BlitBitmap(Renderer_t* renderer, int destination, int x, int y,
 		for(int column = left; column < right; column++)
 		{
 			uint32_t pixel = srcRow[column - x];
-			if(blend)
+			if(inverse != 0x100)
+				// One of the three pairs let through above.
+				pixel = (src->mode != BITMAP_MODE_32)
+				      ? Renderer_BlendTowardsDestination(dstRow[column], pixel, transparency)
+				      : (destinationIsOpaque
+				         ? Renderer_BlendOverOpaqueWeighted(dstRow[column], pixel, inverse)
+				         : Renderer_BlendOverWeighted(dstRow[column], pixel, inverse));
+			else if(blend)
 				pixel = destinationIsOpaque
 				      ? Renderer_BlendOverOpaque(dstRow[column], pixel)
 				      : Renderer_BlendOver(dstRow[column], pixel);
