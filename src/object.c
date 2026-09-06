@@ -88,6 +88,49 @@ static const ObjectKind_t* Object_KindForTag(uint32_t tag)
 uint32_t  gObjectDamage = 0;
 uint32_t  gDrawPriority = 0;
 
+// What the base constructor (0x0041A4D0) leaves behind, whatever the kind: the type
+// at +0x18 and the serial at +0x20 from its two arguments, then +0x04 = 1, +0x08 = 0,
+// +0x0C = 0, +0x10 = 0, +0x14 = 0, +0x48 = 1, +0xA8 = 0x80, +0xAC = 0, +0xB0 = 0 and
+// +0xB4 = 0x100. Everything below that is a field this engine keeps for content a
+// sprite may be given later.
+static void Object_ConstructBase(DisplayObject_t* object, uint32_t type, uint32_t serial)
+{
+	memset(object, 0, sizeof(DisplayObject_t));
+	object->serial = serial;
+	object->type = type;
+	object->enabled = 1;
+	object->priority = 1;
+	object->unknownA8 = 0x80;
+	object->opacity = 0x100;
+	// And, on a sprite, what its own constructor (0x00425790) adds on top:
+	// +0x244 = -1 and +0x134 = 0. A group's class (0x00420EB0) has neither
+	// field, and its vtable+0x48 is the base's, so zero is right for it.
+	object->contentKind = (type == OBJECT_TYPE_SPRITE) ? -1 : 0;
+	// +0x150 = -1, as the sprite constructor leaves it. +0x158 is not written by any
+	// constructor read so far; -1 here so that it can never accidentally equal a
+	// real bitmap serial before something has actually given this sprite content.
+	object->bitmapId = -1;
+	object->bitmapSerial = 0xFFFFFFFFu;
+}
+
+// root+0x50, built once with the display root and never freed while the engine runs.
+static DisplayObject_t* gScreenObject = NULL;
+
+static DisplayObject_t* Object_Screen(void)
+{
+	if(gScreenObject == NULL)
+	{
+		gScreenObject = (DisplayObject_t*)malloc(sizeof(DisplayObject_t));
+		if(gScreenObject == NULL)
+			return NULL;
+		// 0x0041E960 passes the base the type 1 and no serial of its own: it is not
+		// in any of the ten tables, so nothing hands it one.
+		Object_ConstructBase(gScreenObject, OBJECT_TYPE_SCREEN, 0);
+	}
+
+	return gScreenObject;
+}
+
 uint32_t Object_Create(uint32_t tag)
 {
 	const ObjectKind_t* kind = Object_KindForTag(tag);
@@ -108,34 +151,7 @@ uint32_t Object_Create(uint32_t tag)
 	if(object == NULL)
 		return 0;
 
-	// What the base constructor (0x0041A4D0) leaves behind, whatever the kind: the
-	// type at +0x18 and the serial at +0x20 from its two arguments, then +0x04 = 1,
-	// +0x08 = 0, +0x0C = 0, +0x10 = 0, +0x14 = 0, +0x48 = 1, +0xA8 = 0x80,
-	// +0xAC = 0, +0xB0 = 0 and +0xB4 = 0x100.
-	memset(object, 0, sizeof(DisplayObject_t));
-	object->serial = (*kind->serial)++;
-	object->type = kind->type;
-	object->enabled = 1;
-	object->priority = 1;
-	object->unknownA8 = 0x80;
-	object->opacity = 0x100;
-	// And, on a sprite, what its own constructor (0x00425790) adds on top:
-	// +0x244 = -1 and +0x134 = 0. A group's class (0x00420EB0) has neither
-	// field, and its vtable+0x48 is the base's, so zero is right for it.
-	object->contentKind = (kind->type == OBJECT_TYPE_SPRITE) ? -1 : 0;
-	// +0x150 = -1, as the sprite constructor leaves it. +0x158 is not written by any
-	// constructor read so far; -1 here so that it can never accidentally equal a
-	// real bitmap serial before something has actually given this sprite content.
-	object->x = 0;
-	object->y = 0;
-	object->bitmapId = -1;
-	object->bitmapSerial = 0xFFFFFFFFu;
-	object->surfacePixels = NULL;
-	object->surfaceStride = 0;
-	object->surfaceWidth = 0;
-	object->surfaceHeight = 0;
-	object->surfaceMode = 0;
-	object->surfacePixelBytes = 0;
+	Object_ConstructBase(object, kind->type, (*kind->serial)++);
 
 	kind->slots[index] = object;
 	(*kind->count)++;
@@ -144,6 +160,11 @@ uint32_t Object_Create(uint32_t tag)
 }
 DisplayObject_t* Object_Resolve(uint32_t handle)
 {
+	// 0x00443350 answers the handle 0 with the screen object before it looks at a
+	// single table, which is how a script moves or hides the whole screen at once.
+	if(handle == OBJECT_HANDLE_SCREEN)
+		return Object_Screen();
+
 	const ObjectKind_t* kind = Object_KindForTag(handle & OBJECT_TAG_MASK);
 	if(kind == NULL)
 		return NULL;
@@ -157,6 +178,11 @@ DisplayObject_t* Object_Resolve(uint32_t handle)
 
 void Object_Destroy(uint32_t handle)
 {
+	// The screen object belongs to the display root, not to a table; nothing that
+	// destroys objects can reach it.
+	if(handle == OBJECT_HANDLE_SCREEN)
+		return;
+
 	const ObjectKind_t* kind = Object_KindForTag(handle & OBJECT_TAG_MASK);
 	if(kind == NULL)
 		return;
@@ -679,6 +705,9 @@ uint32_t Object_ApplyContentBitmap(Renderer_t* renderer, DisplayObject_t* sprite
 
 void Object_FreeAll(void)
 {
+	free(gScreenObject);
+	gScreenObject = NULL;
+
 	for(size_t i = 0; i < OBJECT_KIND_COUNT; i++)
 	{
 		for(uint32_t slot = 0; slot < gKinds[i].slotCount; slot++)

@@ -35,6 +35,13 @@ typedef struct Renderer Renderer_t;
 #define SPRITE_SLOT_COUNT   0x200
 #define WINDOW_SLOT_COUNT   0x010
 #define GROUP_SLOT_COUNT    0x008
+// The screen object, which the display root builds at root+0x50 (0x0041E960, vtable
+// 0x004E4854) and immediately puts at the head of its display list through
+// 0x004307D0. It is a plain display object with the type 1 and no class of its own,
+// and it is what the handle 0 names: 0x00443350 answers 0 with root+0x50 before it
+// looks at any table.
+#define OBJECT_HANDLE_SCREEN 0u
+#define OBJECT_TYPE_SCREEN  1
 #define OBJECT_TYPE_SPRITE  2
 #define OBJECT_TYPE_WINDOW  3
 #define OBJECT_TYPE_GROUP   9
