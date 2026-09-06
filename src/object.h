@@ -45,6 +45,10 @@
 #define OBJECT_TYPE_SPRITE  2
 #define OBJECT_TYPE_WINDOW  3
 #define OBJECT_TYPE_GROUP   9
+// CDspObjVirtual (0x0042AD30, vtable 0x004E4FA4): a display object with no class of
+// its own that another object owns. It is the one type 0x0041AC10 will re-parent
+// even though it already has an owner.
+#define OBJECT_TYPE_VIRTUAL 8
 
 typedef struct DisplayObject DisplayObject_t;
 // A child of a group, as 0x0041AC10 allocates it: SIXTEEN bytes, because a child
@@ -208,6 +212,18 @@ void Object_SetBasePosition(DisplayObject_t* object, int32_t x, int32_t y,
 // 0x00442860: resolve the group, resolve the object, refuse the object that is the
 // group itself, and attach it at the offset given.
 uint32_t Object_AddToGroup(uint32_t groupHandle, uint32_t objectHandle, int32_t x, int32_t y);
+// 0x0041AC10 itself, for the parts of the engine that parent an object they own
+// rather than one a script named.
+uint32_t Object_Attach(DisplayObject_t* parent, DisplayObject_t* child, int32_t x, int32_t y);
+// vtable+0x38 (0x0041B3A0) without the damage bracket Grp0 0x37 puts around it,
+// which is how the icon's constructor copies a window's position onto the display
+// object it has just made.
+void Object_SetPosition(DisplayObject_t* object, int32_t x, int32_t y);
+// A CDspObjVirtual (0x0042AD30): the plain display object of type 8 that another
+// object owns. It is in no handle table and in no display list - it is a place in
+// the tree, not something a script can name or the walk can draw - and its owner is
+// set before it is attached, which is exactly the case 0x0041AC10 lets through.
+DisplayObject_t* Object_CreateVirtual(DisplayObject_t* owner);
 // The flag and the walk down the children, as the original's setters do it.
 void Object_SetVisible(DisplayObject_t* object, int visible);
 void Object_SetEnabled(DisplayObject_t* object, int enabled);

@@ -9,6 +9,7 @@
 #include <time.h>
 #include "engine.h"
 #include "nametable.h"
+#include "icon.h"
 #include "object.h"
 #include "region.h"
 #include "arc.h"
@@ -2012,6 +2013,7 @@ void Engine_Free(Engine_t* engine)
 	Renderer_Free(engine->renderer);
 
 	Engine_FreeUserInstructions();
+	Icon_FreeAll();
 	Object_FreeAll();
 	NameTable_FreeAll();
 	Region_FreeAll();

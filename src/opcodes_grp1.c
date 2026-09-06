@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "engine.h"
+#include "icon.h"
 #include "opcodes.h"
 #include "nametable.h"
 #include "object.h"
@@ -195,7 +196,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0xB5 181 */ "--Unknown--",
     /* 0xB6 182 */ "--Unknown--",
     /* 0xB7 183 */ "--Unknown--",
-    /* 0xB8 184 */ "Unknown_184",
+    /* 0xB8 184 */ "CreateIconEx",
     /* 0xB9 185 */ "--Unknown--",
     /* 0xBA 186 */ "Unknown_186",
     /* 0xBB 187 */ "--Unknown--",
@@ -454,7 +455,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0xB5 181 */ NULL,
     /* 0xB6 182 */ NULL,
     /* 0xB7 183 */ NULL,
-    /* 0xB8 184 */ Opcode_Grp1_Unknown_184,
+    /* 0xB8 184 */ Opcode_Grp1_CreateIconEx,
     /* 0xB9 185 */ NULL,
     /* 0xBA 186 */ Opcode_Grp1_Unknown_186,
     /* 0xBB 187 */ NULL,
@@ -960,9 +961,18 @@ uint32_t Opcode_Grp1_Unknown_157(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_184(Thread_t* thread)
+// Grp1 0xB8 (0x00485070) pops a window handle, makes a DCIPIconEx out of it
+// (0x0046C7B0 with the kind 1) and pushes the icon's handle. iconmngr._bp does this
+// once and then configures the icon through the opcodes beside this one.
+uint32_t Opcode_Grp1_CreateIconEx(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t windowHandle = Thread_PopStack(thread);
+	uint32_t handle = Icon_Create(windowHandle, ICON_KIND_EX);
+
+	printf("[Thread %d]: %sIcon 0x%08X made from window 0x%08X\n",
+	       thread->threadId, TLevel[thread->level], handle, windowHandle);
+	Thread_PushStack(thread, handle);
+	return 0;
 }
 
 uint32_t Opcode_Grp1_Unknown_186(Thread_t* thread)

@@ -623,7 +623,7 @@ static void Object_SetTransparency(DisplayObject_t* object, uint32_t transparenc
 
 // 0x0041B3A0: the two fields, and then the same virtual down every child, which is
 // how a group moves everything under it.
-static void Object_SetPosition(DisplayObject_t* object, int32_t x, int32_t y)
+void Object_SetPosition(DisplayObject_t* object, int32_t x, int32_t y)
 {
 	object->x = x;
 	object->y = y;
@@ -679,8 +679,8 @@ static int Object_IsSpatial(const DisplayObject_t* object)
 
 // 0x0041AC10: put an object into a group at an offset. Returns OBJECT_GROUP_OK or
 // OBJECT_GROUP_HAS_OWNER, which is the only failure it can answer for itself.
-static uint32_t Object_Attach(DisplayObject_t* parent, DisplayObject_t* child,
-                              int32_t x, int32_t y)
+uint32_t Object_Attach(DisplayObject_t* parent, DisplayObject_t* child,
+                       int32_t x, int32_t y)
 {
 	// An object already in a group cannot be put into another one - unless its type
 	// is 8, a kind this engine does not build and the original lets through here.
@@ -710,6 +710,25 @@ static uint32_t Object_Attach(DisplayObject_t* parent, DisplayObject_t* child,
 	// written down the whole subtree.
 	Object_SetBasePosition(child, parent->baseX + x, parent->baseY + y, 0, 1);
 	return OBJECT_GROUP_OK;
+}
+
+// 0x0042AD30, the CDspObjVirtual constructor: the base with the type 8, its own
+// vtable (0x004E4FA4), and the owner written straight in by 0x0041ADA0 - before any
+// attachment, which is why 0x0041AC10 has to let a type-8 object through the "this
+// object already has an owner" refusal.
+DisplayObject_t* Object_CreateVirtual(DisplayObject_t* owner)
+{
+	DisplayObject_t* object = (DisplayObject_t*)malloc(sizeof(DisplayObject_t));
+	if(object == NULL)
+		return NULL;
+
+	// The serial is the one the base constructor is handed; nothing hands a virtual
+	// object out, so the display kinds' counters are left alone and it gets 0. It
+	// goes into no display list either: the original's insert lives in the per-kind
+	// allocators, and this object has no kind.
+	Object_ConstructBase(object, OBJECT_TYPE_VIRTUAL, 0);
+	object->owner = owner;
+	return object;
 }
 
 uint32_t Object_AddToGroup(uint32_t groupHandle, uint32_t objectHandle, int32_t x, int32_t y)
