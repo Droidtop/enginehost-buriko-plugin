@@ -147,6 +147,30 @@ struct DisplayObject
 	// children's: an object is in at most one list, so it has an owner and not a
 	// sibling link.
 	ObjectChild_t*   children;
+	// ------------------------------------------------------------------------
+	// A window's own contents (window+0x310 to +0x34C, and the layer order at
+	// +0x3C0). Only a window has them; every other kind leaves them empty.
+	//
+	// A window is not one image. Its pixels are composed out of three layers
+	// (0x0042CB10) in the order the three dwords at +0x3C0 give, which
+	// 0x0042C950 writes as one of six permutations and the constructor asks for
+	// as 0: the background image, the frame, and a display list of the window's
+	// own. The last is what an icon fills: 0x0042BFB0 puts a SPRITE into a
+	// numbered slot of +0x314 and files it in the list at +0x340, and the
+	// redraw's third layer draws that list into the window's own pixels.
+	// ------------------------------------------------------------------------
+	DisplayObject_t** contentSlots;      // +0x314
+	uint32_t          contentSlotCount;  // +0x310
+	struct ObjectList* contentList;      // +0x340
+	// +0x344, +0x348 and +0x34C, which 0x0042BCB0 sets from the display mode as
+	// -(width/2), -(height/2) and width/2, and 0x0042BEC0 recomputes when the
+	// mode changes: the content list's coordinates are measured from the middle
+	// of the screen, not from the window's own corner.
+	int32_t           contentOriginX;
+	int32_t           contentOriginY;
+	int32_t           contentHalfWidth;
+	// +0x3C0, +0x3C4, +0x3C8: which layer is drawn first, second and third.
+	uint32_t          layerOrder[3];
 	// Which display list this object is filed in, or NULL. The original does not
 	// keep it: every one of its removals already has the list in hand, because it
 	// removes through the owner that put the object there (0x0042BCFF hands the
@@ -328,6 +352,12 @@ void Object_DrawList(Renderer_t* renderer, Bitmap_t* target, const Rect_t* clip)
 // Every node out of a list, without touching the objects themselves - a window's
 // list owns no object in it, and neither does the root's.
 void Object_ListClear(ObjectList_t* list);
+
+// The three layers a window's pixels are composed of, which are what the dwords at
+// window+0x3C0 order.
+#define WINDOW_LAYER_BACKGROUND 0
+#define WINDOW_LAYER_FRAME      1
+#define WINDOW_LAYER_CONTENT    2
 
 void Object_FreeAll(void);
 

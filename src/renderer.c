@@ -4,6 +4,7 @@
 #include "renderer.h"
 #include "engine.h"
 #include "object.h"
+#include "window.h"
 #include <string.h>
 #include "spng.h"
 #include "cbg.h"
@@ -87,10 +88,31 @@ uint32_t Renderer_CreateScreen(Renderer_t* renderer, int width, int height)
     // and the window is never drawn, however visible it is.
     Object_SetSurfaceSize(renderer, Object_Resolve(id), width, height);
     renderer->screens[index] = screen;
+    // 0x0042B042, the last thing the window's constructor does: compose the window's
+    // own pixels out of its three layers. With no background image and no frame yet
+    // that is a clear, which is what the original does with an empty background too.
+    Window_RedrawAll(renderer, Object_Resolve(id));
     renderer->activeScreen = (int)index;
     renderer->allocatedScreens++;
     printf("[Renderer]: Created screen object (0x%08X) width size %dx%d\n", id, width, height);
     return id;
+}
+
+int Renderer_WindowBitmap(Renderer_t* renderer, uint32_t handle, Bitmap_t* out)
+{
+	Screen_t* screen = Renderer_ResolveScreen(renderer, handle);
+	if(screen == NULL || screen->bitmap == NULL)
+		return 0;
+
+	out->width  = screen->width;
+	out->height = screen->height;
+	out->mode   = Renderer_ScreenMode(renderer);
+	out->stride = screen->width * Renderer_ModePixelBytes(out->mode);
+	out->bitmap = screen->bitmap;
+	out->serial = 0xFFFFFFFFu;
+	out->offsetX = 0;
+	out->offsetY = 0;
+	return 1;
 }
 
 Screen_t* Renderer_ResolveScreen(Renderer_t* renderer, uint32_t handle)

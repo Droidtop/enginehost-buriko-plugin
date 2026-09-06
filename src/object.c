@@ -111,6 +111,12 @@ static void Object_ConstructBase(DisplayObject_t* object, uint32_t type, uint32_
 	object->bitmapId = -1;
 	object->bitmapSerial = 0xFFFFFFFFu;
 	object->maskBitmapId = 0;
+	// The window constructor asks 0x0042C950 for the order 0 (0x0042B092), which
+	// is background, frame, content. Every other kind carries the three dwords
+	// too and never looks at them.
+	object->layerOrder[0] = WINDOW_LAYER_BACKGROUND;
+	object->layerOrder[1] = WINDOW_LAYER_FRAME;
+	object->layerOrder[2] = WINDOW_LAYER_CONTENT;
 }
 
 // ----------------------------------------------------------------------------------
@@ -1065,18 +1071,9 @@ static void Object_Draw(Renderer_t* renderer, DisplayObject_t* object,
 			// 0x0042B1D0.
 			if(gWindowsVisible == 0)
 				return;
-			Screen_t* screen = Renderer_ResolveScreen(renderer, object->handle);
-			if(screen == NULL || screen->bitmap == NULL)
-				return;
 			Bitmap_t view;
-			view.width  = screen->width;
-			view.height = screen->height;
-			view.mode   = Renderer_ScreenMode(renderer);
-			view.stride = screen->width * Renderer_ModePixelBytes(view.mode);
-			view.bitmap = screen->bitmap;
-			view.serial = 0xFFFFFFFFu;
-			view.offsetX = 0;
-			view.offsetY = 0;
+			if(!Renderer_WindowBitmap(renderer, object->handle, &view))
+				return;
 			if(!Renderer_ClipBitmap(&view, rect))
 				return;
 			// The window's own transparency and the global one, folded together the
