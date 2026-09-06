@@ -977,11 +977,15 @@ uint32_t Opcode_Neq(Thread_t* thread)
 	return 0;
 }
 
+// 0x00473F30: the right operand comes off the stack first, and the comparison is
+// `setle` on `cmp left, right` - less or equal. It was a copy of Geq one function
+// below (0x00473F60, the same shape with `setge`), which made every `<=` in every
+// script answer the opposite of itself whenever the two sides were not equal.
 uint32_t Opcode_Leq(Thread_t* thread)
 {
 	int32_t right = Thread_PopStack(thread);
 	int32_t left = Thread_PopStack(thread);
-	Thread_PushStack(thread, left >= right);
+	Thread_PushStack(thread, left <= right);
 	return 0;
 }
 
