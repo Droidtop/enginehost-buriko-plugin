@@ -58,7 +58,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x2E  46 */ "--Unknown--",
 	/* 0x2F  47 */ "--Unknown--",
 	/* 0x30  48 */ "Unknown_48",
-	/* 0x31  49 */ "Unknown_49",
+	/* 0x31  49 */ "SetObjectEnabled",
 	/* 0x32  50 */ "Unknown_50",
 	/* 0x33  51 */ "Unknown_51",
 	/* 0x34  52 */ "Unknown_52",
@@ -317,7 +317,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x2E  46 */ NULL,
 	/* 0x2F  47 */ NULL,
 	/* 0x30  48 */ Opcode_Grp0_Unknown_48,
-	/* 0x31  49 */ Opcode_Grp0_Unknown_49,
+	/* 0x31  49 */ Opcode_Grp0_SetObjectEnabled,
 	/* 0x32  50 */ Opcode_Grp0_Unknown_50,
 	/* 0x33  51 */ Opcode_Grp0_Unknown_51,
 	/* 0x34  52 */ Opcode_Grp0_Unknown_52,
@@ -991,9 +991,20 @@ uint32_t Opcode_Grp0_Unknown_48(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_49(Thread_t* thread)
+uint32_t Opcode_Grp0_SetObjectEnabled(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t enabled = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	// Sprites are the only display objects that exist here; the original
+	// resolver (0x00443350) reaches every kind.
+	if(!Sprite_SetEnabledByHandle(handle, (int)enabled))
+	{
+		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_50(Thread_t* thread)

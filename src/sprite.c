@@ -135,6 +135,38 @@ int Sprite_SetVisibleByHandle(uint32_t handle, int visible)
 	return 1;
 }
 
+void Sprite_SetEnabled(Sprite_t* sprite, int enabled)
+{
+	if(sprite == NULL)
+		return;
+
+	// 0x0041AE30 stores the flag and walks the children only when +0x08 is
+	// set, unlike the visible flag, which always walks them.
+	sprite->enabled = enabled;
+	if(sprite->propagateEnabled == 0)
+		return;
+	for(Sprite_t* child = sprite->firstChild; child != NULL; child = child->nextSibling)
+		Sprite_SetEnabled(child, enabled);
+}
+
+int Sprite_SetEnabledByHandle(uint32_t handle, int enabled)
+{
+	Sprite_t* sprite = Sprite_Resolve(handle);
+	if(sprite == NULL)
+		return 0;
+
+	// 0x00443460: would it be drawn, set the flag, would it be drawn now,
+	// and dirty the screen only when that answer changed.
+	int before = Sprite_IsDrawable(sprite);
+	Sprite_SetEnabled(sprite, enabled);
+	int after = Sprite_IsDrawable(sprite);
+
+	if(before != after)
+		gSpriteDamage++;
+
+	return 1;
+}
+
 void Sprite_FreeAll(void)
 {
 	for(uint32_t i = 0; i < SPRITE_SLOT_COUNT; i++)

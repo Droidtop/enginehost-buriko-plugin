@@ -48,8 +48,10 @@ uint32_t  Sprite_Create(void);
 Sprite_t* Sprite_Resolve(uint32_t handle);
 int       Sprite_IsDrawable(const Sprite_t* sprite);
 void      Sprite_SetVisible(Sprite_t* sprite, int visible);
+void      Sprite_SetEnabled(Sprite_t* sprite, int enabled);
 // 1 when the handle resolved, 0 when it did not.
 int       Sprite_SetVisibleByHandle(uint32_t handle, int visible);
+int       Sprite_SetEnabledByHandle(uint32_t handle, int enabled);
 void      Sprite_FreeAll(void);
 
 #endif // __SPRITE_H__
