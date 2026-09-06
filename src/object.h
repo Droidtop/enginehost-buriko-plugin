@@ -13,7 +13,8 @@
 //   0x91  0x008  root+0x88C  0x0043F430
 //   0xA0  0x008  root+0x8B4  0x0043F990
 //   0xA1  0x004  root+0x8DC  0x0043FE10
-//   0xB0  0x010  root+0x8F4  0x004407A0  a window, which the renderer holds instead
+//   0xB0  0x010  root+0x8F4  0x004407A0  a window   (built here; the renderer
+//                                        holds its pixels, 0x0042AF00, type 3)
 //   0xC0  0x008  root+0x93C  0x00441320
 //   0xC1  0x008  root+0x964  0x00441AA0
 //   0xF0  0x020  root+0x98C  0x00442300
@@ -21,15 +22,19 @@
 //
 // Every kind is the same base class (0x0041A4D0), which is why the enable, visible
 // and parameter opcodes take any of them; what differs is the class the constructor
-// puts on top, and the type it passes the base: 2 for a sprite, 9 for a group.
+// puts on top, and the type it passes the base: 2 for a sprite, 3 for a window,
+// 9 for a group.
 #define OBJECT_TAG_MASK     0xFF000000u
 #define OBJECT_INDEX_MASK   0x00FFFFFFu
 
 #define OBJECT_TAG_SPRITE   0x80000000u
+#define OBJECT_TAG_WINDOW   0xB0000000u
 #define OBJECT_TAG_GROUP    0xF1000000u
 #define SPRITE_SLOT_COUNT   0x200
+#define WINDOW_SLOT_COUNT   0x010
 #define GROUP_SLOT_COUNT    0x008
 #define OBJECT_TYPE_SPRITE  2
+#define OBJECT_TYPE_WINDOW  3
 #define OBJECT_TYPE_GROUP   9
 
 typedef struct DisplayObject DisplayObject_t;
@@ -100,6 +105,9 @@ uint32_t Object_Create(uint32_t tag);
 // NULL for anything that is not a live object handle: a tag byte of no kind that is
 // built, an index past that kind's table, or a slot that has been freed.
 DisplayObject_t* Object_Resolve(uint32_t handle);
+// Free the object a handle names and give its slot back, so the next object of
+// that kind takes it - which is what the original does and a counter cannot.
+void Object_Destroy(uint32_t handle);
 // The same, but only if the object is of that type.
 DisplayObject_t* Object_ResolveKind(uint32_t handle, uint32_t type);
 int  Object_IsDrawable(const DisplayObject_t* object);

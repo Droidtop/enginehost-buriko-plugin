@@ -46,6 +46,9 @@
 static DisplayObject_t* gSprites[SPRITE_SLOT_COUNT] = { NULL };
 static uint32_t gSpriteCount = 0;
 static uint32_t gSpriteSerial = 0;
+static DisplayObject_t* gWindows[WINDOW_SLOT_COUNT] = { NULL };
+static uint32_t gWindowCount = 0;
+static uint32_t gWindowSerial = 0;
 static DisplayObject_t* gGroups[GROUP_SLOT_COUNT] = { NULL };
 static uint32_t gGroupCount = 0;
 static uint32_t gGroupSerial = 0;
@@ -62,6 +65,7 @@ typedef struct ObjectKind
 
 static const ObjectKind_t gKinds[] = {
 	{ OBJECT_TAG_SPRITE, OBJECT_TYPE_SPRITE, SPRITE_SLOT_COUNT, gSprites, &gSpriteCount, &gSpriteSerial },
+	{ OBJECT_TAG_WINDOW, OBJECT_TYPE_WINDOW, WINDOW_SLOT_COUNT, gWindows, &gWindowCount, &gWindowSerial },
 	{ OBJECT_TAG_GROUP,  OBJECT_TYPE_GROUP,  GROUP_SLOT_COUNT,  gGroups,  &gGroupCount,  &gGroupSerial  },
 };
 #define OBJECT_KIND_COUNT (sizeof(gKinds) / sizeof(gKinds[0]))
@@ -134,6 +138,22 @@ DisplayObject_t* Object_Resolve(uint32_t handle)
 		return NULL;
 
 	return kind->slots[index];
+}
+
+void Object_Destroy(uint32_t handle)
+{
+	const ObjectKind_t* kind = Object_KindForTag(handle & OBJECT_TAG_MASK);
+	if(kind == NULL)
+		return;
+
+	uint32_t index = handle & OBJECT_INDEX_MASK;
+	if(index >= kind->slotCount || kind->slots[index] == NULL)
+		return;
+
+	free(kind->slots[index]);
+	kind->slots[index] = NULL;
+	if(*kind->count > 0)
+		(*kind->count)--;
 }
 
 DisplayObject_t* Object_ResolveKind(uint32_t handle, uint32_t type)

@@ -20,7 +20,6 @@ struct Engine
     uint8_t* globalMem;
     int isRunning;
 
-    uint32_t windowObjectHandle;
     uint32_t filterObjectHandle;
     uint32_t knobObjectHandle;
 

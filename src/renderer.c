@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "renderer.h"
 #include "engine.h"
+#include "object.h"
 #include <string.h>
 #include "spng.h"
 #include "cbg.h"
@@ -59,9 +60,20 @@ uint32_t Renderer_CreateScreen(Renderer_t* renderer, int width, int height)
     screen->field364 = 0;
     screen->bitmap = bitmap;
     screen->surface = surface;
-    renderer->screens[renderer->allocatedScreens] = screen;
-    uint32_t id = 0xC0000000 + renderer->allocatedScreens;
-    renderer->activeScreen = renderer->allocatedScreens;
+    // The handle is the display object's: a window is one, and the object table
+    // is what hands out and reuses the sixteen slots (0x00440690).
+    uint32_t id = Object_Create(OBJECT_TAG_WINDOW);
+    if(id == 0)
+    {
+        SDL_FreeSurface(surface);
+        free(bitmap);
+        free(screen);
+        printf("[Renderer]: Warning: every window slot is taken\n");
+        return 0;
+    }
+    uint32_t index = id & OBJECT_INDEX_MASK;
+    renderer->screens[index] = screen;
+    renderer->activeScreen = (int)index;
     renderer->allocatedScreens++;
     printf("[Renderer]: Created screen object (0x%08X) width size %dx%d\n", id, width, height);
     return id;
@@ -69,9 +81,9 @@ uint32_t Renderer_CreateScreen(Renderer_t* renderer, int width, int height)
 
 Screen_t* Renderer_ResolveScreen(Renderer_t* renderer, uint32_t handle)
 {
-	if((handle & 0xFF000000) != 0xC0000000)
+	if((handle & OBJECT_TAG_MASK) != OBJECT_TAG_WINDOW)
 		return NULL;
-	uint32_t id = handle & 0x00FFFFFF;
+	uint32_t id = handle & OBJECT_INDEX_MASK;
 	if(id >= RENDERER_MAX_SCREENS)
 		return NULL;
 	return renderer->screens[id];
@@ -79,8 +91,10 @@ Screen_t* Renderer_ResolveScreen(Renderer_t* renderer, uint32_t handle)
 
 void Renderer_DestroyScreen(Renderer_t* renderer, uint32_t handle)
 {
-	uint32_t id = 0x0000001F & handle;
-	if(renderer->screens[id] == NULL)
+	if((handle & OBJECT_TAG_MASK) != OBJECT_TAG_WINDOW)
+		return;
+	uint32_t id = handle & OBJECT_INDEX_MASK;
+	if(id >= RENDERER_MAX_SCREENS || renderer->screens[id] == NULL)
 		return;
 	if(renderer->screens[id]->surface != NULL)
 		SDL_FreeSurface(renderer->screens[id]->surface);
@@ -89,6 +103,7 @@ void Renderer_DestroyScreen(Renderer_t* renderer, uint32_t handle)
 	free(renderer->screens[id]);
 	renderer->screens[id] = NULL;
 	renderer->allocatedScreens--;
+	Object_Destroy(handle);
 }
 
 void Renderer_DrawBitmapToScreen(Renderer_t* renderer, uint32_t bitmapId, int screenId)
@@ -736,9 +751,13 @@ void Renderer_DrawScreen(Renderer_t* renderer)
 	destRect.h = 0;
 	uint32_t colour = SDL_MapRGB(windowSurface->format, 0, 0, 0);
 	SDL_FillRect(windowSurface, NULL, colour);
-	for(int i = 0; i < renderer->allocatedScreens; i++)
+	// Over the slots, not over the count: a freed slot is reused, so the live
+	// windows are not the first `allocatedScreens` of them.
+	for(int i = 0; i < RENDERER_MAX_SCREENS; i++)
 	{
 		Screen_t* screen = renderer->screens[i];
+		if(screen == NULL)
+			continue;
 		destRect.x = screen->x;
 		destRect.y = screen->y;
 		SDL_BlitSurface(screen->surface, sourceRect, windowSurface, &destRect);
@@ -748,8 +767,8 @@ void Renderer_DrawScreen(Renderer_t* renderer)
 
 void Renderer_SetScreenParams(Renderer_t* renderer, uint32_t handle, int x, int y)
 {
-	uint32_t id = 0x0000001F & handle;
-	if(renderer->screens[id] == NULL)
+	uint32_t id = handle & OBJECT_INDEX_MASK;
+	if(id >= RENDERER_MAX_SCREENS || renderer->screens[id] == NULL)
 	{
 		printf("[Renderer]: Warning: Attempting to set params on invalid screen object (%d)\n", id);
 		return;

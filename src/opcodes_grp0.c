@@ -1430,12 +1430,12 @@ uint32_t Opcode_Grp0_DrawBitmapToWindow(Thread_t* thread)
 	uint32_t unknown1 = Thread_PopStack(thread);
 	uint32_t unknown2 = Thread_PopStack(thread);
 	uint32_t screenId = Thread_PopStack(thread);
-	if((screenId & 0x00FFFFFF) > RENDERER_MAX_SCREENS)
+	if((screenId & OBJECT_INDEX_MASK) >= RENDERER_MAX_SCREENS)
 	{
 		printf("[Thread %d]: %sError: attempted to draw to invalid screen 0x%08X\n", thread->threadId, TLevel[thread->level], screenId);
 		return 10;
 	}
-	Renderer_DrawBitmapToScreen(thread->engine->renderer, bitmapId, screenId & 0x000000FF);
+	Renderer_DrawBitmapToScreen(thread->engine->renderer, bitmapId, (int)(screenId & OBJECT_INDEX_MASK));
 	return 0;
 }
 
