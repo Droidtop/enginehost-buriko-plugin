@@ -88,6 +88,8 @@ uint32_t Engine_SetFunctionParameter(uint32_t function, int32_t value);
 void Engine_SetFontCharset(const char* name, int charset);
 extern FontName_t* gFontNames;
 uint32_t Engine_InternFontName(const char* name);
+// The name a font number was interned under, or NULL (0x00468D30).
+const char* Engine_FontNameById(uint32_t id);
 
 typedef struct FontAdjust
 {

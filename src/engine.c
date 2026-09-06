@@ -745,6 +745,16 @@ uint32_t Engine_InternFontName(const char* name)
 	return entry->id;
 }
 
+const char* Engine_FontNameById(uint32_t id)
+{
+	for(FontName_t* entry = gFontNames; entry != NULL; entry = entry->next)
+	{
+		if(entry->id == id)
+			return entry->name;
+	}
+	return NULL;
+}
+
 // Grp1 0x0E (fureraba.exe 0x004808F0 -> 0x00461F10 -> 0x00407BC0 -> 0x0042EEB0)
 // attaches a scale and an origin to a named font, which it finds by walking the list
 // at +0xAC of the object held in 0x00566750. Fureraba calls it once for every family

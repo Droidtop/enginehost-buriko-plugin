@@ -144,7 +144,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x85 133 */ "--Unknown--",
     /* 0x86 134 */ "--Unknown--",
     /* 0x87 135 */ "--Unknown--",
-    /* 0x88 136 */ "Unknown_136",
+    /* 0x88 136 */ "SetWindowFont",
     /* 0x89 137 */ "SetWindowGapCoefficient",
     /* 0x8A 138 */ "Unknown_138",
     /* 0x8B 139 */ "Unknown_139",
@@ -403,7 +403,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x85 133 */ NULL,
     /* 0x86 134 */ NULL,
     /* 0x87 135 */ NULL,
-    /* 0x88 136 */ Opcode_Grp1_Unknown_136,
+    /* 0x88 136 */ Opcode_Grp1_SetWindowFont,
     /* 0x89 137 */ Opcode_Grp1_SetWindowGapCoefficient,
     /* 0x8A 138 */ Opcode_Grp1_Unknown_138,
     /* 0x8B 139 */ Opcode_Grp1_Unknown_139,
@@ -781,9 +781,43 @@ uint32_t Opcode_Grp1_Unknown_104(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_136(Thread_t* thread)
+uint32_t Opcode_Grp1_SetWindowFont(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value364 = Thread_PopStack(thread);
+	uint32_t value354 = Thread_PopStack(thread);
+	uint32_t style = Thread_PopStack(thread);
+	uint32_t width = Thread_PopStack(thread);
+	uint32_t size = Thread_PopStack(thread);
+	uint32_t number = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	const char* family = Engine_FontNameById(number);
+	if(family == NULL)
+	{
+		printf("[Thread %d]: %sError: the font number [ %d ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], number);
+		return 0xFFFFFFFF;
+	}
+
+	window->field354 = (int)value354;
+	window->field364 = (int)value364;
+	window->fontFamily = family;
+	window->fontSize = (int)size;
+	window->fontWidth = (int)width;
+	window->fontStyle = (int)style;
+	window->fontScaledWidth = (int)((size * width) / 100);
+
+	printf("[Thread %d]: %sWindow font \"%s\" (number %d), size %d, width %d, style %d\n",
+	       thread->threadId, TLevel[thread->level], family, number, size, width, style);
+	return 0;
 }
 
 uint32_t Opcode_Grp1_SetWindowGapCoefficient(Thread_t* thread)

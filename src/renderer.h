@@ -25,6 +25,19 @@ typedef struct Screen
 	// coefficient its text layout reads at 0x0042B892. The constructor
 	// (0x0042AF00) leaves it 0.
 	int gapCoefficient;
+	// The font selection 0x0042C490 writes into the window: the font
+	// itself at +0x350, its size at +0x358 and size * width / 100 at
+	// +0x35C, with the width and style the font was asked for. NULL font
+	// family means no font has been chosen yet.
+	const char* fontFamily;
+	int fontSize;
+	int fontWidth;
+	int fontStyle;
+	int fontScaledWidth;
+	// +0x354 and +0x364, written by 0x0042C5F0 and 0x0042C610 from the
+	// same opcode. What reads them back is not read yet.
+	int field354;
+	int field364;
 	uint8_t* bitmap;
 	SDL_Surface* surface;
 } Screen_t;

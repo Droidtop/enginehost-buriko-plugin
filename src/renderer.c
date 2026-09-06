@@ -48,6 +48,13 @@ uint32_t Renderer_CreateScreen(Renderer_t* renderer, int width, int height)
     screen->x = 0;
     screen->y = 0;
     screen->gapCoefficient = 0;
+    screen->fontFamily = NULL;
+    screen->fontSize = 0;
+    screen->fontWidth = 0;
+    screen->fontStyle = 0;
+    screen->fontScaledWidth = 0;
+    screen->field354 = 0;
+    screen->field364 = 0;
     screen->bitmap = bitmap;
     screen->surface = surface;
     renderer->screens[renderer->allocatedScreens] = screen;
