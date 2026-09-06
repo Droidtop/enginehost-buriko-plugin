@@ -39,6 +39,18 @@ int OS_Init(Engine_t* engine)
     return 0;
 }
 
+// 0x004615D0 works the length of a frame out from the display's own refresh rate
+// (0x0045E600) and puts the next frame's deadline in 0x00565FAC; 0x00461D20 refuses
+// to compose a frame before that deadline. SDL is asked for the same rate; 60 Hz is
+// the fallback when it has none to give, which is every headless video driver.
+uint32_t OS_FrameInterval()
+{
+	SDL_DisplayMode mode;
+	if(SDL_GetCurrentDisplayMode(0, &mode) == 0 && mode.refresh_rate > 0)
+		return 1000 / (uint32_t)mode.refresh_rate;
+	return 1000 / 60;
+}
+
 int OS_Poll()
 {
 	SDL_Event event;

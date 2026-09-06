@@ -21,7 +21,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x09   9 */ "SetDrawPriority",
 	/* 0x0A  10 */ "Unknown_10",
 	/* 0x0B  11 */ "Unknown_11",
-	/* 0x0C  12 */ "SetOpacity",
+	/* 0x0C  12 */ "ShowWindows",
 	/* 0x0D  13 */ "SetAntialiasingLevel",
 	/* 0x0E  14 */ "Unknown_0x0E",
 	/* 0x0F  15 */ "Unknown_15",
@@ -280,7 +280,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x09   9 */ Opcode_Grp0_SetDrawPriority,
 	/* 0x0A  10 */ Opcode_Grp0_Unknown_10,
 	/* 0x0B  11 */ Opcode_Grp0_Unknown_11,
-	/* 0x0C  12 */ Opcode_Grp0_SetOpacity,
+	/* 0x0C  12 */ Opcode_Grp0_ShowWindows,
 	/* 0x0D  13 */ Opcode_Grp0_SetAntialiasingLevel,
 	/* 0x0E  14 */ Opcode_Grp0_Unknown_0x0E,
 	/* 0x0F  15 */ Opcode_Grp0_Unknown_15,
@@ -612,11 +612,32 @@ uint32_t Opcode_Grp0_Unknown_11(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_SetOpacity(Thread_t* thread)
+// Grp0 0x0C (0x004797A0 -> 0x00462AA0 -> 0x00440650) is what makes windows appear.
+// It writes the two globals every window's own draw reads: 0x00565B44, which
+// 0x0042B1D0 tests before it draws anything at all, and 0x00565B48, a transparency
+// folded into every window's blend on top of the window's own. The display root's
+// constructor calls the same function with both zero, so until this opcode runs no
+// window is drawn - which is why nothing was on the screen while it was a dummy.
+//
+// The script pushes the flag and then the transparency, so they come off the stack
+// the other way round. The transparency is the one that is range-checked, by the
+// same 0x00497F40 the effect level uses; anything above 0x100 is fatal there. It
+// pushes nothing back.
+uint32_t Opcode_Grp0_ShowWindows(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t transparency = Thread_PopStack(thread);
+	uint32_t visible = Thread_PopStack(thread);
+
+	if(transparency > OBJECT_EFFECT_LEVEL_MAX)
+	{
+		printf("[Thread %d]: %sError: an invalid effect level / transparency / opacity"
+		       " / addition level [ %u ] was specified\n",
+		       thread->threadId, TLevel[thread->level], transparency);
+		return 0xFFFFFFFF;
+	}
+
+	gWindowsVisible = visible;
+	gWindowTransparency = transparency;
 	return 0;
 }
 

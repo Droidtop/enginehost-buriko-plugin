@@ -78,6 +78,19 @@ typedef struct Bitmap
 	int offsetY;
 } Bitmap_t;
 
+/*
+ * The original's rectangle, four dwords with both edges INSIDE it: 0x00409190 builds
+ * one over an image as { 0, 0, width - 1, height - 1 }, and 0x00409110 answers empty
+ * when either edge crosses. Every clip in the drawing path is one of these.
+ */
+typedef struct Rect
+{
+	int32_t left;
+	int32_t top;
+	int32_t right;
+	int32_t bottom;
+} Rect_t;
+
 typedef struct Engine Engine_t;
 typedef struct Renderer
 {
@@ -110,6 +123,11 @@ typedef struct Renderer
 	// read sets it, so every created bitmap gets a fresh serial. If a slot ever has
 	// to keep its serial across a recreation, this flag is where that comes from.
 	int keepBitmapSerial;
+	// What the frame is composed into before it reaches the window: the original's
+	// drawing device holds it and the display list draws into it through the
+	// descriptor at list+0x54. It is made at the size of the display mode the game
+	// chose (Sys0 0x60) and remade when that size changes.
+	Bitmap_t* backBuffer;
 } Renderer_t;
 
 Renderer_t* Renderer_Init(Engine_t* engine);
@@ -159,6 +177,28 @@ int Renderer_ScaleBitmap(Renderer_t* renderer, int destination, int source,
 // The whole of one bitmap, its offset pair included, into another slot
 // (0x00403450). 0 on success, 1 invalid destination, 2 invalid source.
 int Renderer_DuplicateBitmap(Renderer_t* renderer, int destination, int source);
+// 0x00409110: narrow `rect` to what it and `other` have in common, and say whether
+// anything is left. `rect` is written even when nothing is.
+int Renderer_RectIntersect(Rect_t* rect, const Rect_t* other);
+// 0x004090B0: is `inner` wholly inside `outer`.
+int Renderer_RectContains(const Rect_t* outer, const Rect_t* inner);
+// 0x00409170: move a rectangle.
+void Renderer_OffsetRect(Rect_t* rect, int32_t x, int32_t y);
+// 0x004091B0: narrow a bitmap to the part of itself that `rect` covers, by moving its
+// pixel pointer and shrinking its size. The result shares the original's pixels and
+// keeps its stride, so it is a view, not a copy - which is exactly what the original
+// does with the six-dword descriptor it passes down the draw. 0 when nothing is left.
+int Renderer_ClipBitmap(Bitmap_t* view, const Rect_t* rect);
+// 0x0040A620 with no rectangle: every pixel of the view set to zero.
+void Renderer_ClearBitmap(Bitmap_t* view);
+// 0x0040A9E0: the blend of one view onto another, corner to corner. The results are
+// Renderer_BlitBitmap's.
+int Renderer_BlitView(Bitmap_t* destination, Bitmap_t* source, int mode, int transparency);
+// The frame buffer, made on first use at the display mode's size.
+Bitmap_t* Renderer_BackBuffer(Renderer_t* renderer);
+// Composes a frame and writes it to a PNG. 0 on success.
+int Renderer_SaveScreenPng(Renderer_t* renderer, const char* path);
+
 uint32_t Renderer_CreateScreen(Renderer_t* renderer, int width, int height);
 // NULL unless the handle carries the screen tag and names a live slot,
 // the way 0x004407A0 resolves a window handle against its sixteen slots.

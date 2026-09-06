@@ -11,6 +11,7 @@
 #include "golden_log.h"
 #include "os.h"
 #include "gameid.h"
+#include "renderer.h"
 
 void PrintVersion()
 {
@@ -31,6 +32,22 @@ Engine_t* gEngine;
 
 int main(int argc, char** argv)
 {
+	// --shot <file> keeps the frame the engine ends on, which is how a change to
+	// the drawing can be looked at without a screen. It is read out of the
+	// arguments first so that the two positional ones keep their places.
+	const char* shot = NULL;
+	int argumentCount = 0;
+	char* arguments[3] = { NULL, NULL, NULL };
+	for(int i = 0; i < argc; i++)
+	{
+		if(strcmp(argv[i], "--shot") == 0 && i + 1 < argc)
+			shot = argv[++i];
+		else if(argumentCount < 3)
+			arguments[argumentCount++] = argv[i];
+	}
+	argc = argumentCount;
+	argv = arguments;
+
 	if(argc < 2 || argv[1] == NULL || chdir(argv[1]) != 0)
 	{
 		fprintf(stderr, "[EngineHost]: Could not enter the supplied game folder.\n");
@@ -88,6 +105,16 @@ int main(int argc, char** argv)
 
 	//Engine_ExecuteThread(gEngine, mainThreadId);
 	Engine_Execute(gEngine);
+
+	if(shot != NULL)
+	{
+		int result = Renderer_SaveScreenPng(engine.renderer, shot);
+		if(result != 0)
+			fprintf(stderr, "[EngineHost]: The frame could not be written to \"%s\" (%d).\n",
+			        shot, result);
+		else
+			printf("[EngineHost]: Frame written to %s\n", shot);
+	}
 
 /*
 	int runSteps = 2000;

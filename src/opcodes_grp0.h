@@ -16,7 +16,7 @@ uint32_t Opcode_Grp0_Unknown_8(Thread_t* thread);
 uint32_t Opcode_Grp0_SetDrawPriority(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_10(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_11(Thread_t* thread);
-uint32_t Opcode_Grp0_SetOpacity(Thread_t* thread);
+uint32_t Opcode_Grp0_ShowWindows(Thread_t* thread);
 uint32_t Opcode_Grp0_SetAntialiasingLevel(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_0x0E(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_15(Thread_t* thread);

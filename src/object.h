@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-typedef struct Renderer Renderer_t;
+#include "renderer.h"
 
 // Display objects. The original keeps a table per kind on the display root at
 // 0x0056674C and tells the kinds apart by the top byte of the handle; the index is
@@ -49,8 +49,26 @@ typedef struct Renderer Renderer_t;
 typedef struct DisplayObject DisplayObject_t;
 struct DisplayObject
 {
+	// The handle this object was handed out under, which is how the parts of the
+	// object that live outside it - a window's pixels, held by the renderer - are
+	// found again from the object itself. The original needs no such thing: its
+	// window object owns its pixels.
+	uint32_t  handle;
 	uint32_t  serial;             // +0x20, the value of the counter before this one
 	uint32_t  type;               // +0x18, 2 for a sprite
+	// +0x1C, the object's own place in the draw order, which vtable+0x54
+	// (0x0041B980) writes and refuses at 0x10000 or above. The base constructor
+	// leaves it 0.
+	uint32_t  layer;
+	// +0x24, added to the key after the layer and the type have been shifted up, so
+	// it orders objects that share both. 0x0041BFE0 writes it; the base constructor
+	// leaves it 0.
+	uint32_t  orderBase;
+	// +0x7C. When it is set the object's own serial is its depth in the key;
+	// otherwise the depth comes from the third component of the accumulated
+	// position vector (0x0041B590), which is 0 in a scene with no Z - every scene
+	// this engine has seen - and leaves the depth at 0xFFF.
+	uint32_t  depthFromSerial;
 	int       enabled;            // +0x04
 	int       propagateEnabled;   // +0x08
 	int       hidden;      // +0x0C
@@ -61,6 +79,8 @@ struct DisplayObject
 	int32_t   x;
 	int32_t   y;
 	uint32_t  priority;           // +0x48
+	// +0xA8, the blend mode the object is drawn with: 0x0041B6E0 reads it back and
+	// hands it straight to the blit. The base constructor leaves it 0x80, a copy.
 	uint32_t  unknownA8;          // +0xA8
 	uint32_t  unknownAC;          // +0xAC
 	// +0xB0, 0 opaque and 0x100 completely transparent: Grp0 0x34 sets it and
@@ -70,6 +90,11 @@ struct DisplayObject
 	// +0xBC, which the parameter 0x7FFF0000 writes (0x0041C290) and 0x0041C2A0 reads
 	// back. What consumes it is not read yet; scrdrv sets it on the screen object.
 	uint32_t  fieldBC;
+	// +0x138, the second bitmap a sprite can be given. The sprite constructor
+	// (0x00425790) leaves it 0, and nothing in this engine sets it; the arms of the
+	// sprite's draw that read it (0x00425BB8 and the masked path at 0x00425ADC) are
+	// therefore not written, and say so by name when they are reached.
+	int32_t   maskBitmapId;
 	// A sprite's own two, which its vtable+0x48 dispatches on. The sprite
 	// constructor (0x00425790) leaves the content kind at -1 and the kind at 0,
 	// and nothing here can give a sprite content yet, so they stay that way -
@@ -183,6 +208,38 @@ uint32_t Object_SetContentBitmap(Renderer_t* renderer, DisplayObject_t* sprite, 
 // live sprite, which the opcode treats as fatal.
 #define OBJECT_CONTENT_BAD_SPRITE   0x000000FFu
 uint32_t Object_ApplyContentBitmap(Renderer_t* renderer, DisplayObject_t* sprite, int number, const char** unread);
+
+// ----------------------------------------------------------------------------------
+// The display list: every object that can be drawn, in the order it is drawn.
+//
+// The original keeps it on the display root at root+0x14 and builds it with
+// 0x00442930; the screen object goes in first (0x004429F9) and every other kind puts
+// itself in as it is created. A node is twelve bytes - key, object, next - and
+// 0x004307D0 inserts before the first node whose key is strictly greater, so the list
+// is in ascending key order and objects that share a key keep the order they arrived
+// in. 0x00430850 takes one out again and 0x004433E0 re-sorts one that has moved, by
+// taking it out and putting it back.
+// ----------------------------------------------------------------------------------
+// 0x0041B190, the key an object is filed under:
+//   ((layer * 8 + min(type, 7)) << 13) + orderBase + (depth & 0x1FFF)
+// vtable+0x74 (0x0041C090): the size of the object's own surface, which is what its
+// bounds are measured from and therefore what decides whether any of it is drawn.
+// A sprite is sized by the content it is given; a window by its pixels.
+int Object_SetSurfaceSize(Renderer_t* renderer, DisplayObject_t* object, int width, int height);
+uint32_t Object_DrawKey(const DisplayObject_t* object);
+// 0x00565B44 and 0x00565B48, which 0x00440650 writes together: whether windows are
+// drawn at all, and a transparency laid over every one of them. The display root's
+// own constructor calls it with both zero, so windows start invisible.
+extern uint32_t gWindowsVisible;
+extern uint32_t gWindowTransparency;
+void Object_ListInsert(DisplayObject_t* object);
+void Object_ListRemove(DisplayObject_t* object);
+// Out and back in, which is the only way a key that has moved reaches its new place.
+void Object_ListResort(DisplayObject_t* object);
+// 0x00431630: the walk that reads the list, drawing every object that is drawable
+// and reaches `clip` into `target`. `target` is the surface the frame is composed
+// into and `clip` is the part of it being redrawn.
+void Object_DrawList(Renderer_t* renderer, Bitmap_t* target, const Rect_t* clip);
 
 void Object_FreeAll(void);
 

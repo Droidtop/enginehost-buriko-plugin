@@ -30,6 +30,7 @@ Renderer_t* Renderer_Init(Engine_t* engine)
 	renderer->animationY = 0;
 	renderer->bitmapSerial = 0;
 	renderer->keepBitmapSerial = 0;
+	renderer->backBuffer = NULL;
 	return renderer;
 }
 
@@ -80,6 +81,11 @@ uint32_t Renderer_CreateScreen(Renderer_t* renderer, int width, int height)
         return 0;
     }
     uint32_t index = id & OBJECT_INDEX_MASK;
+    // 0x0042B280 sizes the window's own display object from the pixels it just made
+    // for it (the call through vtable+0x74 at 0x0042B352), and that size is what the
+    // draw measures the window's bounds from. Without it the object covers nothing
+    // and the window is never drawn, however visible it is.
+    Object_SetSurfaceSize(renderer, Object_Resolve(id), width, height);
     renderer->screens[index] = screen;
     renderer->activeScreen = (int)index;
     renderer->allocatedScreens++;
@@ -995,30 +1001,156 @@ int Renderer_CopyBitmap(Renderer_t* renderer, int destination, int source, int o
 	return 0;
 }
 
+int Renderer_RectIntersect(Rect_t* rect, const Rect_t* other)
+{
+	if(rect->left < other->left)
+		rect->left = other->left;
+	if(rect->top < other->top)
+		rect->top = other->top;
+	if(rect->right > other->right)
+		rect->right = other->right;
+	if(rect->bottom > other->bottom)
+		rect->bottom = other->bottom;
+
+	return rect->left <= rect->right && rect->top <= rect->bottom;
+}
+
+int Renderer_RectContains(const Rect_t* outer, const Rect_t* inner)
+{
+	return outer->left <= inner->left
+	    && inner->right <= outer->right
+	    && outer->top <= inner->top
+	    && inner->bottom <= outer->bottom;
+}
+
+void Renderer_OffsetRect(Rect_t* rect, int32_t x, int32_t y)
+{
+	rect->left   += x;
+	rect->right  += x;
+	rect->top    += y;
+	rect->bottom += y;
+}
+
+int Renderer_ClipBitmap(Bitmap_t* view, const Rect_t* rect)
+{
+	Rect_t whole = { 0, 0, view->width - 1, view->height - 1 };
+	if(!Renderer_RectIntersect(&whole, rect))
+		return 0;
+
+	int pixelBytes = Renderer_ModePixelBytes(view->mode);
+	view->bitmap += (size_t)view->stride * (size_t)whole.top
+	              + (size_t)pixelBytes * (size_t)whole.left;
+	view->width  = whole.right - whole.left + 1;
+	view->height = whole.bottom - whole.top + 1;
+	return 1;
+}
+
+void Renderer_ClearBitmap(Bitmap_t* view)
+{
+	int pixelBytes = Renderer_ModePixelBytes(view->mode);
+	for(int row = 0; row < view->height; row++)
+		memset(view->bitmap + (size_t)row * view->stride, 0,
+		       (size_t)view->width * (size_t)pixelBytes);
+}
+
+int Renderer_BlitView(Bitmap_t* destination, Bitmap_t* source, int mode, int transparency)
+{
+	return Renderer_BlitBitmaps(destination, 0, 0, source, mode, transparency);
+}
+
+Bitmap_t* Renderer_BackBuffer(Renderer_t* renderer)
+{
+	int width  = (int)Engine_ScreenWidth();
+	int height = (int)Engine_ScreenHeight();
+	if(width <= 0 || height <= 0)
+		return NULL;
+
+	if(renderer->backBuffer != NULL
+	   && (renderer->backBuffer->width != width || renderer->backBuffer->height != height))
+	{
+		free(renderer->backBuffer->bitmap);
+		free(renderer->backBuffer);
+		renderer->backBuffer = NULL;
+	}
+	if(renderer->backBuffer == NULL)
+	{
+		renderer->backBuffer = Renderer_MakeLooseBitmap(width, height, Renderer_ScreenMode(renderer));
+		if(renderer->backBuffer != NULL)
+			memset(renderer->backBuffer->bitmap, 0,
+			       (size_t)renderer->backBuffer->stride * (size_t)height);
+	}
+
+	return renderer->backBuffer;
+}
+
+int Renderer_SaveScreenPng(Renderer_t* renderer, const char* path)
+{
+	Bitmap_t* back = Renderer_BackBuffer(renderer);
+	if(back == NULL)
+		return 1;
+
+	Rect_t whole = { 0, 0, back->width - 1, back->height - 1 };
+	Object_DrawList(renderer, back, &whole);
+
+	FILE* file = fopen(path, "wb");
+	if(file == NULL)
+		return 2;
+
+	int result = 0;
+	spng_ctx* ctx = spng_ctx_new(SPNG_CTX_ENCODER);
+	struct spng_ihdr ihdr;
+	memset(&ihdr, 0, sizeof(ihdr));
+	ihdr.width = (uint32_t)back->width;
+	ihdr.height = (uint32_t)back->height;
+	ihdr.bit_depth = 8;
+	ihdr.color_type = SPNG_COLOR_TYPE_TRUECOLOR_ALPHA;
+
+	if(ctx == NULL
+	   || spng_set_png_file(ctx, file) != 0
+	   || spng_set_ihdr(ctx, &ihdr) != 0
+	   || spng_encode_image(ctx, back->bitmap,
+	                        (size_t)back->stride * (size_t)back->height,
+	                        SPNG_FMT_PNG, SPNG_ENCODE_FINALIZE) != 0)
+		result = 3;
+
+	if(ctx != NULL)
+		spng_ctx_free(ctx);
+	fclose(file);
+	return result;
+}
+
+// One frame: 0x00461C30 asks 0x004431A0 to compose it and then hands the result to
+// the window. The composition is the display list drawn into the back buffer over the
+// area that needs redrawing, which here is the whole screen: the original's dirty
+// rectangles (0x004312E0, built from the damage the objects report) are not kept yet,
+// and drawing everything is what it falls back to when it has none.
+//
+// Windows are no longer blitted here one by one. A window is a display object like
+// any other and draws itself from the list, in the list's order, with its own blend
+// mode and transparency - which is what put them on top of everything before.
 void Renderer_DrawScreen(Renderer_t* renderer)
 {
+	Bitmap_t* back = Renderer_BackBuffer(renderer);
+	if(back == NULL)
+		return;
+
+	Rect_t whole = { 0, 0, back->width - 1, back->height - 1 };
+	Object_DrawList(renderer, back, &whole);
+
 	if(renderer->engine->window == NULL)
 		return;
-	//if(renderer->screens[renderer->activeScreen] == NULL)
-	//	return;
+
 	SDL_Surface* windowSurface = SDL_GetWindowSurface(renderer->engine->window);
-	SDL_Rect* sourceRect = NULL;
-	SDL_Rect destRect;
-	destRect.w = 0;
-	destRect.h = 0;
-	uint32_t colour = SDL_MapRGB(windowSurface->format, 0, 0, 0);
-	SDL_FillRect(windowSurface, NULL, colour);
-	// Over the slots, not over the count: a freed slot is reused, so the live
-	// windows are not the first `allocatedScreens` of them.
-	for(int i = 0; i < RENDERER_MAX_SCREENS; i++)
-	{
-		Screen_t* screen = renderer->screens[i];
-		if(screen == NULL)
-			continue;
-		destRect.x = screen->x;
-		destRect.y = screen->y;
-		SDL_BlitSurface(screen->surface, sourceRect, windowSurface, &destRect);
-	}
+	if(windowSurface == NULL)
+		return;
+	SDL_Surface* frame = SDL_CreateRGBSurfaceWithFormatFrom(
+	    back->bitmap, back->width, back->height, 32, back->stride, SDL_PIXELFORMAT_RGBA32);
+	if(frame == NULL)
+		return;
+	SDL_FillRect(windowSurface, NULL, SDL_MapRGB(windowSurface->format, 0, 0, 0));
+	SDL_SetSurfaceBlendMode(frame, SDL_BLENDMODE_NONE);
+	SDL_BlitSurface(frame, NULL, windowSurface, NULL);
+	SDL_FreeSurface(frame);
 	SDL_UpdateWindowSurface(renderer->engine->window);
 }
 
@@ -1041,6 +1173,12 @@ void Renderer_Free(Renderer_t* renderer)
 		return;
 	for(int i = 0; i < RENDERER_MAX_BITMAPS; i++)
 		Renderer_DestroyBitmap(renderer, i);
+	if(renderer->backBuffer != NULL)
+	{
+		free(renderer->backBuffer->bitmap);
+		free(renderer->backBuffer);
+		renderer->backBuffer = NULL;
+	}
 	for(int i = 0; i < RENDERER_MAX_SCREENS; i++)
 	{
 		if(renderer->screens[i] == NULL)

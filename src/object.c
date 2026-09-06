@@ -111,6 +111,74 @@ static void Object_ConstructBase(DisplayObject_t* object, uint32_t type, uint32_
 	// real bitmap serial before something has actually given this sprite content.
 	object->bitmapId = -1;
 	object->bitmapSerial = 0xFFFFFFFFu;
+	object->maskBitmapId = 0;
+}
+
+// ----------------------------------------------------------------------------------
+// The display list
+// ----------------------------------------------------------------------------------
+typedef struct ObjectNode
+{
+	uint32_t           key;
+	DisplayObject_t*   object;
+	struct ObjectNode* next;
+} ObjectNode_t;
+
+static ObjectNode_t* gDisplayList = NULL;
+
+uint32_t Object_DrawKey(const DisplayObject_t* object)
+{
+	uint32_t type = object->type;
+	if(type >= 8)
+		type = 7;
+
+	// 0x0041B190 takes the depth out of the accumulated position vector's third
+	// component, and nothing in this engine has a Z, so it is the constant the
+	// original computes for a flat scene. The serial is used instead when the
+	// object asks for it.
+	uint32_t depth = object->depthFromSerial != 0 ? object->serial : 0xFFF;
+
+	return (((object->layer * 8) + type) << 13) + object->orderBase + (depth & 0x1FFF);
+}
+
+void Object_ListInsert(DisplayObject_t* object)
+{
+	if(object == NULL)
+		return;
+
+	uint32_t key = Object_DrawKey(object);
+	ObjectNode_t** link = &gDisplayList;
+	// Before the first node whose key is strictly greater, so equal keys keep the
+	// order they arrived in.
+	while(*link != NULL && (*link)->key <= key)
+		link = &(*link)->next;
+
+	ObjectNode_t* node = (ObjectNode_t*)malloc(sizeof(ObjectNode_t));
+	if(node == NULL)
+		return;
+	node->key = key;
+	node->object = object;
+	node->next = *link;
+	*link = node;
+}
+
+void Object_ListRemove(DisplayObject_t* object)
+{
+	for(ObjectNode_t** link = &gDisplayList; *link != NULL; link = &(*link)->next)
+	{
+		if((*link)->object != object)
+			continue;
+		ObjectNode_t* node = *link;
+		*link = node->next;
+		free(node);
+		return;
+	}
+}
+
+void Object_ListResort(DisplayObject_t* object)
+{
+	Object_ListRemove(object);
+	Object_ListInsert(object);
 }
 
 // root+0x50, built once with the display root and never freed while the engine runs.
@@ -126,6 +194,10 @@ static DisplayObject_t* Object_Screen(void)
 		// 0x0041E960 passes the base the type 1 and no serial of its own: it is not
 		// in any of the ten tables, so nothing hands it one.
 		Object_ConstructBase(gScreenObject, OBJECT_TYPE_SCREEN, 0);
+		gScreenObject->handle = OBJECT_HANDLE_SCREEN;
+		// The display root puts it into the list the moment it has built it
+		// (0x004429F9), before any other object exists.
+		Object_ListInsert(gScreenObject);
 	}
 
 	return gScreenObject;
@@ -152,11 +224,16 @@ uint32_t Object_Create(uint32_t tag)
 		return 0;
 
 	Object_ConstructBase(object, kind->type, (*kind->serial)++);
+	object->handle = index | kind->tag;
 
 	kind->slots[index] = object;
 	(*kind->count)++;
+	// Every kind puts itself into the display list as it is built: the sprite table
+	// at 0x0043E4F6, the windows at 0x00440737 and the groups at 0x00441A38 all end
+	// in the same 0x004307D0.
+	Object_ListInsert(object);
 
-	return index | kind->tag;
+	return object->handle;
 }
 DisplayObject_t* Object_Resolve(uint32_t handle)
 {
@@ -191,6 +268,7 @@ void Object_Destroy(uint32_t handle)
 	if(index >= kind->slotCount || kind->slots[index] == NULL)
 		return;
 
+	Object_ListRemove(kind->slots[index]);
 	free(kind->slots[index]);
 	kind->slots[index] = NULL;
 	if(*kind->count > 0)
@@ -613,7 +691,7 @@ const char* Object_ApplyEffectLevel(DisplayObject_t* object, uint32_t level)
 // vtable+0x74, 0x0041C090: size the object's own surface from its content, in the
 // screen's pixel mode. A zero width or height is refused and nothing is written; the
 // pixels at +0x90 are cleared to NULL, which is the original's own last act here.
-static int Object_SetSurfaceSize(Renderer_t* renderer, DisplayObject_t* object, int width, int height)
+int Object_SetSurfaceSize(Renderer_t* renderer, DisplayObject_t* object, int width, int height)
 {
 	if(width == 0 || height == 0)
 		return 0;
@@ -703,8 +781,221 @@ uint32_t Object_ApplyContentBitmap(Renderer_t* renderer, DisplayObject_t* sprite
 	return result;
 }
 
+// ----------------------------------------------------------------------------------
+// Drawing
+// ----------------------------------------------------------------------------------
+// vtable+0x20 (0x0041B200): where the object's own surface starts and ends, in its
+// own coordinates. The surface is what vtable+0x74 sized from the object's content;
+// an object that has none is empty and nothing of it is drawn.
+static void Object_LocalBounds(const DisplayObject_t* object, Rect_t* rect)
+{
+	rect->left   = 0;
+	rect->top    = 0;
+	rect->right  = object->surfaceWidth - 1;
+	rect->bottom = object->surfaceHeight - 1;
+}
+
+// vtable+0x34 (0x0041B330): where the object sits on the screen, which the original
+// accumulates through the parents. Every position this engine sets is written down
+// the children by 0x0041B3A0 already, so an object's own +0x38 / +0x3C is that sum.
+static void Object_ScreenPosition(const DisplayObject_t* object, int32_t* x, int32_t* y)
+{
+	*x = object->x;
+	*y = object->y;
+}
+
+// vtable+0x24: the object's surface in screen coordinates. The base (0x0041C450)
+// hands straight through to vtable+0x20 without moving it, which is why the screen
+// object is not affected by a position; every other kind uses 0x0041B230, which adds
+// the position on.
+static void Object_ScreenBounds(const DisplayObject_t* object, Rect_t* rect)
+{
+	Object_LocalBounds(object, rect);
+	if(object->type == OBJECT_TYPE_SCREEN)
+		return;
+
+	int32_t x, y;
+	Object_ScreenPosition(object, &x, &y);
+	Renderer_OffsetRect(rect, x, y);
+}
+
+// 0x0041B840: the transparency the blit is given, which the blend mode decides.
+// Three arms are reachable from the table at 0x0041B8B8: the modes that carry a
+// transparency of their own combine all three fields, 0x02 and its family weight
+// them the other way round, and everything else - 0x00, 0x80, 0x40 and any mode
+// below 1 - is just +0xAC.
+static uint32_t Object_DrawTransparency(const DisplayObject_t* object)
+{
+	switch(object->unknownA8)
+	{
+		case BITMAP_BLEND_ALPHA_TRANS:
+		case BITMAP_BLEND_ALPHA_TRANS2:
+		case 0x21:
+		{
+			uint32_t weight = (0x100 - object->transparency)
+			                * (0x100 - object->unknownAC)
+			                * object->opacity;
+			return 0x100 - (weight >> 16);
+		}
+		case 0x02:
+		case 0xC0:
+			return ((0x100 - object->transparency) * object->opacity * object->unknownAC) >> 16;
+		default:
+			return object->unknownAC;
+	}
+}
+
+// vtable+0x18. The base's (0x0041C410) fills its area with zero; a group's is
+// 0x0041BF50, which does nothing at all; a sprite's is 0x004259A0 and a window's is
+// 0x0042B1D0.
+//
+// 0x00565B44, the flag a window's draw tests before it draws anything, is set by
+// 0x00440650 - which the display root's own constructor calls with 0, so windows are
+// invisible until the opcode behind 0x00462AA0 turns them on. That opcode is not
+// wired up yet, so the flag stays where the constructor leaves it.
+uint32_t gWindowsVisible = 0;
+uint32_t gWindowTransparency = 0;
+
+static void Object_Draw(Renderer_t* renderer, DisplayObject_t* object,
+                        Bitmap_t* target, const Rect_t* rect)
+{
+	uint32_t transparency = Object_DrawTransparency(object);
+
+	switch(object->type)
+	{
+		case OBJECT_TYPE_GROUP:
+			// 0x0041BF50: a group has no pixels of its own.
+			return;
+
+		case OBJECT_TYPE_SPRITE:
+		{
+			// 0x004259A0. The sprite dispatches on its kind (+0x134) through the
+			// table at 0x00427000; a sprite that has only been given a bitmap is
+			// kind 0, the arm at 0x00425A7B.
+			if(object->kind != 0)
+			{
+				printf("[Renderer]: Warning: the draw of a sprite of kind %u"
+				       " (0x004259A0 arm %u) is not written yet\n",
+				       object->kind, object->kind);
+				return;
+			}
+			Bitmap_t* source = Renderer_ResolveBitmap(renderer, object->bitmapId);
+			if(source == NULL)
+				return;
+			// The slot may have been refilled behind the sprite's back since it was
+			// handed over, and then it is not this sprite's image any more.
+			if(Renderer_BitmapSerial(renderer, object->bitmapId) != object->bitmapSerial)
+				return;
+			if(object->maskBitmapId != 0)
+			{
+				printf("[Renderer]: Warning: a sprite with a second bitmap draws"
+				       " through 0x00425ADC / 0x00425BB8, which is not written yet\n");
+				return;
+			}
+			// 0x0042AC80 asks whether any of the four transform blocks at +0x358 is
+			// set; nothing in this engine sets one, so the draw is the plain one at
+			// 0x00425D0D.
+			Bitmap_t view = *source;
+			if(!Renderer_ClipBitmap(&view, rect))
+				return;
+			Renderer_BlitView(target, &view, (int)object->unknownA8, (int)transparency);
+			return;
+		}
+
+		case OBJECT_TYPE_WINDOW:
+		{
+			// 0x0042B1D0.
+			if(gWindowsVisible == 0)
+				return;
+			Screen_t* screen = Renderer_ResolveScreen(renderer, object->handle);
+			if(screen == NULL || screen->bitmap == NULL)
+				return;
+			Bitmap_t view;
+			view.width  = screen->width;
+			view.height = screen->height;
+			view.mode   = Renderer_ScreenMode(renderer);
+			view.stride = screen->width * Renderer_ModePixelBytes(view.mode);
+			view.bitmap = screen->bitmap;
+			view.serial = 0xFFFFFFFFu;
+			view.offsetX = 0;
+			view.offsetY = 0;
+			if(!Renderer_ClipBitmap(&view, rect))
+				return;
+			// The window's own transparency and the global one, folded together the
+			// way 0x0042B23F folds them.
+			uint32_t combined = 0x100 - (((0x100 - transparency)
+			                            * (0x100 - gWindowTransparency)) >> 8);
+			Renderer_BlitView(target, &view, (int)object->unknownA8, (int)combined);
+			return;
+		}
+
+		default:
+			// 0x0041C410, the base. It offers vtable+0x84 first when +0x138 is set;
+			// nothing sets it, so what is left is the fill.
+			Renderer_ClearBitmap(target);
+			return;
+	}
+}
+
+// 0x0041B0A0: one object onto the target, if any of it is inside both the target and
+// the part being redrawn. The answer is whether the object covered the whole of it.
+static int Object_DrawTo(Renderer_t* renderer, DisplayObject_t* object,
+                         Bitmap_t* target, const Rect_t* targetBounds, const Rect_t* clip)
+{
+	if(!Object_IsDrawable(object))
+		return 1;
+
+	Rect_t bounds;
+	Object_ScreenBounds(object, &bounds);
+	if(!Renderer_RectIntersect(&bounds, targetBounds))
+		return 0;
+
+	int covered = Renderer_RectContains(clip, &bounds);
+	if(!Renderer_RectIntersect(&bounds, clip))
+		return covered;
+
+	// The destination is the target narrowed to what is being drawn, in screen
+	// coordinates; the object then works in its own, so the rectangle goes with it.
+	Bitmap_t view = *target;
+	if(!Renderer_ClipBitmap(&view, &bounds))
+		return covered;
+
+	int32_t x = 0, y = 0;
+	if(object->type != OBJECT_TYPE_SCREEN)
+		Object_ScreenPosition(object, &x, &y);
+	Rect_t local = bounds;
+	Renderer_OffsetRect(&local, -x, -y);
+
+	Object_Draw(renderer, object, &view, &local);
+	return covered;
+}
+
+void Object_DrawList(Renderer_t* renderer, Bitmap_t* target, const Rect_t* clip)
+{
+	Rect_t bounds = { 0, 0, target->width - 1, target->height - 1 };
+
+	for(ObjectNode_t* node = gDisplayList; node != NULL; node = node->next)
+	{
+		// The draw priority (Grp0 0x09, which reaches the list's own +0x48 through
+		// 0x00462020) holds back everything below it that is not the screen itself;
+		// the original then draws those from the second list at list+0x20, which
+		// nothing builds yet - list+0x24, the flag that would enable it, is never
+		// set, and 0x00431530 returns on that flag before it looks at anything.
+		if(gDrawPriority > node->key && node->object->type != 0)
+			continue;
+
+		Object_DrawTo(renderer, node->object, target, &bounds, clip);
+	}
+}
+
 void Object_FreeAll(void)
 {
+	while(gDisplayList != NULL)
+	{
+		ObjectNode_t* node = gDisplayList;
+		gDisplayList = node->next;
+		free(node);
+	}
 	free(gScreenObject);
 	gScreenObject = NULL;
 

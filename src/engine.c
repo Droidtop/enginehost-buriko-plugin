@@ -382,9 +382,21 @@ void Engine_Execute(Engine_t* engine)
 	Thread_t* thread = engine->threads;
 	Thread_t* nextThread;
 	int lastSleep = 0;
+	// 0x0048CD5F runs one interpreter step and then the whole of a frame's work,
+	// of which composing the screen (0x00461D20) is one call. It is the deadline in
+	// 0x00566744, not the step count, that decides when that happens, so the frame
+	// is timed here too rather than drawn on every tick.
+	uint32_t nextFrame = 0;
 	while(engine->isRunning)
 	{
 		OS_Poll();
+
+		uint32_t frameNow = OS_GetTicks();
+		if(frameNow >= nextFrame)
+		{
+			Renderer_DrawScreen(engine->renderer);
+			nextFrame = frameNow + OS_FrameInterval();
+		}
 
 		if(GoldenLogTotal)
 		{
@@ -395,7 +407,6 @@ void Engine_Execute(Engine_t* engine)
 				int delta = GoldenLog[GoldenLogIndex].time - lastSleep;
 				if(delta > 20000)
 				{
-					Renderer_DrawScreen(engine->renderer);
 					lastSleep = GoldenLog[GoldenLogIndex].time;
 					Engine_Sleep(delta);
 				}
