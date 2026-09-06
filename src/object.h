@@ -67,6 +67,9 @@ struct DisplayObject
 	// "would this be drawn" refuses the object once it reaches 0x100.
 	uint32_t  transparency;
 	uint32_t  opacity;            // +0xB4
+	// +0xBC, which the parameter 0x7FFF0000 writes (0x0041C290) and 0x0041C2A0 reads
+	// back. What consumes it is not read yet; scrdrv sets it on the screen object.
+	uint32_t  fieldBC;
 	// A sprite's own two, which its vtable+0x48 dispatches on. The sprite
 	// constructor (0x00425790) leaves the content kind at -1 and the kind at 0,
 	// and nothing here can give a sprite content yet, so they stay that way -

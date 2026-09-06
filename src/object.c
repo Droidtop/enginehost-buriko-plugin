@@ -328,6 +328,9 @@ static uint32_t Object_SetParameterBase(DisplayObject_t* object, uint32_t number
 	case 0xC4:                              // 0x0041AEC0
 		object->priority = value1;
 		return OBJECT_PARAM_OK;
+	case 0x7FFF0000:                        // 0x0041C290
+		object->fieldBC = value1;
+		return OBJECT_PARAM_OK;
 
 	case 0x00:
 		*unread = "the pair set through vtable+0x2C (0x0041B280)";
@@ -343,9 +346,6 @@ static uint32_t Object_SetParameterBase(DisplayObject_t* object, uint32_t number
 		return OBJECT_PARAM_UNREAD;
 	case 0x8100:
 		*unread = "0x0041BFE0";
-		return OBJECT_PARAM_UNREAD;
-	case 0x7FFF0000:
-		*unread = "0x0041C290";
 		return OBJECT_PARAM_UNREAD;
 	case 0x7FFFFFFF:
 		*unread = "0x0041C2B0";
