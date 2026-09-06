@@ -50,7 +50,9 @@ struct DisplayObject
 	uint32_t  priority;           // +0x48
 	uint32_t  unknownA8;          // +0xA8
 	uint32_t  unknownAC;          // +0xAC
-	uint32_t  unknownB0;          // +0xB0
+	// +0xB0, 0 opaque and 0x100 completely transparent: Grp0 0x34 sets it and
+	// "would this be drawn" refuses the object once it reaches 0x100.
+	uint32_t  transparency;
 	uint32_t  opacity;            // +0xB4
 	// A sprite's own two, which its vtable+0x48 dispatches on. The sprite
 	// constructor (0x00425790) leaves the content kind at -1 and the kind at 0,
@@ -128,6 +130,8 @@ void Object_ApplyHidden(DisplayObject_t* object, int hidden);
 // otherwise the name of the arm of the sprite's override this engine has not
 // read yet, so it is refused by name rather than guessed at.
 const char* Object_ApplyEffectLevel(DisplayObject_t* object, uint32_t level);
+// The transparency (Grp0 0x34, 0x00443690), which takes the same range.
+void Object_ApplyTransparency(DisplayObject_t* object, uint32_t transparency);
 void Object_FreeAll(void);
 
 #endif // __OBJECT_H__

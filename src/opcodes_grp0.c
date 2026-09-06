@@ -61,7 +61,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x31  49 */ "SetObjectEnabled",
 	/* 0x32  50 */ "SetObjectEffectLevel",
 	/* 0x33  51 */ "Unknown_51",
-	/* 0x34  52 */ "Unknown_52",
+	/* 0x34  52 */ "SetObjectTransparency",
 	/* 0x35  53 */ "Unknown_53",
 	/* 0x36  54 */ "--Unknown--",
 	/* 0x37  55 */ "Unknown_55",
@@ -320,7 +320,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x31  49 */ Opcode_Grp0_SetObjectEnabled,
 	/* 0x32  50 */ Opcode_Grp0_SetObjectEffectLevel,
 	/* 0x33  51 */ Opcode_Grp0_Unknown_51,
-	/* 0x34  52 */ Opcode_Grp0_Unknown_52,
+	/* 0x34  52 */ Opcode_Grp0_SetObjectTransparency,
 	/* 0x35  53 */ Opcode_Grp0_Unknown_53,
 	/* 0x36  54 */ NULL,
 	/* 0x37  55 */ Opcode_Grp0_Unknown_55,
@@ -1053,9 +1053,32 @@ uint32_t Opcode_Grp0_Unknown_51(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_52(Thread_t* thread)
+// Grp0 0x34 (0x0047B380 -> 0x00462100 -> 0x00443690), Grp0 0x32's twin one field
+// along: the same range check and the same message, writing the transparency at
+// +0xB0 through 0x0041B730 instead of the virtual at vtable+0x48.
+uint32_t Opcode_Grp0_SetObjectTransparency(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t transparency = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(transparency > OBJECT_EFFECT_LEVEL_MAX)
+	{
+		printf("[Thread %d]: %sError: an invalid effect level / transparency / "
+		       "opacity / addition level [ %u ] was specified\n",
+		       thread->threadId, TLevel[thread->level], transparency);
+		return 0xFFFFFFFF;
+	}
+
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	Object_ApplyTransparency(object, transparency);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_53(Thread_t* thread)

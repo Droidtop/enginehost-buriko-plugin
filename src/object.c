@@ -35,7 +35,8 @@
 // +0xB4 = 0x100 (0x0041B770).
 //
 // "Would this be drawn" (0x0041AF00) answers 1 only when +0x14 is non-zero, +0x04 is
-// non-zero, +0x0C is zero, +0xB0 is below 0x100 and +0xB4 is above 0. So a fresh
+// non-zero, +0x0C is zero, the transparency at +0xB0 is below 0x100 and +0xB4 is
+// above 0. So a fresh
 // sprite fails on exactly one condition, its visible flag, and every other test
 // already passes - which is why showing a new sprite is what changes the answer.
 // ----------------------------------------------------------------------------------
@@ -172,7 +173,7 @@ int Object_IsDrawable(const DisplayObject_t* object)
 	return object->visible != 0
 		&& object->enabled != 0
 		&& object->hidden == 0
-		&& object->unknownB0 < 0x100
+		&& object->transparency < 0x100
 		&& object->opacity > 0;
 }
 void Object_SetVisible(DisplayObject_t* object, int visible)
@@ -489,6 +490,33 @@ static const char* Object_SetEffectLevel(DisplayObject_t* object, uint32_t level
 		// does nothing at all, not even the base. Faithfully nothing.
 		return NULL;
 	}
+}
+
+// 0x0041B730. Unlike the effect level's setter one field along, this one calls
+// itself on every child rather than the child's own virtual: the original hard
+// calls 0x0041B730, so a child that overrides the transparency does not get its
+// override here.
+static void Object_SetTransparency(DisplayObject_t* object, uint32_t transparency)
+{
+	object->transparency = transparency;
+	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
+		Object_SetTransparency(child, transparency);
+}
+
+void Object_ApplyTransparency(DisplayObject_t* object, uint32_t transparency)
+{
+	if(object == NULL)
+		return;
+
+	// 0x00443690's bracket is 0x00443540's: drawn before OR after, not "it moved".
+	// Here it can actually be one and not the other, since the transparency is one
+	// of the things that decides whether the object is drawn at all.
+	int before = Object_IsDrawable(object);
+	Object_SetTransparency(object, transparency);
+	int after = Object_IsDrawable(object);
+
+	if(before || after)
+		gObjectDamage++;
 }
 
 const char* Object_ApplyEffectLevel(DisplayObject_t* object, uint32_t level)

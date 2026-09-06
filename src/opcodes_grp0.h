@@ -47,7 +47,7 @@ uint32_t Opcode_Grp0_Unknown_48(Thread_t* thread);
 uint32_t Opcode_Grp0_SetObjectEnabled(Thread_t* thread);
 uint32_t Opcode_Grp0_SetObjectEffectLevel(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_51(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_52(Thread_t* thread);
+uint32_t Opcode_Grp0_SetObjectTransparency(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_53(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_55(Thread_t* thread);
 uint32_t Opcode_Grp0_SetObjectParameter(Thread_t* thread);
