@@ -69,7 +69,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x32  50 */ "Unknown_50",
 	/* 0x33  51 */ "DeleteFile",
 	/* 0x34  52 */ "FindFile",
-	/* 0x35  53 */ "Unknown_53",
+	/* 0x35  53 */ "GetFileSize",
 	/* 0x36  54 */ "EnableSearchPaths",
 	/* 0x37  55 */ "AddSearchPath",
 	/* 0x38  56 */ "CreateComplexArchive",
@@ -328,7 +328,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x32  50 */ Opcode_Sys0_Unknown_50,
 	/* 0x33  51 */ Opcode_Sys0_DeleteFile,
 	/* 0x34  52 */ Opcode_Sys0_FindFile,
-	/* 0x35  53 */ Opcode_Sys0_Unknown_53,
+	/* 0x35  53 */ Opcode_Sys0_GetFileSize,
 	/* 0x36  54 */ Opcode_Sys0_EnableSearchPaths,
 	/* 0x37  55 */ Opcode_Sys0_AddSearchPath,
 	/* 0x38  56 */ Opcode_Sys0_CreateComplexArchive,
@@ -983,9 +983,30 @@ uint32_t Opcode_Sys0_FindFile(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_53(Thread_t* thread)
+// Sys0 0x35 (0x00488A80 -> 0x00466460) pushes back the size of a file, or 0 when it
+// is not there. Both arguments are addresses in the script's own memory, popped and
+// resolved (0x0048E0E0): the name first, then the archive, whose pushed value may be
+// 0 to mean no archive at all. The original reads the file into a 0x4000000-byte
+// buffer and frees it again without looking at the bytes; it tries the archive
+// registry at 0x00517F18 and then the one at 0x00517C08, which is the same order this
+// engine's own lookup takes.
+uint32_t Opcode_Sys0_GetFileSize(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Engine_t* engine = thread->engine;
+	const char* filename = (const char*)Thread_PopAndResolveAddress(thread);
+	const char* archive  = (const char*)Thread_PopAndResolveAddress(thread);
+
+	size_t size = 0;
+	uint8_t* file = Engine_ReadFile(engine, archive, filename, &size);
+	if(file == NULL)
+	{
+		Thread_PushStack(thread, 0);
+		return 0;
+	}
+
+	free(file);
+	Thread_PushStack(thread, (uint32_t)size);
+	return 0;
 }
 
 

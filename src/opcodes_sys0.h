@@ -48,7 +48,7 @@ uint32_t Opcode_Sys0_Unknown_50(Thread_t* thread);
 uint32_t Opcode_Sys0_DeleteFile(Thread_t* thread);
 uint32_t Opcode_Sys0_FindFile(Thread_t* thread);
 uint32_t Opcode_Sys0_SetUserDirectory(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_53(Thread_t* thread);
+uint32_t Opcode_Sys0_GetFileSize(Thread_t* thread);
 uint32_t Opcode_Sys0_EnableSearchPaths(Thread_t* thread);
 uint32_t Opcode_Sys0_AddSearchPath(Thread_t* thread);
 uint32_t Opcode_Sys0_CreateComplexArchive(Thread_t* thread);
