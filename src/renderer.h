@@ -12,12 +12,19 @@
 #define RENDERER_MAX_BITMAPS 0x4000
 #define RENDERER_MAX_SCREENS 0x10
 
+// The largest gap coefficient 0x0042C550 accepts.
+#define SCREEN_MAX_GAP_COEFFICIENT 0x320
+
 typedef struct Screen
 {
 	int width;
 	int height;
 	int x;
 	int y;
+	// +0x360 of the original's 0x3CC-byte window object: the gap
+	// coefficient its text layout reads at 0x0042B892. The constructor
+	// (0x0042AF00) leaves it 0.
+	int gapCoefficient;
 	uint8_t* bitmap;
 	SDL_Surface* surface;
 } Screen_t;
@@ -96,6 +103,9 @@ int Renderer_ScaleBitmap(Renderer_t* renderer, int destination, int source,
 // (0x00403450). 0 on success, 1 invalid destination, 2 invalid source.
 int Renderer_DuplicateBitmap(Renderer_t* renderer, int destination, int source);
 uint32_t Renderer_CreateScreen(Renderer_t* renderer, int width, int height);
+// NULL unless the handle carries the screen tag and names a live slot,
+// the way 0x004407A0 resolves a window handle against its sixteen slots.
+Screen_t* Renderer_ResolveScreen(Renderer_t* renderer, uint32_t handle);
 void Renderer_DestroyScreen(Renderer_t* renderer, uint32_t handle);
 void Renderer_DrawBitmapToScreen(Renderer_t* renderer, uint32_t bitmapId, int screenId);
 void Renderer_DrawScreen(Renderer_t* renderer);

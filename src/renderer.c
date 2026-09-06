@@ -47,6 +47,7 @@ uint32_t Renderer_CreateScreen(Renderer_t* renderer, int width, int height)
     screen->height = height;
     screen->x = 0;
     screen->y = 0;
+    screen->gapCoefficient = 0;
     screen->bitmap = bitmap;
     screen->surface = surface;
     renderer->screens[renderer->allocatedScreens] = screen;
@@ -55,6 +56,16 @@ uint32_t Renderer_CreateScreen(Renderer_t* renderer, int width, int height)
     renderer->allocatedScreens++;
     printf("[Renderer]: Created screen object (0x%08X) width size %dx%d\n", id, width, height);
     return id;
+}
+
+Screen_t* Renderer_ResolveScreen(Renderer_t* renderer, uint32_t handle)
+{
+	if((handle & 0xFF000000) != 0xC0000000)
+		return NULL;
+	uint32_t id = handle & 0x00FFFFFF;
+	if(id >= RENDERER_MAX_SCREENS)
+		return NULL;
+	return renderer->screens[id];
 }
 
 void Renderer_DestroyScreen(Renderer_t* renderer, uint32_t handle)

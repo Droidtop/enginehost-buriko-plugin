@@ -145,7 +145,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x86 134 */ "--Unknown--",
     /* 0x87 135 */ "--Unknown--",
     /* 0x88 136 */ "Unknown_136",
-    /* 0x89 137 */ "Unknown_137",
+    /* 0x89 137 */ "SetWindowGapCoefficient",
     /* 0x8A 138 */ "Unknown_138",
     /* 0x8B 139 */ "Unknown_139",
     /* 0x8C 140 */ "Unknown_140",
@@ -404,7 +404,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x86 134 */ NULL,
     /* 0x87 135 */ NULL,
     /* 0x88 136 */ Opcode_Grp1_Unknown_136,
-    /* 0x89 137 */ Opcode_Grp1_Unknown_137,
+    /* 0x89 137 */ Opcode_Grp1_SetWindowGapCoefficient,
     /* 0x8A 138 */ Opcode_Grp1_Unknown_138,
     /* 0x8B 139 */ Opcode_Grp1_Unknown_139,
     /* 0x8C 140 */ Opcode_Grp1_Unknown_140,
@@ -786,9 +786,26 @@ uint32_t Opcode_Grp1_Unknown_136(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_137(Thread_t* thread)
+uint32_t Opcode_Grp1_SetWindowGapCoefficient(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+	if(value > SCREEN_MAX_GAP_COEFFICIENT)
+	{
+		printf("[Thread %d]: %sError: the gap coefficient [ %d ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], value);
+		return 0xFFFFFFFF;
+	}
+	window->gapCoefficient = (int)value;
+	return 0;
 }
 
 uint32_t Opcode_Grp1_Unknown_138(Thread_t* thread)
