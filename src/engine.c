@@ -10,6 +10,7 @@
 #include "engine.h"
 #include "nametable.h"
 #include "object.h"
+#include "region.h"
 #include "arc.h"
 #include "renderer.h"
 #include "golden_log.h"
@@ -1954,6 +1955,7 @@ void Engine_Free(Engine_t* engine)
 	Engine_FreeUserInstructions();
 	Object_FreeAll();
 	NameTable_FreeAll();
+	Region_FreeAll();
 	while(gSearchPaths)
 	{
 		SearchPathNode_t* next = gSearchPaths->next;

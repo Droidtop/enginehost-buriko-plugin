@@ -9,6 +9,7 @@
 #include <time.h>
 #include "engine.h"
 #include "arc.h"
+#include "region.h"
 #include "process.h"
 #include "opcodes.h"
 #include "opcodes_sys0.h"
@@ -40,8 +41,8 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x15  21 */ "Unknown_21",
 	/* 0x16  22 */ "Unknown_22",
 	/* 0x17  23 */ "Unknown_23",
-	/* 0x18  24 */ "Unknown_24",
-	/* 0x19  25 */ "Unknown_25",
+	/* 0x18  24 */ "AddRegion",
+	/* 0x19  25 */ "RemoveRegion",
 	/* 0x1A  26 */ "Unknown_26",
 	/* 0x1B  27 */ "Unknown_0x1B",
 	/* 0x1C  28 */ "Unknown_28",
@@ -299,8 +300,8 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x15  21 */ Opcode_Sys0_Unknown_21,
 	/* 0x16  22 */ Opcode_Sys0_Unknown_22,
 	/* 0x17  23 */ Opcode_Sys0_Unknown_23,
-	/* 0x18  24 */ Opcode_Sys0_Unknown_24,
-	/* 0x19  25 */ Opcode_Sys0_Unknown_25,
+	/* 0x18  24 */ Opcode_Sys0_AddRegion,
+	/* 0x19  25 */ Opcode_Sys0_RemoveRegion,
 	/* 0x1A  26 */ Opcode_Sys0_Unknown_26,
 	/* 0x1B  27 */ Opcode_Sys0_Unknown_0x1B,
 	/* 0x1C  28 */ Opcode_Sys0_Unknown_28,
@@ -673,16 +674,44 @@ uint32_t Opcode_Sys0_Unknown_23(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_24(Thread_t* thread)
+// Sys0 0x18 (0x00488290): the whole plane goes into the first list and an empty
+// rectangle into the second, both under this number's key, with no owner.
+uint32_t Opcode_Sys0_AddRegion(Thread_t* thread)
 {
-	uint32_t data = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t number = Thread_PopStack(thread);
+	uint32_t key = REGION_KEY(number);
+
+	printf("[Thread %d]: %sAdd the region %d (key 0x%.8X)\n", thread->threadId, TLevel[thread->level], number, key);
+
+	// The rectangle at 0x00506A4C, the whole plane.
+	Region_Add(0, key, (int32_t)0x80000000, (int32_t)0x80000000, (int32_t)0x7FFFFFFF, (int32_t)0x7FFFFFFF, 0);
+	Region_Add(1, key, 0, 0, 0, 0, 0);
+
+	const char* unread = Region_Recompute(key);
+	if(unread != NULL)
+	{
+		printf("[Thread %d]: %sError: this needs %s, which is not read yet\n", thread->threadId, TLevel[thread->level], unread);
+		return 0xFFFFFFFF;
+	}
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_25(Thread_t* thread)
+// Sys0 0x19 (0x004882D0): the same number out of both lists again.
+uint32_t Opcode_Sys0_RemoveRegion(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t number = Thread_PopStack(thread);
+	uint32_t key = REGION_KEY(number);
+
+	const char* unread = Region_Recompute(key);
+	if(unread != NULL)
+	{
+		printf("[Thread %d]: %sError: this needs %s, which is not read yet\n", thread->threadId, TLevel[thread->level], unread);
+		return 0xFFFFFFFF;
+	}
+
+	int removed = Region_RemoveByKey(0, key) + Region_RemoveByKey(1, key);
+	printf("[Thread %d]: %sRemove the region %d (key 0x%.8X): %d of 2\n", thread->threadId, TLevel[thread->level], number, key, removed);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_26(Thread_t* thread)
