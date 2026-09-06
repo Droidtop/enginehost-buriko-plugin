@@ -4,6 +4,7 @@
 #include "engine.h"
 #include "opcodes.h"
 #include "opcodes_grp2.h"
+#include "renderer.h"
 #include "thread.h"
 
 char* OpcodesGrp2Mnemonics[256] = {
@@ -143,9 +144,9 @@ char* OpcodesGrp2Mnemonics[256] = {
     /* 0x85 133 */ "--Unknown--",
     /* 0x86 134 */ "--Unknown--",
     /* 0x87 135 */ "--Unknown--",
-    /* 0x88 136 */ "Unknown_136",
+    /* 0x88 136 */ "SetWindowField15C",
     /* 0x89 137 */ "Unknown_137",
-    /* 0x8A 138 */ "Unknown_138",
+    /* 0x8A 138 */ "SetWindowField164",
     /* 0x8B 139 */ "--Unknown--",
     /* 0x8C 140 */ "Unknown_140",
     /* 0x8D 141 */ "Unknown_141",
@@ -402,9 +403,9 @@ OpcodePtr_t OpcodesGrp2[256] = {
     /* 0x85 133 */ NULL,
     /* 0x86 134 */ NULL,
     /* 0x87 135 */ NULL,
-    /* 0x88 136 */ Opcode_Grp2_Unknown_136,
+    /* 0x88 136 */ Opcode_Grp2_SetWindowField15C,
     /* 0x89 137 */ Opcode_Grp2_Unknown_137,
-    /* 0x8A 138 */ Opcode_Grp2_Unknown_138,
+    /* 0x8A 138 */ Opcode_Grp2_SetWindowField164,
     /* 0x8B 139 */ NULL,
     /* 0x8C 140 */ Opcode_Grp2_Unknown_140,
     /* 0x8D 141 */ Opcode_Grp2_Unknown_141,
@@ -574,9 +575,20 @@ uint32_t Opcode_Grp2_Unknown_31(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp2_Unknown_136(Thread_t* thread)
+uint32_t Opcode_Grp2_SetWindowField15C(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+	window->field15C = (int)value;
+	return 0;
 }
 
 uint32_t Opcode_Grp2_Unknown_137(Thread_t* thread)
@@ -584,9 +596,23 @@ uint32_t Opcode_Grp2_Unknown_137(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp2_Unknown_138(Thread_t* thread)
+uint32_t Opcode_Grp2_SetWindowField164(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+	// 0x0042B4A0 returns without doing anything while +0x13C of the
+	// window is zero, which is what the constructor leaves it and what
+	// nothing here sets yet. The other branch is unread.
+	(void)value;
+	return 0;
 }
 
 uint32_t Opcode_Grp2_Unknown_140(Thread_t* thread)
