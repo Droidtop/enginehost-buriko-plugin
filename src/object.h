@@ -47,6 +47,13 @@ struct DisplayObject
 	uint32_t  unknownAC;          // +0xAC
 	uint32_t  unknownB0;          // +0xB0
 	uint32_t  opacity;            // +0xB4
+	// A sprite's own two, which its vtable+0x48 dispatches on. The sprite
+	// constructor (0x00425790) leaves the content kind at -1 and the kind at 0,
+	// and nothing here can give a sprite content yet, so they stay that way -
+	// but the dispatch is written out, so the day content exists it is already
+	// the original's dispatch and not a special case.
+	int32_t   contentKind;        // +0x244
+	uint32_t  kind;               // +0x134
 	DisplayObject_t* firstChild;         // +0x12C
 	DisplayObject_t* nextSibling;
 };
@@ -105,6 +112,14 @@ void Object_SetHidden(DisplayObject_t* object, int hidden);
 void Object_ApplyVisible(DisplayObject_t* object, int visible);
 void Object_ApplyEnabled(DisplayObject_t* object, int enabled);
 void Object_ApplyHidden(DisplayObject_t* object, int hidden);
+
+// The effect level (Grp0 0x32, the virtual at vtable+0x48). The original refuses
+// anything above 0x100 before it even looks at the handle, in 0x00497F40.
+#define OBJECT_EFFECT_LEVEL_MAX 0x100u
+// The worker behind the opcode (0x00443540). NULL when the level was set;
+// otherwise the name of the arm of the sprite's override this engine has not
+// read yet, so it is refused by name rather than guessed at.
+const char* Object_ApplyEffectLevel(DisplayObject_t* object, uint32_t level);
 void Object_FreeAll(void);
 
 #endif // __OBJECT_H__

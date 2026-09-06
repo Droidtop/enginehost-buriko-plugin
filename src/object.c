@@ -113,6 +113,10 @@ uint32_t Object_Create(uint32_t tag)
 	object->priority = 1;
 	object->unknownA8 = 0x80;
 	object->opacity = 0x100;
+	// And, on a sprite, what its own constructor (0x00425790) adds on top:
+	// +0x244 = -1 and +0x134 = 0. A group's class (0x00420EB0) has neither
+	// field, and its vtable+0x48 is the base's, so zero is right for it.
+	object->contentKind = (kind->type == OBJECT_TYPE_SPRITE) ? -1 : 0;
 
 	kind->slots[index] = object;
 	(*kind->count)++;
@@ -404,6 +408,86 @@ void Object_ApplyHidden(DisplayObject_t* object, int hidden)
 
 	if(before != after)
 		gObjectDamage++;
+}
+
+// ----------------------------------------------------------------------------------
+// The effect level, the virtual at vtable+0x48 (Grp0 0x32)
+//
+// The base (0x0041B6F0) writes +0xAC and then calls each child's own vtable+0x48,
+// so a child that overrides it is asked its own way. Three opcodes sit beside this
+// one with the same shape and the same range error, reaching the object through
+// 0x004620D0, 0x00462100 and 0x00462120 instead: Grp0 0x33, 0x34 and 0x35. They are
+// not written until the boot asks for them.
+// ----------------------------------------------------------------------------------
+static const char* Object_SetEffectLevel(DisplayObject_t* object, uint32_t level);
+
+// 0x0041B6F0, the base's own.
+static const char* Object_SetEffectLevelBase(DisplayObject_t* object, uint32_t level)
+{
+	object->unknownAC = level;
+
+	const char* unread = NULL;
+	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
+	{
+		const char* childUnread = Object_SetEffectLevel(child, level);
+		if(unread == NULL)
+			unread = childUnread;
+	}
+
+	return unread;
+}
+
+// The virtual call itself: a sprite answers at 0x00428450 and dispatches on its
+// content kind (+0x244); everything else is the base.
+static const char* Object_SetEffectLevel(DisplayObject_t* object, uint32_t level)
+{
+	if(object == NULL)
+		return NULL;
+
+	if(object->type != OBJECT_TYPE_SPRITE)
+		return Object_SetEffectLevelBase(object, level);
+
+	switch(object->contentKind)
+	{
+	case 0:
+	case 3:
+		// Straight to the base.
+		return Object_SetEffectLevelBase(object, level);
+	case -1:
+		// The base, and 0x00409F40 over the four values at +0x32C..+0x338 first,
+		// but only for kind 4. A sprite with no content is kind 0, so this is the
+		// arm a fresh sprite takes.
+		if(object->kind == 4)
+			return "0x00409F40, on a sprite of kind 4";
+		return Object_SetEffectLevelBase(object, level);
+	case 1:
+		return "+0x240 and 0x00428F50/0x004290E0, on a sprite of content kind 1";
+	case 2:
+		return "+0x240 and 0x00428F50/0x004290E0, on a sprite of content kind 2";
+	default:
+		// Content kind 4 and up: the original falls off the end of the switch and
+		// does nothing at all, not even the base. Faithfully nothing.
+		return NULL;
+	}
+}
+
+const char* Object_ApplyEffectLevel(DisplayObject_t* object, uint32_t level)
+{
+	if(object == NULL)
+		return NULL;
+
+	// 0x00443540's bracket, which is not the one the visible and enabled setters
+	// use: it dirties the screen when the object would be drawn before OR after,
+	// not when that answer moved. An effect level changes how a thing looks
+	// without changing whether it is drawn, so "it moved" would never fire.
+	int before = Object_IsDrawable(object);
+	const char* unread = Object_SetEffectLevel(object, level);
+	int after = Object_IsDrawable(object);
+
+	if(before || after)
+		gObjectDamage++;
+
+	return unread;
 }
 
 void Object_FreeAll(void)

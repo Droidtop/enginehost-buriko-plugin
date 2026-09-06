@@ -59,7 +59,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x2F  47 */ "--Unknown--",
 	/* 0x30  48 */ "Unknown_48",
 	/* 0x31  49 */ "SetObjectEnabled",
-	/* 0x32  50 */ "Unknown_50",
+	/* 0x32  50 */ "SetObjectEffectLevel",
 	/* 0x33  51 */ "Unknown_51",
 	/* 0x34  52 */ "Unknown_52",
 	/* 0x35  53 */ "Unknown_53",
@@ -318,7 +318,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x2F  47 */ NULL,
 	/* 0x30  48 */ Opcode_Grp0_Unknown_48,
 	/* 0x31  49 */ Opcode_Grp0_SetObjectEnabled,
-	/* 0x32  50 */ Opcode_Grp0_Unknown_50,
+	/* 0x32  50 */ Opcode_Grp0_SetObjectEffectLevel,
 	/* 0x33  51 */ Opcode_Grp0_Unknown_51,
 	/* 0x34  52 */ Opcode_Grp0_Unknown_52,
 	/* 0x35  53 */ Opcode_Grp0_Unknown_53,
@@ -1007,9 +1007,45 @@ uint32_t Opcode_Grp0_SetObjectEnabled(Thread_t* thread)
 	Object_ApplyEnabled(object, (int)enabled);
 	return 0;
 }
-uint32_t Opcode_Grp0_Unknown_50(Thread_t* thread)
+// Grp0 0x32 (0x0047B2E0 -> 0x004620C0 -> 0x00443540) sets a display object's
+// effect level: the virtual at vtable+0x48, which the base writes to +0xAC and
+// passes down every child through the child's own vtable+0x48.
+//
+// The level is checked before the handle is even looked at, in 0x00497F40, and
+// 0x100 is allowed: the message it prints (0x004EC550) is the one shared by this
+// opcode and its three neighbours, naming the effect level, the transparency, the
+// opacity and the addition level together.
+uint32_t Opcode_Grp0_SetObjectEffectLevel(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t level = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(level > OBJECT_EFFECT_LEVEL_MAX)
+	{
+		printf("[Thread %d]: %sError: an invalid effect level / transparency / "
+		       "opacity / addition level [ %u ] was specified\n",
+		       thread->threadId, TLevel[thread->level], level);
+		return 0xFFFFFFFF;
+	}
+
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	const char* unread = Object_ApplyEffectLevel(object, level);
+	if(unread != NULL)
+	{
+		printf("[Thread %d]: %sError: the effect level of this object goes through "
+		       "%s, which has not been read out of the original yet\n",
+		       thread->threadId, TLevel[thread->level], unread);
+		return 0xFFFFFFFF;
+	}
+
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_51(Thread_t* thread)
