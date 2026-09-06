@@ -25,6 +25,9 @@ Renderer_t* Renderer_Init(Engine_t* engine)
 	renderer->animationFrames = NULL;
 	renderer->animationFrameCount = 0;
 	renderer->animationInterval = 0;
+	renderer->animationPlacement = 0;
+	renderer->animationX = 0;
+	renderer->animationY = 0;
 	renderer->bitmapSerial = 0;
 	renderer->keepBitmapSerial = 0;
 	return renderer;

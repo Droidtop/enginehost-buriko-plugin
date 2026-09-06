@@ -163,7 +163,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x97 151 */ "SetUnknownGrp0Val1and2",
 	/* 0x98 152 */ "SetAnimationFrames",
 	/* 0x99 153 */ "SetAnimationInterval",
-	/* 0x9A 154 */ "Unknown_154",
+	/* 0x9A 154 */ "SetAnimationPlacement",
 	/* 0x9B 155 */ "SetMessageTiming",
 	/* 0x9C 156 */ "Unknown_156",
 	/* 0x9D 157 */ "Unknown_157",
@@ -422,7 +422,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x97 151 */ Opcode_Grp0_SetUnknownGrp0Val1and2,
 	/* 0x98 152 */ Opcode_Grp0_SetAnimationFrames,
 	/* 0x99 153 */ Opcode_Grp0_SetAnimationInterval,
-	/* 0x9A 154 */ Opcode_Grp0_Unknown_154,
+	/* 0x9A 154 */ Opcode_Grp0_SetAnimationPlacement,
 	/* 0x9B 155 */ Opcode_Grp0_SetMessageTiming,
 	/* 0x9C 156 */ Opcode_Grp0_Unknown_156,
 	/* 0x9D 157 */ Opcode_Grp0_Unknown_157,
@@ -1623,9 +1623,16 @@ uint32_t Opcode_Grp0_SetAnimationInterval(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_154(Thread_t* thread)
+// Grp0 0x9A (0x0047E3F0 -> 0x00463370 -> 0x00433570) says where the animated cursor
+// is drawn: three stores, in the order the values come off the stack. It pushes
+// nothing back and can fail at nothing.
+uint32_t Opcode_Grp0_SetAnimationPlacement(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Renderer_t* renderer = thread->engine->renderer;
+	renderer->animationPlacement = Thread_PopStack(thread);
+	renderer->animationX = (int32_t)Thread_PopStack(thread);
+	renderer->animationY = (int32_t)Thread_PopStack(thread);
+	return 0;
 }
 
 /*

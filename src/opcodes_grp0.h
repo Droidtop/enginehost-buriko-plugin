@@ -112,7 +112,7 @@ uint32_t Opcode_Grp0_SetSplits(Thread_t* thread);
 uint32_t Opcode_Grp0_SetUnknownGrp0Val1and2(Thread_t* thread);
 uint32_t Opcode_Grp0_SetAnimationFrames(Thread_t* thread);
 uint32_t Opcode_Grp0_SetAnimationInterval(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_154(Thread_t* thread);
+uint32_t Opcode_Grp0_SetAnimationPlacement(Thread_t* thread);
 uint32_t Opcode_Grp0_SetMessageTiming(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_156(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_157(Thread_t* thread);

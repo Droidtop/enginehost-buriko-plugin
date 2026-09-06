@@ -96,6 +96,13 @@ typedef struct Renderer
 	// 0x0050765C, the interval between two frames, which Grp0 0x99 sets (0x00433560)
 	// and 0x00434080 waits out. Fureraba's message window asks for 2000 / 6.
 	uint32_t animationInterval;
+	// Where the animation is drawn (0x00433570, three stores). 0x0043412C reads the
+	// first back: 1 means the offset below is the position itself, anything else
+	// means it is measured from the text cursor of the window the animation belongs
+	// to. 0x00565B84, 0x00565B88 and 0x00565B8C.
+	uint32_t animationPlacement;
+	int32_t animationX;
+	int32_t animationY;
 	// +0x10 of the drawing device, the counter 0x00407DA0 hands serials out of.
 	uint32_t bitmapSerial;
 	// +0x14. 0x00407DA0 keeps a recreated slot's old serial only when this is set;
