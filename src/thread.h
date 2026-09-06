@@ -108,6 +108,9 @@ uint32_t Thread_Execute(Thread_t* thread);
 uint32_t Thread_GetBasePointer(Thread_t* thread);
 void Thread_SetBasePointer(Thread_t* thread, uint32_t value);
 uint32_t Thread_GetInstructionPointer(Thread_t* thread);
+// Names the program an address in the thread's code space belongs to,
+// as "<program>+0x<offset>", in a static buffer.
+const char* Thread_Where(Thread_t* thread, uint32_t address);
 void Thread_SetInstructionPointer(Thread_t* thread, uint32_t value);
 void Thread_SetUnknownTimestamp(Thread_t* thread, uint32_t value);
 uint8_t* Thread_PopAndResolveAddress(Thread_t* thread);

@@ -36,6 +36,23 @@ uint32_t Thread_LoadCode(Thread_t* thread, uint8_t* code, const char* filename)
 	return program->location;
 }
 
+const char* Thread_Where(Thread_t* thread, uint32_t address)
+{
+	static char where[160];
+	Program_t* program = thread->programs;
+	while(program != NULL)
+	{
+		if(address >= program->location && address < program->location + program->size)
+		{
+			snprintf(where, sizeof(where), "%s+0x%.4X", program->filename, address - program->location);
+			return where;
+		}
+		program = program->previousProgram;
+	}
+	snprintf(where, sizeof(where), "0x%.8X (no program)", address);
+	return where;
+}
+
 uint32_t Thread_DeleteProgram(Thread_t* thread)
 {
 	Program_t* program;

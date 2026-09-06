@@ -456,7 +456,7 @@ void Engine_ExecuteThread(Engine_t* engine, uint32_t threadId, int ticks)
 		uint32_t res = Thread_Execute(thread);
 		if(res == 0xFFFFFFFF)
 		{
-			printf("[Engine]: Stub opcode encountered. Stopping.\n");
+			printf("[Engine]: Stub opcode encountered in %s. Stopping.\n", Thread_Where(thread, Thread_GetInstructionPointer(thread)));
 			engine->isRunning = 0;
 			break;
 		}

@@ -556,18 +556,21 @@ uint32_t Opcode_Push32(Thread_t* thread)
 
 uint32_t Opcode_CodeOffset(Thread_t* thread)
 {
-	uint16_t data = Thread_ReadCode16(thread);
+	// 0x004737D0: movsx of the immediate, added to the instruction
+	// pointer in 32 bits. A backward branch is a negative offset.
+	int16_t offset = (int16_t)Thread_ReadCode16(thread);
 	uint32_t ip = Thread_GetInstructionPointer(thread);
-	data += ip;
-	Thread_PushStack(thread, data);
+	Thread_PushStack(thread, (uint32_t)(ip + offset));
 	return 0;
 }
 
 uint32_t Opcode_CodeAddr(Thread_t* thread)
 {
-	uint16_t offset = Thread_ReadCode16(thread);
+	// 0x004737A0, the same signed offset as CodeOffset, tagged as an
+	// address in code memory (the original tags it 0x04000000).
+	int16_t offset = (int16_t)Thread_ReadCode16(thread);
 	uint32_t ip = Thread_GetInstructionPointer(thread);
-	Thread_PushStack(thread, (ip + offset) | 0x11000000);
+	Thread_PushStack(thread, (uint32_t)(ip + offset) | 0x11000000);
 	return 0;
 }
 
