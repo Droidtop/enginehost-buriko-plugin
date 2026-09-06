@@ -564,8 +564,14 @@ void Engine_SetIdleWaitTime(uint32_t value)
 // window, which is what identifies the two arrays as width and height. The return
 // value is a status the script reads back: 1 for a slot out of range, 2 if either
 // dimension is zero, 0 on success. Nothing is written in the two failure cases.
-uint32_t gDisplayModeWidth[8] = { 0 };
-uint32_t gDisplayModeHeight[8] = { 0 };
+// The eight slots start out filled, not empty: the original's two arrays are
+// initialised data (0x00506B8C and 0x00506BAC), and a game that never calls Sys1
+// 0x60 still gets a size out of them. Fureraba rewrites only slot 7 and then asks
+// for slot 6, so without these defaults it would ask for a screen of no size.
+uint32_t gDisplayModeWidth[8] =
+	{ 320, 640, 800, 1024, 1024, 1024, 1280, 1920 };
+uint32_t gDisplayModeHeight[8] =
+	{ 240, 480, 600,  768,  576,  600,  720, 1080 };
 uint32_t Engine_SetDisplayModeSize(uint32_t index, uint32_t width, uint32_t height)
 {
 	if(index >= 8)
@@ -585,6 +591,42 @@ uint32_t Engine_SetDisplayModeSize(uint32_t index, uint32_t width, uint32_t heig
 // 0x0045F6A0 only call IDirect3DDevice9::SetDialogBoxMode when it is 0. What the
 // game calls this option is not established from the binary, so it keeps the
 // engine's own numbering.
+// Sys0 0x60 (fureraba.exe 0x00489460 -> 0x00461290) chooses which of the eight
+// slots above the game runs in, and in which pixel mode. The original refuses a
+// pixel mode of 2 or more with "an invalid pixel mode was set" (0x004EBA28) and a
+// size index of 8 or more with "an invalid screen size was set" (0x004EBA50), both
+// fatal, and then hands the three values to 0x00461290, which sizes the window from
+// the slot plus the window border extents and builds the drawing device.
+// The third argument reaches 0x00461290 as its [ebp+0x10] and decides between
+// building the device there and a shorter path; what the game calls it is not
+// established from the binary, so it is carried and named by its position rather
+// than guessed at.
+uint32_t gDisplaySizeIndex = 0;
+uint32_t gDisplayPixelMode = 0;
+uint32_t gDisplayModeThirdArgument = 0;
+void Engine_SetDisplayMode(Engine_t* engine, uint32_t sizeIndex, uint32_t pixelMode, uint32_t third)
+{
+	gDisplaySizeIndex = sizeIndex;
+	gDisplayPixelMode = pixelMode;
+	gDisplayModeThirdArgument = third;
+	if(engine != NULL && engine->window != NULL)
+		SDL_SetWindowSize(engine->window,
+		                  (int)gDisplayModeWidth[sizeIndex],
+		                  (int)gDisplayModeHeight[sizeIndex]);
+	printf("[Engine]: Display mode is size %u (%ux%u), pixel mode %u\n",
+	       sizeIndex, gDisplayModeWidth[sizeIndex], gDisplayModeHeight[sizeIndex], pixelMode);
+}
+
+uint32_t Engine_ScreenWidth(void)
+{
+	return gDisplayModeWidth[gDisplaySizeIndex & 7];
+}
+
+uint32_t Engine_ScreenHeight(void)
+{
+	return gDisplayModeHeight[gDisplaySizeIndex & 7];
+}
+
 uint32_t gDisplayFlagUnknown98 = 0;
 uint32_t Engine_SetDisplayFlagUnknown98(uint32_t value)
 {

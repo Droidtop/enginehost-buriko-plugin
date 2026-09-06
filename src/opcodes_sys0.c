@@ -1359,12 +1359,29 @@ uint32_t Opcode_Sys0_Yield(Thread_t* thread)
 }
 
 
+// Sys0 0x60 (0x00489460). The script pushes the size index, then the pixel mode,
+// then a third value, so they come off the stack the other way round. Both of the
+// original's range checks are fatal and name themselves; it pushes nothing back.
 uint32_t Opcode_Sys0_SetDisplayMode(Thread_t* thread)
 {
-	uint32_t fullscreen = Thread_PopStack(thread);
-	uint32_t contextParam = Thread_PopStack(thread);
-	uint32_t modeIndex = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t third = Thread_PopStack(thread);
+	uint32_t pixelMode = Thread_PopStack(thread);
+	uint32_t sizeIndex = Thread_PopStack(thread);
+
+	if(pixelMode >= 2)
+	{
+		printf("[Thread %d]: %sError: an invalid pixel mode was set (%u)\n",
+		       thread->threadId, TLevel[thread->level], pixelMode);
+		return 0xFFFFFFFF;
+	}
+	if(sizeIndex >= 8)
+	{
+		printf("[Thread %d]: %sError: an invalid screen size was set (%u)\n",
+		       thread->threadId, TLevel[thread->level], sizeIndex);
+		return 0xFFFFFFFF;
+	}
+
+	Engine_SetDisplayMode(thread->engine, sizeIndex, pixelMode, third);
 	return 0;
 }
 

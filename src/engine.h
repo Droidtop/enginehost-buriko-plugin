@@ -51,6 +51,15 @@ extern uint32_t gDisplayModeWidth[8];
 extern uint32_t gDisplayModeHeight[8];
 uint32_t Engine_SetDisplayModeSize(uint32_t index, uint32_t width, uint32_t height);
 
+extern uint32_t gDisplaySizeIndex;
+extern uint32_t gDisplayPixelMode;
+extern uint32_t gDisplayModeThirdArgument;
+void Engine_SetDisplayMode(Engine_t* engine, uint32_t sizeIndex, uint32_t pixelMode, uint32_t third);
+// The size of the slot the game is running in, which is the size everything is
+// composed into.
+uint32_t Engine_ScreenWidth(void);
+uint32_t Engine_ScreenHeight(void);
+
 extern uint32_t gDisplayFlagUnknown98;
 uint32_t Engine_SetDisplayFlagUnknown98(uint32_t value);
 
