@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "object.h"
+#include "renderer.h"
 #include "thread.h"
 
 // ----------------------------------------------------------------------------------
@@ -27,6 +28,30 @@
 #define ICON_KIND_PLAIN 0
 #define ICON_KIND_EX    1
 
+// The content descriptor itself is described further down; the icon holds one.
+typedef struct IconContent IconContent_t;
+
+// One entry of an icon's content, as 0x0044A9E0 lands it: the 0x34-byte record at
+// icon+0x38 and the pair at icon+0x54 are two arrays over the same entries in the
+// original, and one record here.
+typedef struct
+{
+	// icon+0x54, two dwords per entry: how many parts stand side by side, and how
+	// many rows that makes. The columns are the entry's own second word unless it
+	// is not positive or larger than the part count, and then they are the part
+	// count (0x0044AADE); the rows are the part count divided by them, rounded up.
+	uint32_t columns;
+	uint32_t rows;
+	// [0x00] of the 0x34-byte record: how many parts this entry has.
+	uint32_t partCount;
+	// [0x08]: which of this entry's parts is the selected one, or -1 when the
+	// entry's own word is outside 0..partCount-1 (0x0044ACCC).
+	int32_t  selectedPart;
+	// [0x0C] to [0x30]: the entry's words 5 to 14, carried across as they are.
+	// Word 4 is skipped, and words 0, 1, 2 and 3 are the four above.
+	uint32_t carried[10];
+} IconEntry_t;
+
 typedef struct Icon Icon_t;
 struct Icon
 {
@@ -37,6 +62,29 @@ struct Icon
 	DisplayObject_t* window;   // +0x0C and +0x28, both the window it was made from
 	DisplayObject_t* object;   // +0x2C, the CDspObjVirtual inside that window
 	Icon_t*          next;     // the +0x08 link of the 12-byte registration node
+
+	// ------------------------------------------------------------------------
+	// What 0x0044A9E0 leaves on the icon. Everything here is the descriptor's,
+	// read out of it once and named, so nothing after this has to walk the raw
+	// words again.
+	// ------------------------------------------------------------------------
+	// +0xA4 and +0xA8: the original copies the whole descriptor a second time,
+	// into memory of the icon's own. Icon_ReadContent has already made that copy
+	// (it is what 0x0046CB50 does), so the icon takes it over rather than copying
+	// a copy - one descriptor, one owner.
+	IconContent_t*   content;
+	uint32_t         entryCount;    // +0x34
+	IconEntry_t*     entries;       // +0x38 and +0x54, one record per entry
+	// +0x3C: which entry is the selected one, or -1 when the descriptor's own
+	// word is outside 0..entryCount-1.
+	int32_t          selectedEntry;
+	uint32_t         carried[5];    // +0x40, +0x44, +0x48, +0x4C (masked to 3
+	                                // bits) and +0x50
+	uint32_t         field88;       // +0x88: 1 when the root's ninth word is zero
+	uint32_t         partCount;     // +0x58: every entry's parts added up
+	uint32_t         ready;         // +0x30: set once the content is built
+	uint32_t         redraw;        // +0x14, which 0x004479B0 sets and 0x004478A0
+	                                // consumes
 };
 // The rest of what 0x00447A70 and 0x0044A8A0 initialise is not carried here, because
 // nothing reads it yet and a field nobody reads is a field nobody maintains: the base
@@ -81,18 +129,27 @@ typedef struct
 	uint32_t* parts;   // partCount * ICON_CONTENT_PART_WORDS words
 } IconContentEntry_t;
 
-typedef struct
+struct IconContent
 {
 	uint32_t            raw[ICON_CONTENT_ROOT_WORDS];
 	uint32_t            entryCount;
 	IconContentEntry_t* entries;
-} IconContent_t;
+};
 
 // 0x0046CB50. Copies the tree at the resolved address `root` into freshly allocated
 // memory. 0 and *out set on success; 2 or 3 and *out NULL on the two failures above.
 uint32_t Icon_ReadContent(Thread_t* thread, const uint32_t* root, IconContent_t** out);
 // 0x0046CB00. Frees what Icon_ReadContent built, parts first.
 void Icon_FreeContent(IconContent_t* content);
+
+// 0x0044A9E0. Gives an icon the content a descriptor describes. The icon takes over
+// `content`, whatever the answer: 0 when the content was built, 0x80000001 when the
+// entry count is outside 1..0x100, 0x80000002 when an entry has more than 0x100
+// parts. The results are the original's own.
+#define ICON_CONTENT_SET_OK          0x00000000u
+#define ICON_CONTENT_SET_BAD_COUNT   0x80000001u
+#define ICON_CONTENT_SET_BAD_ENTRY   0x80000002u
+uint32_t Icon_SetContent(Renderer_t* renderer, Icon_t* icon, IconContent_t* content);
 
 // 0x0046C7B0. Returns the icon's handle, or 0 when the window handle is not a window
 // or the kind is neither 0 nor 1.

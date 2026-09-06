@@ -1019,12 +1019,11 @@ uint32_t Opcode_Grp1_SetIconContent(Thread_t* thread)
 		printf("%s%u parts", i == 0 ? "" : ", ", content->entries[i].partCount);
 	printf(")\n");
 
-	// 0x0044A9E0, which turns the descriptor into the icon's own state, is not
-	// written yet.
-	Icon_FreeContent(content);
-	printf("[Thread %d]: %sError: giving an icon its content (0x0044A9E0) is not implemented\n",
-	       thread->threadId, TLevel[thread->level]);
-	return 0xFFFFFFFF;
+	// 0x0044A9E0. The icon takes the descriptor over, and the opcode pushes what it
+	// answers - 0 done, 0x80000001 a bad entry count, 0x80000002 a bad entry.
+	uint32_t result = Icon_SetContent(thread->engine->renderer, icon, content);
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
 uint32_t Opcode_Grp1_Unknown_191(Thread_t* thread)

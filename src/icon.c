@@ -5,6 +5,7 @@
 #include "icon.h"
 #include "object.h"
 #include "thread.h"
+#include "window.h"
 
 // The list at 0x005667E8, its count at 0x005667E0 and the serial at 0x00565D74.
 // 0x0046C620 pushes a new node onto the head, so the list is in reverse creation
@@ -107,6 +108,121 @@ uint32_t Icon_ReadContent(Thread_t* thread, const uint32_t* root, IconContent_t*
 	return 0;
 }
 
+uint32_t Icon_SetContent(Renderer_t* renderer, Icon_t* icon, IconContent_t* content)
+{
+	if(icon == NULL || content == NULL)
+		return ICON_CONTENT_SET_BAD_COUNT;
+
+	// 0x0044AA35 to 0x0044AA67, before anything is looked at: the icon's own
+	// vtable+0x34, and six resets on the window it lives in. Five of the six
+	// (0x0042BC90's eight parts through 0x0042BB90, 0x0042BA90, 0x0042B630 writing
+	// window+0x19C, 0x0042B620 writing window+0x17C) are window TEXT state, which
+	// this engine's windows do not have, so here they are resets of nothing. The
+	// two that are real are the content the window may already be carrying and the
+	// redraw that follows.
+	Icon_FreeContent(icon->content);
+	icon->content = NULL;
+	Window_ReserveContent(renderer, icon->window, 0);
+	Window_RedrawAll(renderer, icon->window);
+	free(icon->entries);
+	icon->entries       = NULL;
+	icon->entryCount    = 0;
+	icon->partCount     = 0;
+	icon->ready         = 0;
+
+	// The icon owns the descriptor from here on, whichever way this ends.
+	icon->content = content;
+
+	// 0x0044AA77: the entry count has to be in 1..0x100, and this is the first
+	// thing the original answers 0x80000001 for.
+	uint32_t count = content->entryCount;
+	if(count == 0 || count > ICON_CONTENT_MAX_COUNT)
+	{
+		printf("[Engine]: Error: an icon's content has %u entries, which is outside"
+		       " 1..%u\n", count, ICON_CONTENT_MAX_COUNT);
+		return ICON_CONTENT_SET_BAD_COUNT;
+	}
+
+	// 0x0044AAAB: the per-entry array, and the pass that fills it. The original
+	// walks every entry before it answers, and only then frees what it built and
+	// answers 0x80000002 - so an entry with too many parts is not reported at the
+	// entry it was found on.
+	icon->entries = (IconEntry_t*)calloc(count, sizeof(IconEntry_t));
+	if(icon->entries == NULL)
+		return ICON_CONTENT_SET_BAD_COUNT;
+
+	int ok = 1;
+	uint32_t totalParts = 0;
+	for(uint32_t i = 0; i < count; i++)
+	{
+		const IconContentEntry_t* entry = &content->entries[i];
+		uint32_t parts   = entry->raw[0];
+		uint32_t columns = entry->raw[1];
+		// 0x0044AADE: the entry's own columns, unless they are more than the parts
+		// or not positive.
+		if((int32_t)columns > (int32_t)parts || (int32_t)columns <= 0)
+			columns = parts;
+
+		icon->entries[i].columns   = columns;
+		// The original divides here with no guard, because an entry with no parts
+		// at all cannot reach it: Icon_ReadContent has already refused a part count
+		// outside 1..0x100 (0x0046CC23).
+		icon->entries[i].rows      = columns != 0 ? (parts + columns - 1) / columns : 0;
+		icon->entries[i].partCount = parts;
+		totalParts += parts;
+
+		// 0x0044AAFD: and more than 0x100 parts is the second refusal.
+		if(parts > ICON_CONTENT_MAX_COUNT)
+			ok = 0;
+	}
+
+	if(!ok)
+	{
+		// 0x0044B2EA frees the pair array it built and answers, leaving everything
+		// else alone.
+		free(icon->entries);
+		icon->entries = NULL;
+		printf("[Engine]: Error: an icon's content has an entry with more than %u"
+		       " parts\n", ICON_CONTENT_MAX_COUNT);
+		return ICON_CONTENT_SET_BAD_ENTRY;
+	}
+
+	// 0x0044AB21: one content slot on the window per part, over all the entries.
+	Window_ReserveContent(renderer, icon->window, totalParts);
+
+	// 0x0044AB65 to 0x0044AC11: the descriptor's own words become named fields.
+	icon->entryCount    = count;
+	icon->partCount     = totalParts;
+	icon->selectedEntry = (int32_t)content->raw[2] >= 0 && content->raw[2] < count
+	                    ? (int32_t)content->raw[2] : -1;
+	icon->carried[0]    = content->raw[3];
+	icon->carried[1]    = content->raw[4];
+	icon->carried[2]    = content->raw[5];
+	icon->carried[3]    = content->raw[6] & 7;
+	icon->carried[4]    = content->raw[7];
+	icon->field88       = content->raw[8] == 0 ? 1 : 0;
+
+	// 0x0044AC22: and the same for each entry.
+	for(uint32_t i = 0; i < count; i++)
+	{
+		const IconContentEntry_t* entry = &content->entries[i];
+		uint32_t parts = icon->entries[i].partCount;
+		icon->entries[i].selectedPart = (int32_t)entry->raw[3] >= 0 && entry->raw[3] < parts
+		                              ? (int32_t)entry->raw[3] : -1;
+		// Words 5 to 14, word 4 skipped (0x0044ACDA onward).
+		for(int w = 0; w < 10; w++)
+			icon->entries[i].carried[w] = entry->raw[5 + w];
+	}
+
+	// 0x0044AD74 onward: per part, a sprite in the window's slot for it. Not
+	// written - see the plugin's BRIEF. The icon is left with everything the
+	// descriptor decided and nothing on the window.
+	printf("[Engine]: Error: building an icon's parts onto its window"
+	       " (0x0044AD74 through 0x0044B10B) is not written yet: %u entries,"
+	       " %u parts\n", count, totalParts);
+	return ICON_CONTENT_SET_OK;
+}
+
 Icon_t* Icon_Resolve(uint32_t handle)
 {
 	for(Icon_t* icon = gIcons; icon != NULL; icon = icon->next)
@@ -186,6 +302,8 @@ void Icon_Destroy(uint32_t handle)
 	Icon_t* icon = *link;
 	*link = icon->next;
 	gIconCount--;
+	Icon_FreeContent(icon->content);
+	free(icon->entries);
 	// The display object belongs to the icon; the original's destructor takes it out
 	// of the window before it frees it, which nothing here needs yet because nothing
 	// destroys an icon.
