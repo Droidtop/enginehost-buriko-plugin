@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+typedef struct Renderer Renderer_t;
+
 // Display objects. The original keeps a table per kind on the display root at
 // 0x0056674C and tells the kinds apart by the top byte of the handle; the index is
 // the rest of it. Its resolver (0x00443350) walks all ten in this order:
@@ -61,6 +63,21 @@ struct DisplayObject
 	// the original's dispatch and not a special case.
 	int32_t   contentKind;        // +0x244
 	uint32_t  kind;               // +0x134
+	// A sprite's content, as the kind 0 arm (0x004274E0) leaves it: the bitmap
+	// itself and the serial that bitmap slot had when it was handed over, so a slot
+	// refilled behind the sprite's back can be told apart from the image it was
+	// given. The constructor (0x00425790) leaves +0x150 at -1.
+	int32_t   bitmapId;           // +0x150
+	uint32_t  bitmapSerial;       // +0x158
+	// The object's own surface, which vtable+0x74 (0x0041C090) sizes from whatever
+	// content it was just given, in the screen's pixel mode. The original leaves the
+	// pixels at +0x90 NULL until something draws into them, and so does this.
+	uint8_t*  surfacePixels;      // +0x90
+	int       surfaceStride;      // +0x94
+	int       surfaceWidth;       // +0x98
+	int       surfaceHeight;      // +0x9C
+	int       surfaceMode;        // +0xA0
+	int       surfacePixelBytes;  // +0xA4
 	DisplayObject_t* firstChild;         // +0x12C
 	DisplayObject_t* nextSibling;
 };
@@ -132,6 +149,24 @@ void Object_ApplyHidden(DisplayObject_t* object, int hidden);
 const char* Object_ApplyEffectLevel(DisplayObject_t* object, uint32_t level);
 // The transparency (Grp0 0x34, 0x00443690), which takes the same range.
 void Object_ApplyTransparency(DisplayObject_t* object, uint32_t transparency);
+// ----------------------------------------------------------------------------------
+// Sprite content: the virtual-free function 0x004273C0, which is both the sprite
+// parameter 0x10 and the worker behind Grp0 0x57. It dispatches on the sprite's kind
+// (+0x134) through the jump table at 0x004274BC, seven arms wide.
+// ----------------------------------------------------------------------------------
+// The original's own two results, and one of this engine's.
+#define OBJECT_CONTENT_OK           0x00000000u
+// 0x80000001: there is no such bitmap. The opcode turns it into result 1.
+#define OBJECT_CONTENT_BAD_BITMAP   0x80000001u
+// Not the original's: a kind whose arm this engine has not read out of the binary
+// yet, refused by name in `*unread` rather than guessed at.
+#define OBJECT_CONTENT_UNREAD       0x80FF0000u
+uint32_t Object_SetContentBitmap(Renderer_t* renderer, DisplayObject_t* sprite, int number, const char** unread);
+// The same, bracketed as 0x0043ED80 brackets it. 0xFF for a handle that is not a
+// live sprite, which the opcode treats as fatal.
+#define OBJECT_CONTENT_BAD_SPRITE   0x000000FFu
+uint32_t Object_ApplyContentBitmap(Renderer_t* renderer, DisplayObject_t* sprite, int number, const char** unread);
+
 void Object_FreeAll(void);
 
 #endif // __OBJECT_H__

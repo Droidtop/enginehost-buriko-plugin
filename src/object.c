@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "object.h"
+#include "renderer.h"
 
 // ----------------------------------------------------------------------------------
 // Display objects
@@ -122,6 +123,17 @@ uint32_t Object_Create(uint32_t tag)
 	// +0x244 = -1 and +0x134 = 0. A group's class (0x00420EB0) has neither
 	// field, and its vtable+0x48 is the base's, so zero is right for it.
 	object->contentKind = (kind->type == OBJECT_TYPE_SPRITE) ? -1 : 0;
+	// +0x150 = -1, as the sprite constructor leaves it. +0x158 is not written by any
+	// constructor read so far; -1 here so that it can never accidentally equal a
+	// real bitmap serial before something has actually given this sprite content.
+	object->bitmapId = -1;
+	object->bitmapSerial = 0xFFFFFFFFu;
+	object->surfacePixels = NULL;
+	object->surfaceStride = 0;
+	object->surfaceWidth = 0;
+	object->surfaceHeight = 0;
+	object->surfaceMode = 0;
+	object->surfacePixelBytes = 0;
 
 	kind->slots[index] = object;
 	(*kind->count)++;
@@ -536,6 +548,103 @@ const char* Object_ApplyEffectLevel(DisplayObject_t* object, uint32_t level)
 		gObjectDamage++;
 
 	return unread;
+}
+
+// ----------------------------------------------------------------------------------
+// Sprite content (0x004273C0)
+// ----------------------------------------------------------------------------------
+
+// vtable+0x74, 0x0041C090: size the object's own surface from its content, in the
+// screen's pixel mode. A zero width or height is refused and nothing is written; the
+// pixels at +0x90 are cleared to NULL, which is the original's own last act here.
+static int Object_SetSurfaceSize(Renderer_t* renderer, DisplayObject_t* object, int width, int height)
+{
+	if(width == 0 || height == 0)
+		return 0;
+
+	object->surfaceWidth      = width;
+	object->surfaceHeight     = height;
+	object->surfaceMode       = Renderer_ScreenMode(renderer);
+	object->surfacePixelBytes = Renderer_ModePixelBytes(object->surfaceMode);
+	object->surfaceStride     = object->surfacePixelBytes * width;
+	object->surfacePixels     = NULL;
+	return 1;
+}
+
+// 0x004274E0, the arm for a sprite of kind 0, which is what a fresh sprite is: its
+// content is one whole bitmap.
+static uint32_t Object_SetContentBitmapKind0(Renderer_t* renderer, DisplayObject_t* sprite, int number)
+{
+	// 0x00407F20 fills a six-dword descriptor - pixels, stride, width, height, mode
+	// and bytes per pixel - out of the bitmap table entry, and answers 0 when the
+	// slot is empty. That descriptor is this engine's Bitmap_t, field for field.
+	Bitmap_t* bitmap = Renderer_ResolveBitmap(renderer, number);
+	if(bitmap == NULL)
+		return OBJECT_CONTENT_BAD_BITMAP;
+
+	// The five teardown calls (0x00429090, 0x004291D0, 0x00429220, 0x00429240 and
+	// 0x00429290) each free one buffer of the content the sprite used to hold and
+	// clear the fields beside it (+0x220, +0x30C, +0x330, +0x340 and +0x2E4). No
+	// content this engine can build owns any of those, so there is nothing to free.
+
+	sprite->kind         = 0;
+	sprite->bitmapId     = number;
+	sprite->bitmapSerial = Renderer_BitmapSerial(renderer, number);
+	sprite->contentKind  = -1;
+	Object_SetSurfaceSize(renderer, sprite, bitmap->width, bitmap->height);
+	return OBJECT_CONTENT_OK;
+}
+
+uint32_t Object_SetContentBitmap(Renderer_t* renderer, DisplayObject_t* sprite, int number, const char** unread)
+{
+	const char* ignored = NULL;
+	if(unread == NULL)
+		unread = &ignored;
+	*unread = NULL;
+
+	if(sprite == NULL)
+		return OBJECT_CONTENT_BAD_SPRITE;
+
+	switch(sprite->kind)
+	{
+	case 0:
+		return Object_SetContentBitmapKind0(renderer, sprite, number);
+	case 2:
+		*unread = "0x00427680, the content of a sprite of kind 2";
+		return OBJECT_CONTENT_UNREAD;
+	case 5:
+		*unread = "0x00427B70, the content of a sprite of kind 5";
+		return OBJECT_CONTENT_UNREAD;
+	case 6:
+		*unread = "0x00427E60, the content of a sprite of kind 6";
+		return OBJECT_CONTENT_UNREAD;
+	}
+
+	// Kinds 1, 3 and 4 share the jump table's default arm (0x004274B3), and so does
+	// anything above 6, which does not reach the table at all: it returns 0 and does
+	// nothing whatever. Faithfully nothing.
+	return OBJECT_CONTENT_OK;
+}
+
+uint32_t Object_ApplyContentBitmap(Renderer_t* renderer, DisplayObject_t* sprite, int number, const char** unread)
+{
+	if(sprite == NULL)
+		return OBJECT_CONTENT_BAD_SPRITE;
+
+	// 0x0043ED80's bracket, which is neither of the two the other display-object
+	// opcodes use: it asks once, before the change, whether the sprite would be
+	// drawn, and dirties the screen then; afterwards it dirties it a second time on
+	// that same answer, and only when the content was actually set.
+	int drawable = Object_IsDrawable(sprite);
+	if(drawable)
+		gObjectDamage++;
+
+	uint32_t result = Object_SetContentBitmap(renderer, sprite, number, unread);
+
+	if(result == OBJECT_CONTENT_OK && drawable)
+		gObjectDamage++;
+
+	return result;
 }
 
 void Object_FreeAll(void)

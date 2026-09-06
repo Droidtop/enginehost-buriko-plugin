@@ -68,6 +68,10 @@ typedef struct Bitmap
 	int mode;
 	int stride;
 	uint8_t* bitmap;
+	// +0x1C of the original's table entry, read back by 0x00408300: a number that
+	// names this particular image, so a display object that was given the slot can
+	// tell later that the slot has been filled with something else since.
+	uint32_t serial;
 	// The pair at +0x28 / +0x2C of the original's table entry: an offset carried
 	// with the image, set by the loader from the image header (0x00401F80).
 	int offsetX;
@@ -82,6 +86,13 @@ typedef struct Renderer
 	Screen_t* screens[RENDERER_MAX_SCREENS];
 	int activeScreen;
 	int allocatedScreens;
+	// +0x10 of the drawing device, the counter 0x00407DA0 hands serials out of.
+	uint32_t bitmapSerial;
+	// +0x14. 0x00407DA0 keeps a recreated slot's old serial only when this is set;
+	// the device constructor (0x004075E0) leaves it 0 and nothing this engine has
+	// read sets it, so every created bitmap gets a fresh serial. If a slot ever has
+	// to keep its serial across a recreation, this flag is where that comes from.
+	int keepBitmapSerial;
 } Renderer_t;
 
 Renderer_t* Renderer_Init(Engine_t* engine);
@@ -89,6 +100,11 @@ int Renderer_ModePixelBytes(int mode);
 int Renderer_ModeForBits(int bits);
 // NULL unless the id is in range and the slot holds a live bitmap (0x00407F20).
 Bitmap_t* Renderer_ResolveBitmap(Renderer_t* renderer, int id);
+// A bitmap slot's serial, or 0xFFFFFFFF when the slot is empty (0x00408300).
+uint32_t Renderer_BitmapSerial(Renderer_t* renderer, int id);
+// The device's own pixel mode (0x00565B14, read by 0x00407B10). Every display
+// object's surface is built in it; this engine's screens are 32-bit.
+int Renderer_ScreenMode(Renderer_t* renderer);
 // Replaces whatever is in the slot with a cleared bitmap (0x00407DA0); NULL on a bad
 // id, an unusable mode or an allocation failure.
 Bitmap_t* Renderer_CreateBitmap(Renderer_t* renderer, int id, int width, int height, int mode);

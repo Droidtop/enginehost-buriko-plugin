@@ -22,6 +22,8 @@ Renderer_t* Renderer_Init(Engine_t* engine)
 		renderer->screens[i] = NULL;
 	renderer->activeScreen = 0;
 	renderer->allocatedScreens = 0;
+	renderer->bitmapSerial = 0;
+	renderer->keepBitmapSerial = 0;
 	return renderer;
 }
 
@@ -270,6 +272,21 @@ int Renderer_FillBitmap(Renderer_t* renderer, int id, uint32_t colour)
 	return 1;
 }
 
+uint32_t Renderer_BitmapSerial(Renderer_t* renderer, int id)
+{
+	Bitmap_t* bitmap = Renderer_ResolveBitmap(renderer, id);
+	if(bitmap == NULL)
+		return 0xFFFFFFFFu;
+
+	return bitmap->serial;
+}
+
+int Renderer_ScreenMode(Renderer_t* renderer)
+{
+	(void)renderer;
+	return BITMAP_MODE_32;
+}
+
 Bitmap_t* Renderer_CreateBitmap(Renderer_t* renderer, int id, int width, int height, int mode)
 {
 	if(renderer == NULL || id < 0 || id >= RENDERER_MAX_BITMAPS)
@@ -292,6 +309,11 @@ Bitmap_t* Renderer_CreateBitmap(Renderer_t* renderer, int id, int width, int hei
 	// that is recreated keeps the offset it already had.
 	bitmap->offsetX = renderer->bitmaps[id] != NULL ? renderer->bitmaps[id]->offsetX : 0;
 	bitmap->offsetY = renderer->bitmaps[id] != NULL ? renderer->bitmaps[id]->offsetY : 0;
+	// The serial, exactly as 0x00407DA0 chooses it: the slot's own, unless it had
+	// none or the device is not keeping them, in which case the next one.
+	bitmap->serial = Renderer_BitmapSerial(renderer, id);
+	if(bitmap->serial == 0xFFFFFFFFu || renderer->keepBitmapSerial == 0)
+		bitmap->serial = renderer->bitmapSerial++;
 	bitmap->bitmap = (uint8_t*)calloc(1, (size_t)bitmap->stride * (size_t)height);
 	if(bitmap->bitmap == NULL)
 	{

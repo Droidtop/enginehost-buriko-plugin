@@ -96,7 +96,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x54  84 */ "SetSpriteVisible",
 	/* 0x55  85 */ "Unknown_85",
 	/* 0x56  86 */ "Unknown_86",
-	/* 0x57  87 */ "Unknown_87",
+	/* 0x57  87 */ "SetSpriteBitmap",
 	/* 0x58  88 */ "Unknown_88",
 	/* 0x59  89 */ "Unknown_89",
 	/* 0x5A  90 */ "Unknown_90",
@@ -355,7 +355,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x54  84 */ Opcode_Grp0_SetSpriteVisible,
 	/* 0x55  85 */ Opcode_Grp0_Unknown_85,
 	/* 0x56  86 */ Opcode_Grp0_Unknown_86,
-	/* 0x57  87 */ Opcode_Grp0_Unknown_87,
+	/* 0x57  87 */ Opcode_Grp0_SetSpriteBitmap,
 	/* 0x58  88 */ Opcode_Grp0_Unknown_88,
 	/* 0x59  89 */ Opcode_Grp0_Unknown_89,
 	/* 0x5A  90 */ Opcode_Grp0_Unknown_90,
@@ -1291,9 +1291,50 @@ uint32_t Opcode_Grp0_Unknown_86(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_87(Thread_t* thread)
+// Grp0 0x57 (0x0047C560 -> 0x00462690 -> 0x0043ED80) gives a sprite its content: a
+// whole bitmap. The script pushes the handle and then the bitmap number, so the number
+// comes off the stack first, and it is range-checked (0x00497CF0) before the handle is
+// so much as looked at. All three failures are fatal in the original, each with its own
+// message: "an invalid bitmap number [ %d ] was specified" (0x004E97B8), "an invalid
+// sprite handle was specified" (0x004E7FBC) and "the specified bitmap [ %d ] is
+// invalid" (0x004E8DC4). It pushes nothing back.
+uint32_t Opcode_Grp0_SetSpriteBitmap(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Engine_t* engine = thread->engine;
+	uint32_t number = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if((int32_t)number < 0 || (int32_t)number >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: an invalid bitmap number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)number);
+		return 0xFFFFFFFF;
+	}
+
+	DisplayObject_t* sprite = Object_ResolveKind(handle, OBJECT_TYPE_SPRITE);
+	if(sprite == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid sprite handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	const char* unread = NULL;
+	uint32_t result = Object_ApplyContentBitmap(engine->renderer, sprite, (int)number, &unread);
+	if(result == OBJECT_CONTENT_BAD_BITMAP)
+	{
+		printf("[Thread %d]: %sError: the specified bitmap [ %d ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)number);
+		return 0xFFFFFFFF;
+	}
+	if(result == OBJECT_CONTENT_UNREAD)
+	{
+		printf("[Thread %d]: %sError: sprite content this engine has not read yet: %s\n",
+		       thread->threadId, TLevel[thread->level], unread);
+		return 0xFFFFFFFF;
+	}
+
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_88(Thread_t* thread)
