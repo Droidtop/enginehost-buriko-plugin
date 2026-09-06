@@ -156,7 +156,7 @@ uint32_t Opcode_Grp0_Unknown_222(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_223(Thread_t* thread);
 uint32_t Opcode_Grp0_CreateGroupObject(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_225(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_228(Thread_t* thread);
+uint32_t Opcode_Grp0_ShowGroupObject(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_229(Thread_t* thread);
 uint32_t Opcode_Grp0_AddObjectToGroup(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_233(Thread_t* thread);

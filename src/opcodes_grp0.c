@@ -237,7 +237,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xE1 225 */ "Unknown_225",
 	/* 0xE2 226 */ "--Unknown--",
 	/* 0xE3 227 */ "--Unknown--",
-	/* 0xE4 228 */ "Unknown_228",
+	/* 0xE4 228 */ "ShowGroupObject",
 	/* 0xE5 229 */ "Unknown_229",
 	/* 0xE6 230 */ "--Unknown--",
 	/* 0xE7 231 */ "--Unknown--",
@@ -496,7 +496,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xE1 225 */ Opcode_Grp0_Unknown_225,
 	/* 0xE2 226 */ NULL,
 	/* 0xE3 227 */ NULL,
-	/* 0xE4 228 */ Opcode_Grp0_Unknown_228,
+	/* 0xE4 228 */ Opcode_Grp0_ShowGroupObject,
 	/* 0xE5 229 */ Opcode_Grp0_Unknown_229,
 	/* 0xE6 230 */ NULL,
 	/* 0xE7 231 */ NULL,
@@ -2240,11 +2240,28 @@ uint32_t Opcode_Grp0_Unknown_225(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_228(Thread_t* thread)
+// Grp0 0xE4 (0x00480140 -> 0x004636E0 -> 0x00442780) shows or hides a group, and
+// with it everything the group holds: the visible flag walks down every child
+// (0x0041AED0), which is how Fureraba's message window is put on screen at all.
+// A handle that is not a group is fatal, with its own message (0x004EA4A8).
+uint32_t Opcode_Grp0_ShowGroupObject(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
+	uint32_t visible = Thread_PopStack(thread);
 	uint32_t groupHandle = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+
+	DisplayObject_t* group = Object_ResolveKind(groupHandle, OBJECT_TYPE_GROUP);
+	if(group == NULL)
+	{
+		// 無効なグループハンドルが指定されました
+		printf("[Thread %d]: %sError: an invalid group handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], groupHandle);
+		return 0xFFFFFFFF;
+	}
+
+	Object_ApplyVisible(group, (int)visible);
+	printf("[Thread %d]: %sGroup 0x%08X is now %s\n",
+	       thread->threadId, TLevel[thread->level], groupHandle,
+	       visible ? "visible" : "invisible");
 	return 0;
 }
 
@@ -2258,17 +2275,48 @@ uint32_t Opcode_Grp0_Unknown_229(Thread_t* thread)
 	return 0;
 }
 
+// Grp0 0xE8 (0x004801F0 -> 0x00463710 -> 0x00442860 -> 0x0041AC10) puts an object
+// into a group at an offset inside it. The four values come off the stack in the
+// order the opcode pops them - y, x, the object, the group - and every one of the
+// four failures below is fatal in the original, each with its own message.
 uint32_t Opcode_Grp0_AddObjectToGroup(Thread_t* thread)
 {
-	// 無効なグループハンドルが指定されました - Invalid group handle specified
-	// 指定されたオブジェクトにはオーナーが存在します - The specified object has an owner
-	// 無効なオブジェクトハンドルが指定されました - Invalid object handle specified (== 1)
-	// 自分自身をグループに登録することはできません - You cannot register yourself to a group. (!= 3)
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
+	int32_t  y = (int32_t)Thread_PopStack(thread);
+	int32_t  x = (int32_t)Thread_PopStack(thread);
 	uint32_t objectHandle = Thread_PopStack(thread);
 	uint32_t groupHandle = Thread_PopStack(thread);
-	return 0;
+
+	switch(Object_AddToGroup(groupHandle, objectHandle, x, y))
+	{
+	case OBJECT_GROUP_OK:
+		printf("[Thread %d]: %sObject 0x%08X joined group 0x%08X at %d, %d\n",
+		       thread->threadId, TLevel[thread->level], objectHandle, groupHandle, x, y);
+		return 0;
+
+	case OBJECT_GROUP_BAD_GROUP:
+		// 無効なグループハンドルが指定されました (0x004EA4A8)
+		printf("[Thread %d]: %sError: an invalid group handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], groupHandle);
+		return 0xFFFFFFFF;
+
+	case OBJECT_GROUP_BAD_OBJECT:
+		// 無効なオブジェクトハンドルが指定されました (0x004E8BD0)
+		printf("[Thread %d]: %sError: an invalid object handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], objectHandle);
+		return 0xFFFFFFFF;
+
+	case OBJECT_GROUP_SELF:
+		// 自分自身をグループに登録することはできません (0x004EA4D0)
+		printf("[Thread %d]: %sError: you cannot register yourself to a group (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], groupHandle);
+		return 0xFFFFFFFF;
+
+	default:
+		// 指定されたオブジェクトにはオーナーが存在します (0x004EA334)
+		printf("[Thread %d]: %sError: the specified object has an owner (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], objectHandle);
+		return 0xFFFFFFFF;
+	}
 }
 
 uint32_t Opcode_Grp0_Unknown_233(Thread_t* thread)
