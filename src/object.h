@@ -47,6 +47,18 @@
 #define OBJECT_TYPE_GROUP   9
 
 typedef struct DisplayObject DisplayObject_t;
+// A child of a group, as 0x0041AC10 allocates it: SIXTEEN bytes, because a child
+// carries its own offset inside the parent and not only a link. The offsets are what
+// 0x0041B2A0 adds to the parent's base position on its way down, so two windows in
+// one group can sit in different places.
+typedef struct ObjectChild ObjectChild_t;
+struct ObjectChild
+{
+	DisplayObject_t* child;   // +0x00
+	int32_t          x;       // +0x04
+	int32_t          y;       // +0x08
+	ObjectChild_t*   next;    // +0x0C
+};
 struct DisplayObject
 {
 	// The handle this object was handed out under, which is how the parts of the
@@ -74,6 +86,12 @@ struct DisplayObject
 	int       hidden;      // +0x0C
 	int       propagateHidden; // +0x10
 	int       visible;            // +0x14
+	// +0x30 and +0x34, the position the object's OWNER gives it: vtable+0x28
+	// (0x0041B2A0) writes it as the parent's own base plus the offset the child's
+	// node carries, and vtable+0x30 (0x0041B310) reads it back. An object with no
+	// owner keeps it at zero, which is why nothing needed it until groups did.
+	int32_t   baseX;
+	int32_t   baseY;
 	// +0x38 and +0x3C, the object's position, which vtable+0x38 (0x0041B3A0) writes
 	// and then writes down every child through the child's own virtual.
 	int32_t   x;
@@ -117,8 +135,14 @@ struct DisplayObject
 	int       surfaceHeight;      // +0x9C
 	int       surfaceMode;        // +0xA0
 	int       surfacePixelBytes;  // +0xA4
-	DisplayObject_t* firstChild;         // +0x12C
-	DisplayObject_t* nextSibling;
+	// +0x11C, the group this object belongs to. 0x0041ADB0 reads it and 0x0041ADA0
+	// writes it, and 0x0041AC10 refuses to attach an object that already has one
+	// unless its type is 8 - a kind this engine does not build.
+	DisplayObject_t* owner;
+	// +0x12C, the head of the child list. The nodes are the group's, not the
+	// children's: an object is in at most one list, so it has an owner and not a
+	// sibling link.
+	ObjectChild_t*   children;
 };
 
 // The priority the screen object draws at, +0x48 of the object at root+0x14,
@@ -169,6 +193,21 @@ void Object_Destroy(uint32_t handle);
 // The same, but only if the object is of that type.
 DisplayObject_t* Object_ResolveKind(uint32_t handle, uint32_t type);
 int  Object_IsDrawable(const DisplayObject_t* object);
+// vtable+0x28 (0x0041B2A0): the position an owner gives the object. It writes
+// +0x30/+0x34, optionally tells the owner that the object moved inside it, and
+// optionally passes the sum down every child with that child's own offset added.
+void Object_SetBasePosition(DisplayObject_t* object, int32_t x, int32_t y,
+                            int notifyOwner, int walkChildren);
+// 0x0041AC10, the parenting itself. The results are the original's, as 0x00442860
+// and 0x00463710 pass them on to the opcode.
+#define OBJECT_GROUP_OK          0x00u
+#define OBJECT_GROUP_BAD_OBJECT  0x01u
+#define OBJECT_GROUP_SELF        0x03u
+#define OBJECT_GROUP_HAS_OWNER   0x04u
+#define OBJECT_GROUP_BAD_GROUP   0xFFu
+// 0x00442860: resolve the group, resolve the object, refuse the object that is the
+// group itself, and attach it at the offset given.
+uint32_t Object_AddToGroup(uint32_t groupHandle, uint32_t objectHandle, int32_t x, int32_t y);
 // The flag and the walk down the children, as the original's setters do it.
 void Object_SetVisible(DisplayObject_t* object, int visible);
 void Object_SetEnabled(DisplayObject_t* object, int enabled);

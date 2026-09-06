@@ -303,8 +303,8 @@ void Object_SetVisible(DisplayObject_t* object, int visible)
 	// hidden parent hides its whole subtree. Nothing builds children yet; the walk is
 	// here because it is the operation, not because it has anything to do today.
 	object->visible = visible;
-	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
-		Object_SetVisible(child, visible);
+	for(ObjectChild_t* node = object->children; node != NULL; node = node->next)
+		Object_SetVisible(node->child, visible);
 }
 void Object_ApplyVisible(DisplayObject_t* object, int visible)
 {
@@ -331,8 +331,8 @@ void Object_SetEnabled(DisplayObject_t* object, int enabled)
 	object->enabled = enabled;
 	if(object->propagateEnabled == 0)
 		return;
-	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
-		Object_SetEnabled(child, enabled);
+	for(ObjectChild_t* node = object->children; node != NULL; node = node->next)
+		Object_SetEnabled(node->child, enabled);
 }
 void Object_ApplyEnabled(DisplayObject_t* object, int enabled)
 {
@@ -531,8 +531,8 @@ void Object_SetHidden(DisplayObject_t* object, int hidden)
 	object->hidden = hidden;
 	if(object->propagateHidden == 0)
 		return;
-	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
-		Object_SetHidden(child, hidden);
+	for(ObjectChild_t* node = object->children; node != NULL; node = node->next)
+		Object_SetHidden(node->child, hidden);
 }
 
 void Object_ApplyHidden(DisplayObject_t* object, int hidden)
@@ -566,9 +566,9 @@ static const char* Object_SetEffectLevelBase(DisplayObject_t* object, uint32_t l
 	object->unknownAC = level;
 
 	const char* unread = NULL;
-	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
+	for(ObjectChild_t* node = object->children; node != NULL; node = node->next)
 	{
-		const char* childUnread = Object_SetEffectLevel(child, level);
+		const char* childUnread = Object_SetEffectLevel(node->child, level);
 		if(unread == NULL)
 			unread = childUnread;
 	}
@@ -617,8 +617,8 @@ static const char* Object_SetEffectLevel(DisplayObject_t* object, uint32_t level
 static void Object_SetTransparency(DisplayObject_t* object, uint32_t transparency)
 {
 	object->transparency = transparency;
-	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
-		Object_SetTransparency(child, transparency);
+	for(ObjectChild_t* node = object->children; node != NULL; node = node->next)
+		Object_SetTransparency(node->child, transparency);
 }
 
 // 0x0041B3A0: the two fields, and then the same virtual down every child, which is
@@ -627,8 +627,107 @@ static void Object_SetPosition(DisplayObject_t* object, int32_t x, int32_t y)
 {
 	object->x = x;
 	object->y = y;
-	for(DisplayObject_t* child = object->firstChild; child != NULL; child = child->nextSibling)
-		Object_SetPosition(child, x, y);
+	for(ObjectChild_t* node = object->children; node != NULL; node = node->next)
+		Object_SetPosition(node->child, x, y);
+}
+
+// 0x0041C200: an object's base position moved, so the offset its node in the owner's
+// list carries is no longer the difference between the two - recompute it. The walk
+// looks the object up in the owner's list by identity and answers whether it was
+// there at all.
+static int Object_ReoffsetInOwner(DisplayObject_t* owner, const DisplayObject_t* object)
+{
+	ObjectChild_t* node = owner->children;
+	while(node != NULL && node->child != object)
+		node = node->next;
+
+	if(node == NULL)
+		return 0;
+
+	node->x = object->baseX - owner->baseX;
+	node->y = object->baseY - owner->baseY;
+	return 1;
+}
+
+void Object_SetBasePosition(DisplayObject_t* object, int32_t x, int32_t y,
+                            int notifyOwner, int walkChildren)
+{
+	object->baseX = x;
+	object->baseY = y;
+
+	if(notifyOwner && object->owner != NULL)
+		Object_ReoffsetInOwner(object->owner, object);
+
+	if(!walkChildren)
+		return;
+
+	// Every child gets the sum with its OWN offset added, and passes it on the same
+	// way, which is the whole point of the offset living in the node.
+	for(ObjectChild_t* node = object->children; node != NULL; node = node->next)
+		Object_SetBasePosition(node->child, x + node->x, y + node->y, 0, 1);
+}
+
+// vtable+0x70: whether the object lives in space rather than on the screen. The base,
+// a window and a group all answer 0 (the shared 0x004BE790); only a sprite overrides
+// it (0x00428CB0), and only for the kinds 5 and 6, whose content this engine does not
+// build. When a parent and a child both answer yes the original parents them through
+// vtable+0x40 and vtable+0x3C instead, which is the arm below that says so by name.
+static int Object_IsSpatial(const DisplayObject_t* object)
+{
+	return object->type == OBJECT_TYPE_SPRITE && (object->kind == 5 || object->kind == 6);
+}
+
+// 0x0041AC10: put an object into a group at an offset. Returns OBJECT_GROUP_OK or
+// OBJECT_GROUP_HAS_OWNER, which is the only failure it can answer for itself.
+static uint32_t Object_Attach(DisplayObject_t* parent, DisplayObject_t* child,
+                              int32_t x, int32_t y)
+{
+	// An object already in a group cannot be put into another one - unless its type
+	// is 8, a kind this engine does not build and the original lets through here.
+	if(child->owner != NULL && child->type != 8)
+		return OBJECT_GROUP_HAS_OWNER;
+
+	ObjectChild_t* node = (ObjectChild_t*)malloc(sizeof(ObjectChild_t));
+	if(node == NULL)
+		return OBJECT_GROUP_HAS_OWNER;
+
+	node->child = child;
+	node->x     = x;
+	node->y     = y;
+	node->next  = parent->children;
+	parent->children = node;
+	child->owner = parent;
+
+	if(Object_IsSpatial(parent) && Object_IsSpatial(child))
+	{
+		printf("[Engine]: Error: 0x0041AC10's spatial arm (vtable+0x40 and "
+		       "vtable+0x3C) is not written; a sprite of kind 5 or 6 was put into "
+		       "a group of one\n");
+		return OBJECT_GROUP_OK;
+	}
+
+	// The screen arm: the parent's own base position, plus this child's offset,
+	// written down the whole subtree.
+	Object_SetBasePosition(child, parent->baseX + x, parent->baseY + y, 0, 1);
+	return OBJECT_GROUP_OK;
+}
+
+uint32_t Object_AddToGroup(uint32_t groupHandle, uint32_t objectHandle, int32_t x, int32_t y)
+{
+	// 0x00442860's order, and its four results: the group first, then the object,
+	// then the object that IS the group, then the attachment itself.
+	DisplayObject_t* group = Object_ResolveKind(groupHandle, OBJECT_TYPE_GROUP);
+	if(group == NULL)
+		return OBJECT_GROUP_BAD_GROUP;
+
+	DisplayObject_t* object = Object_Resolve(objectHandle);
+	if(object == NULL)
+		return OBJECT_GROUP_BAD_OBJECT;
+
+	if(object == group)
+		return OBJECT_GROUP_SELF;
+
+	return Object_Attach(group, object, x, y);
 }
 
 void Object_ApplyPosition(DisplayObject_t* object, int32_t x, int32_t y)
@@ -795,13 +894,17 @@ static void Object_LocalBounds(const DisplayObject_t* object, Rect_t* rect)
 	rect->bottom = object->surfaceHeight - 1;
 }
 
-// vtable+0x34 (0x0041B330): where the object sits on the screen, which the original
-// accumulates through the parents. Every position this engine sets is written down
-// the children by 0x0041B3A0 already, so an object's own +0x38 / +0x3C is that sum.
+// vtable+0x34 (0x0041B330): where the object sits on the screen. The original adds
+// three pairs together - the base position its owner gave it (+0x30/+0x34, read by
+// 0x0041B310), its own (+0x38/+0x3C, read by 0x0041B3E0) and a third at +0x40/+0x44
+// (read by 0x0041B430) - and then a fourth contribution from 0x0041C1B0 when that
+// answers yes. The third pair is written only by vtable+0x44 (0x0041B3F0), which
+// nothing in this engine calls, and 0x0041C1B0's is a scroll this engine has not
+// read; both are therefore zero and the sum is the first two.
 static void Object_ScreenPosition(const DisplayObject_t* object, int32_t* x, int32_t* y)
 {
-	*x = object->x;
-	*y = object->y;
+	*x = object->baseX + object->x;
+	*y = object->baseY + object->y;
 }
 
 // vtable+0x24: the object's surface in screen coordinates. The base (0x0041C450)
