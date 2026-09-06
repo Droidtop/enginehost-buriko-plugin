@@ -7,11 +7,27 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ARC20_MAGIC "BURIKO ARC20"
-#define ARC20_MAGIC_LENGTH 12
-#define ARC20_HEADER_SIZE 0x10
-#define ARC20_ENTRY_SIZE 0x80
-#define ARC20_NAME_LENGTH 0x60
+// The two containers the engine itself reads, in the order 0x00406EC0 tries
+// them. A header is sixteen bytes: twelve of magic and the entry count; the
+// table follows it and the data follows the table. An entry is its name, then
+// the offset and the size, both relative to the end of the table.
+#define ARC_HEADER_SIZE 0x10
+#define ARC_MAGIC_LENGTH 12
+#define ARC_COUNT_OFFSET 12
+
+typedef struct
+{
+	const char* magic;       // twelve bytes, padded with spaces where it is short
+	size_t      entrySize;
+	size_t      nameLength;
+} ArcContainer_t;
+
+static const ArcContainer_t gContainers[] =
+{
+	{ "PackFile    ", 0x20, 0x10 },   // 0x004E4168, the table at 0x00406F97
+	{ "BURIKO ARC20", 0x80, 0x60 },   // 0x004E4178, the branch at 0x00407028
+};
+#define ARC_CONTAINER_COUNT ((int)(sizeof(gContainers) / sizeof(gContainers[0])))
 
 #define DSC_MAGIC "DSC FORMAT 1.00"
 #define DSC_MAGIC_LENGTH 15
@@ -256,16 +272,28 @@ static int Arc_FindInArchive(const char* archive, const char* filename, uint8_t*
 		return 0;
 	}
 
-	uint8_t header[ARC20_HEADER_SIZE];
-	if(fread(header, 1, sizeof(header), f) != sizeof(header) || memcmp(header, ARC20_MAGIC, ARC20_MAGIC_LENGTH) != 0)
+	uint8_t header[ARC_HEADER_SIZE];
+	const ArcContainer_t* container = NULL;
+	if(fread(header, 1, sizeof(header), f) == sizeof(header))
 	{
-		printf("[Arc]: \"%s\" is not a BURIKO ARC20 archive\n", path);
+		for(int i = 0; i < ARC_CONTAINER_COUNT; i++)
+		{
+			if(memcmp(header, gContainers[i].magic, ARC_MAGIC_LENGTH) == 0)
+			{
+				container = &gContainers[i];
+				break;
+			}
+		}
+	}
+	if(container == NULL)
+	{
+		printf("[Arc]: \"%s\" is neither a BURIKO ARC20 nor a PackFile archive\n", path);
 		fclose(f);
 		free(path);
 		return 0;
 	}
-	uint32_t count = ReadU32(header + ARC20_MAGIC_LENGTH);
-	size_t tableSize = (size_t)count * ARC20_ENTRY_SIZE;
+	uint32_t count = ReadU32(header + ARC_COUNT_OFFSET);
+	size_t tableSize = (size_t)count * container->entrySize;
 	uint8_t* table = (uint8_t*)malloc(tableSize ? tableSize : 1);
 	if(table == NULL || fread(table, 1, tableSize, f) != tableSize)
 	{
@@ -274,15 +302,17 @@ static int Arc_FindInArchive(const char* archive, const char* filename, uint8_t*
 		free(path);
 		return 0;
 	}
-	long dataBase = ARC20_HEADER_SIZE + (long)tableSize;
+	long dataBase = ARC_HEADER_SIZE + (long)tableSize;
 
 	int present = 0;
 	for(uint32_t i = 0; i < count; i++)
 	{
-		const uint8_t* entry = table + (size_t)i * ARC20_ENTRY_SIZE;
-		char name[ARC20_NAME_LENGTH + 1];
-		memcpy(name, entry, ARC20_NAME_LENGTH);
-		name[ARC20_NAME_LENGTH] = 0;
+		const uint8_t* entry = table + (size_t)i * container->entrySize;
+		// The original copies the name out as a C string and stops at the
+		// terminator, so a name that fills its field is taken whole.
+		char name[0x61];
+		memcpy(name, entry, container->nameLength);
+		name[container->nameLength] = 0;
 		if(!EqualsIgnoringCase(name, filename))
 			continue;
 
@@ -290,8 +320,8 @@ static int Arc_FindInArchive(const char* archive, const char* filename, uint8_t*
 		if(outData == NULL)
 			break;
 
-		uint32_t offset = ReadU32(entry + ARC20_NAME_LENGTH);
-		uint32_t size = ReadU32(entry + ARC20_NAME_LENGTH + 4);
+		uint32_t offset = ReadU32(entry + container->nameLength);
+		uint32_t size = ReadU32(entry + container->nameLength + 4);
 		uint8_t* data = (uint8_t*)malloc(size ? size : 1);
 		if(data == NULL)
 			break;

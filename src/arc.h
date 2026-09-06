@@ -9,10 +9,18 @@
  *
  * The engine addresses every file as (archive, name). Until now the only
  * archive it could read was a directory of that name, which is how a game
- * looks after someone unpacks it. A game as shipped keeps its files in
- * "BURIKO ARC20" containers: a count, a table of 128-byte entries (96 bytes
- * of name, then offset and size relative to the end of the table), and the
- * data. Individual files inside may additionally be DSC-compressed.
+ * looks after someone unpacks it. A game as shipped keeps its files in one of
+ * the two containers the engine recognises at 0x00406EC0, both a sixteen-byte
+ * header (twelve of magic, then the entry count), a table, and the data that
+ * follows it, each entry naming an offset and a size relative to the end of
+ * the table:
+ *
+ *   "BURIKO ARC20"  128-byte entries, 96 bytes of name
+ *   "PackFile    "   32-byte entries, 16 bytes of name (the older one; no
+ *                    game seen here ships it, but the engine reads it and so
+ *                    must this one)
+ *
+ * Individual files inside either may additionally be DSC-compressed.
  *
  * Arc_ReadFile finds "<archive>.arc" in the game folder or its Archive/
  * subfolder, case-insensitively as the engine does elsewhere, and returns
