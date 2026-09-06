@@ -96,7 +96,10 @@ struct Thread
 
 extern char* TLevel[4];
 
-uint32_t Thread_LoadCode(Thread_t* thread, uint8_t* code, const char* filename);
+// Answers where the program landed, or THREAD_LOAD_FAILED if the file cannot
+// hold the program its own header describes.
+#define THREAD_LOAD_FAILED 0xFFFFFFFFu
+uint32_t Thread_LoadCode(Thread_t* thread, uint8_t* code, size_t codeSize, const char* filename);
 uint32_t Thread_DeleteProgram(Thread_t* thread);
 void Thread_PushStack(Thread_t* thread, uint32_t data);
 uint32_t Thread_PopStack(Thread_t* thread);

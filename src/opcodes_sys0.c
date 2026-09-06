@@ -1147,8 +1147,10 @@ uint32_t Opcode_Sys0_LoadProgram(Thread_t* thread)
 	uint8_t* code = Engine_ReadFile(gEngine, archive, filename, &fileSize);
 	if(code == NULL)
 		return 1;
-	uint32_t location = Thread_LoadCode(thread, code, filename);
+	uint32_t location = Thread_LoadCode(thread, code, fileSize, filename);
 	free(code);
+	if(location == THREAD_LOAD_FAILED)
+		return 1;
 
 	Thread_PushStack(thread, location);
 

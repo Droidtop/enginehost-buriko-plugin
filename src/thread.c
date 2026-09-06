@@ -15,14 +15,33 @@ char* TLevel[4] = {
 	"            "
 };
 
-uint32_t Thread_LoadCode(Thread_t* thread, uint8_t* code, const char* filename)
+uint32_t Thread_LoadCode(Thread_t* thread, uint8_t* code, size_t codeSize, const char* filename)
 {
+	// The sixteen-byte program header, then the program the header points at, both
+	// have to be inside the file: an empty or truncated file is a real thing to be
+	// handed and must be refused by name, not read past.
+	if(codeSize < 16)
+	{
+		printf("[Thread %d]: %sError: \"%s\" is %u bytes, too short to hold a program header\n", thread->threadId, TLevel[thread->level], filename, (unsigned int)codeSize);
+		return THREAD_LOAD_FAILED;
+	}
+	uint32_t programSize = *(uint32_t*)(code + 4);
+	uint32_t programOffset = *(uint32_t*)(code);
+	if((uint64_t)programOffset + programSize > (uint64_t)codeSize)
+	{
+		printf("[Thread %d]: %sError: \"%s\" is %u bytes, but its header names a program of 0x%.8X at 0x%.8X\n", thread->threadId, TLevel[thread->level], filename, (unsigned int)codeSize, programSize, programOffset);
+		return THREAD_LOAD_FAILED;
+	}
+	if((uint64_t)thread->codeSpaceUsed + programSize > (uint64_t)thread->codeSize)
+	{
+		printf("[Thread %d]: %sError: \"%s\" needs 0x%.8X bytes and only 0x%.8X of the thread's 0x%.8X are left\n", thread->threadId, TLevel[thread->level], filename, programSize, thread->codeSize - thread->codeSpaceUsed, thread->codeSize);
+		return THREAD_LOAD_FAILED;
+	}
+
 	Program_t* program = (Program_t*)malloc(sizeof(Program_t));
 	size_t nameLen = strlen(filename);
 	program->filename = (char*)malloc(nameLen + 1);
 	strcpy(program->filename, filename);
-	uint32_t programSize = *(uint32_t*)(code + 4);
-	uint32_t programOffset = *(uint32_t*)(code);
 	program->size = programSize;
 	program->location = thread->codeSpaceUsed;
 	program->previousProgram = thread->programs;

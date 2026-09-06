@@ -175,8 +175,12 @@ static char* Engine_ResolveInDirectory(const char* directory, const char* name)
 		if(length < 0 || length >= (int)sizeof(path))
 			break;
 
+		// An unpacked file wins over the packed one only if it has content.
+		// Fureraba ships four directories left behind by an unpacker - each a
+		// packlist.txt and one zero-byte stub named after a file that really lives
+		// in the matching archive - and an empty stub must not hide the real thing.
 		struct stat info;
-		if(stat(path, &info) != 0 || !S_ISREG(info.st_mode))
+		if(stat(path, &info) != 0 || !S_ISREG(info.st_mode) || info.st_size == 0)
 			break;
 
 		found = (char*)malloc(strlen(path) + 1);
@@ -270,8 +274,10 @@ uint32_t Engine_LoadProgram(Engine_t* engine, const char* archive, const char* f
 	uint8_t* code = Engine_ReadFile(engine, archive, filename, &fileSize);
 	if(code == NULL)
 		return 1;
-	Thread_LoadCode(thread, code, filename);
+	uint32_t location = Thread_LoadCode(thread, code, fileSize, filename);
 	free(code);
+	if(location == THREAD_LOAD_FAILED)
+		return 1;
 
 	return thread->threadId;
 }
