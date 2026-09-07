@@ -332,6 +332,10 @@ uint32_t Object_DrawKey(const DisplayObject_t* object);
 // 0x00565B44 and 0x00565B48, which 0x00440650 writes together: whether windows are
 // drawn at all, and a transparency laid over every one of them. The display root's
 // own constructor calls it with both zero, so windows start invisible.
+// 0x00507688. Set, the display code holds back every object whose
+// propagateHidden is clear (0x00431AA0). Sys0 0x50 writes it.
+extern uint32_t gObjectsHeldBack;
+
 extern uint32_t gWindowsVisible;
 extern uint32_t gWindowTransparency;
 // 0x004307D0 and 0x00430850 on a named list, which is how a window files its own

@@ -13,6 +13,7 @@
 #include "process.h"
 #include "opcodes.h"
 #include "opcodes_sys0.h"
+#include "object.h"
 #include "os.h"
 #include "thread.h"
 
@@ -97,7 +98,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x4D  77 */ "--Unknown--",
 	/* 0x4E  78 */ "--Unknown--",
 	/* 0x4F  79 */ "--Unknown--",
-	/* 0x50  80 */ "Unknown_80",
+	/* 0x50  80 */ "SetObjectsHeldBack",
 	/* 0x51  81 */ "--Unknown--",
 	/* 0x52  82 */ "SetIdleWaitTime",
 	/* 0x53  83 */ "--Unknown--",
@@ -356,7 +357,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x4D  77 */ NULL,
 	/* 0x4E  78 */ NULL,
 	/* 0x4F  79 */ NULL,
-	/* 0x50  80 */ Opcode_Sys0_Unknown_80,
+	/* 0x50  80 */ Opcode_Sys0_SetObjectsHeldBack,
 	/* 0x51  81 */ NULL,
 	/* 0x52  82 */ Opcode_Sys0_SetIdleWaitTime,
 	/* 0x53  83 */ NULL,
@@ -1325,9 +1326,24 @@ uint32_t Opcode_Sys0_Unknown_76(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_80(Thread_t* thread)
+/*
+ * Sys0 0x50 (0x004891B0) pops one value into the global at 0x00507688 and does
+ * nothing else at all.
+ *
+ * What reads it is 0x00431AA0, which answers yes for an object when the global
+ * is set AND the object's +0x10 - the flag this engine calls propagateHidden -
+ * is clear; eleven places in the display code call it and take a shorter path
+ * when it answers yes, so the global holds objects back unless they are marked
+ * to survive it. Those eleven are not read yet, so nothing in this engine
+ * consults gObjectsHeldBack; the value is kept because the opcode's whole job
+ * is to keep it, and the day one of those paths is written it is already here.
+ */
+uint32_t Opcode_Sys0_SetObjectsHeldBack(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	gObjectsHeldBack = Thread_PopStack(thread);
+	printf("[Thread %d]: %sObjects are %sheld back\n", thread->threadId,
+	       TLevel[thread->level], gObjectsHeldBack ? "" : "not ");
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_84(Thread_t* thread)

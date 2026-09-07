@@ -1017,6 +1017,9 @@ static uint32_t Object_DrawTransparency(const DisplayObject_t* object)
 // 0x00440650 - which the display root's own constructor calls with 0, so windows are
 // invisible until the opcode behind 0x00462AA0 turns them on. That opcode is not
 // wired up yet, so the flag stays where the constructor leaves it.
+// 0x00507688, written by Sys0 0x50 and read by 0x00431AA0. See the opcode.
+uint32_t gObjectsHeldBack = 0;
+
 uint32_t gWindowsVisible = 0;
 uint32_t gWindowTransparency = 0;
 

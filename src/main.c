@@ -33,8 +33,10 @@ Engine_t* gEngine;
 int main(int argc, char** argv)
 {
 	// --shot <file> keeps the frame the engine ends on, which is how a change to
-	// the drawing can be looked at without a screen. It is read out of the
-	// arguments first so that the two positional ones keep their places.
+	// the drawing can be looked at without a screen, and --ticks <n> ends the run
+	// after n ticks, which is how a boot that no longer stops on anything is
+	// looked at at all. Both are read out of the arguments first so that the two
+	// positional ones keep their places.
 	const char* shot = NULL;
 	int argumentCount = 0;
 	char* arguments[3] = { NULL, NULL, NULL };
@@ -42,6 +44,8 @@ int main(int argc, char** argv)
 	{
 		if(strcmp(argv[i], "--shot") == 0 && i + 1 < argc)
 			shot = argv[++i];
+		else if(strcmp(argv[i], "--ticks") == 0 && i + 1 < argc)
+			gTickLimit = atoi(argv[++i]);
 		else if(argumentCount < 3)
 			arguments[argumentCount++] = argv[i];
 	}

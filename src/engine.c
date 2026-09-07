@@ -364,6 +364,10 @@ void Engine_Sleep(int microseconds)
 }
 
 int totalTicks = 0;
+// Not the engine's: a bound for the desktop runner, so a run that no longer
+// stops on anything can still end and hand its frame over. Zero is no bound,
+// which is what the game gets.
+int gTickLimit = 0;
 // A thread that has ended stays in the list so its id still resolves, but it must
 // never be scheduled again.
 static int Engine_HasRunnableThread(Engine_t* engine)
@@ -439,6 +443,12 @@ void Engine_Execute(Engine_t* engine)
 		if(!Engine_HasRunnableThread(engine))
 		{
 			printf("[Engine]: Every thread has ended.\n");
+			engine->isRunning = 0;
+			break;
+		}
+		if(gTickLimit != 0 && totalTicks >= gTickLimit)
+		{
+			printf("[Engine]: The %d tick limit was reached.\n", gTickLimit);
 			engine->isRunning = 0;
 			break;
 		}

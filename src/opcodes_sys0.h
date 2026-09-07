@@ -69,7 +69,7 @@ uint32_t Opcode_Sys0_TakeMessage(Thread_t* thread);
 uint32_t Opcode_Sys0_PostMessages(Thread_t* thread);
 uint32_t Opcode_Sys0_TakeMessages(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_76(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_80(Thread_t* thread);
+uint32_t Opcode_Sys0_SetObjectsHeldBack(Thread_t* thread);
 uint32_t Opcode_Sys0_SetIdleWaitTime(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_84(Thread_t* thread);
 uint32_t Opcode_Sys0_SetTimer(Thread_t* thread);

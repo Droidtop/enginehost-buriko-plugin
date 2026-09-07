@@ -35,6 +35,9 @@ uint32_t Engine_LoadProgram(Engine_t* engine, const char* archive, const char* f
 Thread_t* Engine_CreateThread(Engine_t* engine, uint32_t stackSize, uint32_t codeSize, uint32_t memorySize);
 uint8_t* Engine_ReadFile(Engine_t* engine, const char* archive, const char* filename, size_t* outSize);
 uint32_t Engine_ReadFileToMemory(Engine_t* engine, const char* archive, const char* filename, uint8_t* buffer);
+// A bound on how long Engine_Execute runs, in ticks; 0 is no bound. The engine
+// has no such thing - it is the desktop runner's --ticks.
+extern int gTickLimit;
 void Engine_Execute(Engine_t* engine);
 void Engine_ExecuteThread(Engine_t* engine, uint32_t threadId, int ticks);
 Thread_t* Engine_GetThreadById(Engine_t* engine, uint32_t threadId);
