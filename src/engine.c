@@ -1107,11 +1107,20 @@ int gCursorShape = 0;
 //   Sys0 0xD2 (0x0048A8D0 -> 0x00496350) set: pops the address to read the record
 //       from, then the key, then the id. An unknown id is 0x80000002. An existing
 //       key is overwritten in place, a new one is added.
-// Success is 0 in every case. Two more opcodes belong to this family and are not
-// implemented here because nothing has reached them yet: Sys0 0xD3 (0x00496380)
-// looks a key up and answers 0x80000003 when it is missing, and Sys0 0xD4
-// (0x004963B0) reads a record back. Sys0 0xCF builds an 0x28-byte iterator over a
-// table and is a larger piece again.
+//   Sys0 0xD3 (0x0048A910 -> 0x00496380 -> 0x00452A40) delete: pops the key and
+//       then the id, unlinks the record and frees its key, its buffer and the
+//       record. A key that is not there is 0x80000003.
+//   Sys0 0xD4 (0x0048A940 -> 0x004963B0) read: pops an index, then a key, then
+//       the id, then where to put the record, and has two forms decided by
+//       whether the key resolved to anything. With a key it is looked up by name
+//       (0x00452AE0); with a null key the INDEX names the record instead, by
+//       position in the table's own list (0x00452B80). Either way a record that
+//       is not there is 0x80000003 and a whole record's bytes are copied out.
+// Success is 0 in every case. Sys0 0xCF builds an 0x28-byte iterator over a table
+// and is a larger piece again.
+//
+// New records go on the END of the list (0x004529C2 links the node the walk
+// stopped on), which is what makes 0xD4's index form mean insertion order.
 
 typedef struct RecordTableEntry
 {
@@ -1381,9 +1390,83 @@ uint32_t Engine_SetRecord(uint32_t id, const char* key, const uint8_t* value)
 		return 0x80000002;
 	}
 	memcpy(entry->value, value, table->recordSize);
-	entry->next = table->entries;
-	table->entries = entry;
+
+	// 0x004529C2 links the new record onto the node the search stopped on, so a
+	// new key goes on the END of the list. Sys0 0xD4 can ask for a record by its
+	// position, so the order is not an implementation detail.
+	entry->next = NULL;
+	RecordTableEntry_t** link = &table->entries;
+	while(*link != NULL)
+		link = &(*link)->next;
+	*link = entry;
 	printf("[Engine]: Record table %d: added key %s\n", id, key);
+	return 0;
+}
+
+// 0x00452A40, reached through 0x00496380. The record is unlinked and its key,
+// its buffer and the record itself are freed.
+uint32_t Engine_DeleteRecord(uint32_t id, const char* key)
+{
+	RecordTable_t* table = Engine_FindRecordTable(id);
+	if(table == NULL)
+		return 0x80000002;
+	if(key == NULL)
+		return 0x80000003;
+
+	RecordTableEntry_t** link = &table->entries;
+	while(*link != NULL)
+	{
+		RecordTableEntry_t* entry = *link;
+		if(strcmp(entry->key, key) != 0)
+		{
+			link = &entry->next;
+			continue;
+		}
+		*link = entry->next;
+		printf("[Engine]: Record table %d: deleted key %s\n", id, entry->key);
+		free(entry->key);
+		free(entry->value);
+		free(entry);
+		return 0;
+	}
+	return 0x80000003;
+}
+
+// 0x00452AE0, the named form of Sys0 0xD4: a whole record's bytes are copied out.
+uint32_t Engine_ReadRecordByKey(uint32_t id, const char* key, uint8_t* out)
+{
+	RecordTable_t* table = Engine_FindRecordTable(id);
+	if(table == NULL)
+		return 0x80000002;
+	if(key == NULL || out == NULL)
+		return 0x80000003;
+
+	for(RecordTableEntry_t* entry = table->entries; entry != NULL; entry = entry->next)
+	{
+		if(strcmp(entry->key, key) != 0)
+			continue;
+		memcpy(out, entry->value, table->recordSize);
+		return 0;
+	}
+	return 0x80000003;
+}
+
+// 0x00452B80, the positional form: the index counts down the table's own list,
+// which is insertion order because new records go on the end.
+uint32_t Engine_ReadRecordByIndex(uint32_t id, uint32_t index, uint8_t* out)
+{
+	RecordTable_t* table = Engine_FindRecordTable(id);
+	if(table == NULL)
+		return 0x80000002;
+	if(out == NULL)
+		return 0x80000003;
+
+	RecordTableEntry_t* entry = table->entries;
+	for(uint32_t i = 0; i < index && entry != NULL; i++)
+		entry = entry->next;
+	if(entry == NULL)
+		return 0x80000003;
+	memcpy(out, entry->value, table->recordSize);
 	return 0;
 }
 

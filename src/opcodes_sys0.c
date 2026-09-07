@@ -228,8 +228,8 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0xD0 208 */ "CreateRecordTable",
 	/* 0xD1 209 */ "DestroyRecordTable",
 	/* 0xD2 210 */ "SetRecord",
-	/* 0xD3 211 */ "Unknown_211",
-	/* 0xD4 212 */ "Unknown_212",
+	/* 0xD3 211 */ "DeleteRecord",
+	/* 0xD4 212 */ "ReadRecord",
 	/* 0xD5 213 */ "--Unknown--",
 	/* 0xD6 214 */ "--Unknown--",
 	/* 0xD7 215 */ "--Unknown--",
@@ -487,8 +487,8 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0xD0 208 */ Opcode_Sys0_CreateRecordTable,
 	/* 0xD1 209 */ Opcode_Sys0_DestroyRecordTable,
 	/* 0xD2 210 */ Opcode_Sys0_SetRecord,
-	/* 0xD3 211 */ Opcode_Sys0_Unknown_211,
-	/* 0xD4 212 */ Opcode_Sys0_Unknown_212,
+	/* 0xD3 211 */ Opcode_Sys0_DeleteRecord,
+	/* 0xD4 212 */ Opcode_Sys0_ReadRecord,
 	/* 0xD5 213 */ NULL,
 	/* 0xD6 214 */ NULL,
 	/* 0xD7 215 */ NULL,
@@ -1876,14 +1876,29 @@ uint32_t Opcode_Sys0_SetRecord(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_211(Thread_t* thread)
+uint32_t Opcode_Sys0_DeleteRecord(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A910: the key, then the id.
+	const char* key = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, Engine_DeleteRecord(id, key));
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_212(Thread_t* thread)
+uint32_t Opcode_Sys0_ReadRecord(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A940: an index, then a key, then the id, then where to put the
+	// record. 0x004963B0 chooses the form on the key alone: a key that resolved
+	// to nothing means the index names the record instead.
+	uint32_t index = Thread_PopStack(thread);
+	const char* key = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t id = Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+
+	uint32_t result = key != NULL ? Engine_ReadRecordByKey(id, key, out)
+	                              : Engine_ReadRecordByIndex(id, index, out);
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_216(Thread_t* thread)

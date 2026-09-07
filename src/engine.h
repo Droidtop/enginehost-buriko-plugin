@@ -178,6 +178,9 @@ uint32_t Engine_RingRead(uint32_t id, uint32_t index, uint8_t* out);
 uint32_t Engine_RingDrop(uint32_t id, uint32_t index, uint32_t count);
 uint32_t Engine_DestroyRecordTable(uint32_t id);
 uint32_t Engine_SetRecord(uint32_t id, const char* key, const uint8_t* value);
+uint32_t Engine_DeleteRecord(uint32_t id, const char* key);
+uint32_t Engine_ReadRecordByKey(uint32_t id, const char* key, uint8_t* out);
+uint32_t Engine_ReadRecordByIndex(uint32_t id, uint32_t index, uint8_t* out);
 
 extern int gWindowVisible;
 void Engine_SetWindowVisible(uint32_t visible);
