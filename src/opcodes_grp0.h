@@ -139,7 +139,7 @@ uint32_t Opcode_Grp0_Unknown_186(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_188(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_189(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_190(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_191(Thread_t* thread);
+uint32_t Opcode_Grp0_TakeIconEvent(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_208(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_209(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_212(Thread_t* thread);

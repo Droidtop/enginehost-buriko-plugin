@@ -14,6 +14,41 @@ static Icon_t*  gIcons = NULL;
 static uint32_t gIconCount = 0;
 static uint32_t gIconSerial = 0;
 
+int Icon_TakeEvent(Icon_t* icon, uint32_t* out)
+{
+	if(icon == NULL || out == NULL)
+		return 0;
+	IconEvent_t* event = icon->events;
+	if(event == NULL)
+	{
+		out[0] = out[1] = out[2] = 0;
+		return 0;
+	}
+	out[0] = event->words[0];
+	out[1] = event->words[1];
+	out[2] = event->words[2];
+	icon->events = event->next;
+	free(event);
+	return 1;
+}
+
+void Icon_PostEvent(Icon_t* icon, uint32_t word0, uint32_t word1, uint32_t word2)
+{
+	if(icon == NULL)
+		return;
+	IconEvent_t* event = (IconEvent_t*)malloc(sizeof(IconEvent_t));
+	if(event == NULL)
+		return;
+	event->words[0] = word0;
+	event->words[1] = word1;
+	event->words[2] = word2;
+	event->next = NULL;
+	IconEvent_t** link = &icon->events;
+	while(*link != NULL)
+		link = &(*link)->next;
+	*link = event;
+}
+
 uint32_t Icon_Count(void)
 {
 	return gIconCount;

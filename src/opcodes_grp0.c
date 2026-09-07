@@ -5,6 +5,7 @@
 #include "renderer.h"
 #include "opcodes.h"
 #include "opcodes_grp0.h"
+#include "icon.h"
 #include "object.h"
 #include "thread.h"
 
@@ -200,7 +201,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xBC 188 */ "Unknown_188",
 	/* 0xBD 189 */ "Unknown_189",
 	/* 0xBE 190 */ "Unknown_190",
-	/* 0xBF 191 */ "Unknown_191",
+	/* 0xBF 191 */ "TakeIconEvent",
 	/* 0xC0 192 */ "--Unknown--",
 	/* 0xC1 193 */ "--Unknown--",
 	/* 0xC2 194 */ "--Unknown--",
@@ -459,7 +460,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xBC 188 */ Opcode_Grp0_Unknown_188,
 	/* 0xBD 189 */ Opcode_Grp0_Unknown_189,
 	/* 0xBE 190 */ Opcode_Grp0_Unknown_190,
-	/* 0xBF 191 */ Opcode_Grp0_Unknown_191,
+	/* 0xBF 191 */ Opcode_Grp0_TakeIconEvent,
 	/* 0xC0 192 */ NULL,
 	/* 0xC1 193 */ NULL,
 	/* 0xC2 194 */ NULL,
@@ -2077,12 +2078,28 @@ uint32_t Opcode_Grp0_Unknown_190(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_191(Thread_t* thread)
+/*
+ * Grp0 0xBF (0x0047F180 -> 0x0046CDF0) takes the next event off an icon's queue:
+ * it pops the icon's handle and then the address to write the event's three
+ * words to, and pushes whether there WAS an event - not whether the icon exists.
+ * A handle that is not an icon answers 0 and leaves the address alone;
+ * 0x00448640 writes three zeros when the queue is empty.
+ *
+ * This had been a dummy that answered 1 every time and wrote nothing at all, so
+ * the script read whatever happened to be at that address and acted on it many
+ * thousands of times a run.
+ */
+uint32_t Opcode_Grp0_TakeIconEvent(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	Thread_PushStack(thread, 0x00000001);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t handle = Thread_PopStack(thread);
+	uint32_t* out = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	Icon_t* icon = Icon_Resolve(handle);
+	if(icon == NULL)
+	{
+		Thread_PushStack(thread, 0);
+		return 0;
+	}
+	Thread_PushStack(thread, (uint32_t)Icon_TakeEvent(icon, out));
 	return 0;
 }
 

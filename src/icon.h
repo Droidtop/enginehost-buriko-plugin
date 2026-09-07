@@ -52,6 +52,19 @@ typedef struct
 	uint32_t carried[10];
 } IconEntry_t;
 
+// +0xA0 of an icon is the head of a queue of events, each a 16-byte node of
+// three words and a link (0x0044A300 pops one and frees it). What an icon puts
+// on it is its own input handling, which needs the hit regions its parts have
+// not been given yet, so nothing fills it in this engine so far - but a script
+// asks for the next event several times per frame, so the queue itself has to
+// be real and has to be empty rather than imaginary and always full.
+typedef struct IconEvent IconEvent_t;
+struct IconEvent
+{
+	uint32_t     words[3];
+	IconEvent_t* next;
+};
+
 typedef struct Icon Icon_t;
 struct Icon
 {
@@ -85,6 +98,7 @@ struct Icon
 	uint32_t         ready;         // +0x30: set once the content is built
 	uint32_t         redraw;        // +0x14, which 0x004479B0 sets and 0x004478A0
 	                                // consumes
+	IconEvent_t*     events;        // +0xA0, oldest first
 };
 // The rest of what 0x00447A70 and 0x0044A8A0 initialise is not carried here, because
 // nothing reads it yet and a field nobody reads is a field nobody maintains: the base
@@ -161,5 +175,11 @@ uint32_t Icon_Count(void);
 // 0x0046C670: take one out of the list and free it.
 void Icon_Destroy(uint32_t handle);
 void Icon_FreeAll(void);
+
+// 0x00448640. Copies the oldest event's three words to `out` and frees it,
+// answering 1; with an empty queue it writes three zeros and answers 0.
+int Icon_TakeEvent(Icon_t* icon, uint32_t* out);
+// 0x0044A330's half of the same queue: one event onto the end of it.
+void Icon_PostEvent(Icon_t* icon, uint32_t word0, uint32_t word1, uint32_t word2);
 
 #endif // __ICON_H__

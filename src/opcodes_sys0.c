@@ -1210,7 +1210,7 @@ uint32_t Opcode_Sys0_GetThreadID(Thread_t* thread)
 uint32_t Opcode_Sys0_ThreadExists(Thread_t* thread)
 {
 	uint32_t handle = Thread_PopStack(thread);
-	Thread_t* target = Engine_GetThreadById(thread->engine, handle);
+	Thread_t* target = Engine_GetLiveThreadById(thread->engine, handle);
 	Thread_PushStack(thread, target != NULL ? 1 : 0);
 	return 0;
 }
@@ -1228,7 +1228,7 @@ uint32_t Opcode_Sys0_PostMessage(Thread_t* thread)
 	uint32_t value = Thread_PopStack(thread);
 	uint32_t handle = Thread_PopStack(thread);
 
-	Thread_t* target = Engine_GetThreadById(thread->engine, handle);
+	Thread_t* target = Engine_GetLiveThreadById(thread->engine, handle);
 	if(target == NULL)
 	{
 		printf("[Thread %d]: %sError: an invalid thread handle was specified\n",
@@ -1268,7 +1268,7 @@ uint32_t Opcode_Sys0_PostMessages(Thread_t* thread)
 	int count = (int)Thread_PopStack(thread);
 	uint32_t handle = Thread_PopStack(thread);
 
-	Thread_t* target = Engine_GetThreadById(thread->engine, handle);
+	Thread_t* target = Engine_GetLiveThreadById(thread->engine, handle);
 	if(target == NULL)
 	{
 		printf("[Thread %d]: %sError: an invalid thread handle was specified\n",

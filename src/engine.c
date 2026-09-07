@@ -343,6 +343,23 @@ uint32_t Engine_ReadFileToMemory(Engine_t* engine, const char* archive, const ch
 	return size;
 }
 
+/*
+ * 0x00444C70, the search the thread opcodes use: it walks the tree of threads
+ * from the root down, and a thread that has ended is no longer in it.
+ *
+ * This engine keeps an ended thread in its list so that the scheduler can step
+ * over it and so that its id still resolves, which is why the two lookups are
+ * not the same function. A script that waits for a thread to finish asks this
+ * one, and would wait for ever on the other.
+ */
+Thread_t* Engine_GetLiveThreadById(Engine_t* engine, uint32_t threadId)
+{
+	Thread_t* thread = Engine_GetThreadById(engine, threadId);
+	if(thread != NULL && (thread->flags & THREAD_FLAG_TERMINATED))
+		return NULL;
+	return thread;
+}
+
 Thread_t* Engine_GetThreadById(Engine_t* engine, uint32_t threadId)
 {
 	Thread_t* thread = engine->threads;
