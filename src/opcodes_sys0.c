@@ -88,8 +88,8 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x44  68 */ "CreateThread",
 	/* 0x45  69 */ "Unknown_69",
 	/* 0x46  70 */ "GetThreadID",
-	/* 0x47  71 */ "Unknown_71",
-	/* 0x48  72 */ "Unknown_72",
+	/* 0x47  71 */ "ThreadExists",
+	/* 0x48  72 */ "PostMessage",
 	/* 0x49  73 */ "TakeMessage",
 	/* 0x4A  74 */ "PostMessages",
 	/* 0x4B  75 */ "TakeMessages",
@@ -347,8 +347,8 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x44  68 */ Opcode_Sys0_CreateThread,
 	/* 0x45  69 */ Opcode_Sys0_Unknown_69,
 	/* 0x46  70 */ Opcode_Sys0_GetThreadID,
-	/* 0x47  71 */ Opcode_Sys0_Unknown_71,
-	/* 0x48  72 */ Opcode_Sys0_Unknown_72,
+	/* 0x47  71 */ Opcode_Sys0_ThreadExists,
+	/* 0x48  72 */ Opcode_Sys0_PostMessage,
 	/* 0x49  73 */ Opcode_Sys0_TakeMessage,
 	/* 0x4A  74 */ Opcode_Sys0_PostMessages,
 	/* 0x4B  75 */ Opcode_Sys0_TakeMessages,
@@ -1190,14 +1190,45 @@ uint32_t Opcode_Sys0_GetThreadID(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_71(Thread_t* thread)
+/*
+ * Sys0 0x47 (0x00488F20) pops a thread handle, looks it up in the thread tree
+ * from the root down (0x00444B40 to the root, 0x00444C70 the search) and pushes
+ * whether it is there. A handle that is not there is not an error here: the
+ * question the opcode asks is exactly that.
+ */
+uint32_t Opcode_Sys0_ThreadExists(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t handle = Thread_PopStack(thread);
+	Thread_t* target = Engine_GetThreadById(thread->engine, handle);
+	Thread_PushStack(thread, target != NULL ? 1 : 0);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_72(Thread_t* thread)
+/*
+ * Sys0 0x48 (0x00488F60) posts one value to another thread's queue: the handle
+ * is pushed first and the value on top of it, and nothing is pushed back. Here
+ * an unknown handle IS an error - the original reports
+ * "an invalid thread handle was specified" (0x004EB9CC) through the fatal
+ * reporter at 0x00464870, which ends in int3 and does not return - so the
+ * engine stops the thread rather than dropping the message silently.
+ */
+uint32_t Opcode_Sys0_PostMessage(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Thread_t* target = Engine_GetThreadById(thread->engine, handle);
+	if(target == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid thread handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	Thread_PostMessage(target, value);
+	printf("[Thread %d]: %sPosted 1 message to thread %d\n",
+	       thread->threadId, TLevel[thread->level], handle);
+	return 0;
 }
 
 /*
