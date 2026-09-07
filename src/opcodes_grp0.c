@@ -91,7 +91,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x4E  78 */ "--Unknown--",
 	/* 0x4F  79 */ "--Unknown--",
 	/* 0x50  80 */ "CreateSpriteObject",
-	/* 0x51  81 */ "Unknown_81",
+	/* 0x51  81 */ "DestroyObject",
 	/* 0x52  82 */ "--Unknown--",
 	/* 0x53  83 */ "Unknown_83",
 	/* 0x54  84 */ "SetSpriteVisible",
@@ -350,7 +350,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x4E  78 */ NULL,
 	/* 0x4F  79 */ NULL,
 	/* 0x50  80 */ Opcode_Grp0_CreateSpriteObject,
-	/* 0x51  81 */ Opcode_Grp0_Unknown_81,
+	/* 0x51  81 */ Opcode_Grp0_DestroyObject,
 	/* 0x52  82 */ NULL,
 	/* 0x53  83 */ Opcode_Grp0_Unknown_83,
 	/* 0x54  84 */ Opcode_Grp0_SetSpriteVisible,
@@ -1283,9 +1283,44 @@ uint32_t Opcode_Grp0_CreateSpriteObject(Thread_t* thread)
 	Thread_PushStack(thread, handle);
 	return 0;
 }
-uint32_t Opcode_Grp0_Unknown_81(Thread_t* thread)
+/*
+ * Grp0 0x51 (0x0047C290) destroys a display object. It pops the handle and then,
+ * in this order:
+ *   - 0x00496490 takes the object out of the registry at 0x005669B8, a list keyed
+ *     by handle whose entries carry something 0x0046D980 shuts down. Nothing in
+ *     this engine puts anything on that list, so there is nothing to take off it;
+ *   - it refuses an object whose +0x130 is set, "the specified sprite has a
+ *     co-operating procedure" (0x004E93C0). Nothing here writes +0x130 either,
+ *     so the object model does not carry it and the refusal cannot fire;
+ *   - it refuses an object that still has an owner, "the specified sprite has an
+ *     owner" (0x004E9400) - a member of a group has to leave it first (0xE9);
+ *   - and 0x004624E0 destroys it, answering 0 for a handle that names nothing.
+ * Nothing is pushed back, and each failure is reported and does not return.
+ */
+uint32_t Opcode_Grp0_DestroyObject(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t handle = Thread_PopStack(thread);
+
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		// 無効なスプライトハンドルが指定されました (0x004E7FBC)
+		printf("[Thread %d]: %sError: an invalid sprite handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+	if(object->owner != NULL)
+	{
+		// 指定されたスプライトにはオーナーが存在します (0x004E9400)
+		printf("[Thread %d]: %sError: the specified sprite has an owner (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+
+	Object_Destroy(handle);
+	printf("[Thread %d]: %sObject 0x%08X destroyed\n",
+	       thread->threadId, TLevel[thread->level], handle);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_83(Thread_t* thread)
