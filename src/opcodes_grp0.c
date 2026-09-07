@@ -235,7 +235,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xDE 222 */ "Unknown_222",
 	/* 0xDF 223 */ "Unknown_223",
 	/* 0xE0 224 */ "CreateGroupObject",
-	/* 0xE1 225 */ "Unknown_225",
+	/* 0xE1 225 */ "DestroyGroup",
 	/* 0xE2 226 */ "--Unknown--",
 	/* 0xE3 227 */ "--Unknown--",
 	/* 0xE4 228 */ "ShowGroupObject",
@@ -494,7 +494,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xDE 222 */ Opcode_Grp0_Unknown_222,
 	/* 0xDF 223 */ Opcode_Grp0_Unknown_223,
 	/* 0xE0 224 */ Opcode_Grp0_CreateGroupObject,
-	/* 0xE1 225 */ Opcode_Grp0_Unknown_225,
+	/* 0xE1 225 */ Opcode_Grp0_DestroyGroup,
 	/* 0xE2 226 */ NULL,
 	/* 0xE3 227 */ NULL,
 	/* 0xE4 228 */ Opcode_Grp0_ShowGroupObject,
@@ -2287,9 +2287,31 @@ uint32_t Opcode_Grp0_CreateGroupObject(Thread_t* thread)
 	Thread_PushStack(thread, handle);
 	return 0;
 }
-uint32_t Opcode_Grp0_Unknown_225(Thread_t* thread)
+/*
+ * Grp0 0xE1 (0x00480110 -> 0x00442730) destroys a group: it pops the handle,
+ * calls the group's own destructor, clears its slot in the group table and
+ * takes one off the count. A handle that is not a group is reported as an
+ * invalid group handle (0x004EA4A8) and does not return.
+ *
+ * Unlike destroying an ordinary object (Grp0 0x51) there is no test for an
+ * owner and none for the group's own members: the group goes whatever it holds.
+ */
+uint32_t Opcode_Grp0_DestroyGroup(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(Object_ResolveKind(handle, OBJECT_TYPE_GROUP) == NULL)
+	{
+		// 無効なグループハンドルが指定されました (0x004EA4A8)
+		printf("[Thread %d]: %sError: an invalid group handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+
+	Object_Destroy(handle);
+	printf("[Thread %d]: %sGroup 0x%08X destroyed\n",
+	       thread->threadId, TLevel[thread->level], handle);
+	return 0;
 }
 
 // Grp0 0xE4 (0x00480140 -> 0x004636E0 -> 0x00442780) shows or hides a group, and
