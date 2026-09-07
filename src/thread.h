@@ -118,6 +118,11 @@ void Thread_SetInstructionPointer(Thread_t* thread, uint32_t value);
 void Thread_SetUnknownTimestamp(Thread_t* thread, uint32_t value);
 uint8_t* Thread_PopAndResolveAddress(Thread_t* thread);
 uint8_t* Thread_ResolveAddr(Thread_t* thread, uint32_t address);
+// The width the read and write opcodes carry in their operand byte, and what
+// Thread_WriteIntToMemory's size means: a log2 code, not a byte count.
+#define BGI_SIZE_BYTE  0
+#define BGI_SIZE_WORD  1
+#define BGI_SIZE_DWORD 2
 uint32_t Thread_WriteIntToMemory(Thread_t* thread, uint8_t* ptr, uint8_t size, uint32_t value);
 void Thread_WriteReturnAddr(Thread_t* thread, uint32_t addr);
 uint32_t Thread_ReadReturnAddr(Thread_t* thread);

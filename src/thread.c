@@ -615,6 +615,12 @@ uint8_t* Thread_PopAndResolveAddress(Thread_t* thread)
     return ptr;
 }
 
+/*
+ * The size is the script's own log2 code, the width the read and write opcodes
+ * carry in their operand byte: 0 is a byte, 1 is a word, 2 is a dword. It is
+ * not a byte count; BGI_SIZE_DWORD is what a caller writing a 32-bit result
+ * out of an opcode wants.
+ */
 uint32_t Thread_WriteIntToMemory(Thread_t* thread, uint8_t* ptr, uint8_t size, uint32_t value)
 {
 	switch(size)

@@ -1210,7 +1210,7 @@ uint32_t Opcode_Sys0_TakeMessage(Thread_t* thread)
 	uint32_t value = 0;
 	int taken = Thread_TakeMessage(thread, &value);
 	if(taken && out != NULL)
-		Thread_WriteIntToMemory(thread, out, 4, value);
+		Thread_WriteIntToMemory(thread, out, BGI_SIZE_DWORD, value);
 	Thread_PushStack(thread, (uint32_t)taken);
 	return 0;
 }
@@ -1272,7 +1272,7 @@ uint32_t Opcode_Sys0_TakeMessages(Thread_t* thread)
 		uint32_t value = 0;
 		more = Thread_TakeMessage(thread, &value);
 		if(more && out != NULL)
-			Thread_WriteIntToMemory(thread, out + (size_t)i * 4, 4, value);
+			Thread_WriteIntToMemory(thread, out + (size_t)i * 4, BGI_SIZE_DWORD, value);
 		taken += more;
 	}
 	Thread_PushStack(thread, (uint32_t)taken);
@@ -1654,7 +1654,7 @@ uint32_t Opcode_Sys0_CreateRecordList(Thread_t* thread)
 	uint32_t id = 0;
 	uint32_t result = Engine_CreateRing(capacity, recordSize, &id);
 	if(result == 0 && out != NULL)
-		Thread_WriteIntToMemory(thread, out, 4, id);
+		Thread_WriteIntToMemory(thread, out, BGI_SIZE_DWORD, id);
 	Thread_PushStack(thread, result);
 	return 0;
 }
@@ -1675,7 +1675,7 @@ uint32_t Opcode_Sys0_RecordListCount(Thread_t* thread)
 	uint32_t count = 0;
 	uint32_t result = Engine_RingCount(id, &count);
 	if(result == 0 && out != NULL)
-		Thread_WriteIntToMemory(thread, out, 4, count);
+		Thread_WriteIntToMemory(thread, out, BGI_SIZE_DWORD, count);
 	Thread_PushStack(thread, result);
 	return 0;
 }
