@@ -259,6 +259,11 @@ void Object_SetBasePosition(DisplayObject_t* object, int32_t x, int32_t y,
 // 0x00442860: resolve the group, resolve the object, refuse the object that is the
 // group itself, and attach it at the offset given.
 uint32_t Object_AddToGroup(uint32_t groupHandle, uint32_t objectHandle, int32_t x, int32_t y);
+// 0x004428D0 with 0x0041AD10: the object comes out of the group's child list, its
+// node is freed and its owner cleared. OBJECT_GROUP_NOT_IN_GROUP when the group
+// does not hold it, and the same two handle results as adding.
+#define OBJECT_GROUP_NOT_IN_GROUP 0x02u
+uint32_t Object_RemoveFromGroup(uint32_t groupHandle, uint32_t objectHandle);
 // 0x0041AC10 itself, for the parts of the engine that parent an object they own
 // rather than one a script named.
 uint32_t Object_Attach(DisplayObject_t* parent, DisplayObject_t* child, int32_t x, int32_t y);

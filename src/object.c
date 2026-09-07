@@ -773,6 +773,39 @@ DisplayObject_t* Object_CreateVirtual(DisplayObject_t* owner)
 	return object;
 }
 
+uint32_t Object_RemoveFromGroup(uint32_t groupHandle, uint32_t objectHandle)
+{
+	// 0x004428D0's order and its three results: the group, then the object, then
+	// whether the group's list actually holds it.
+	DisplayObject_t* group = Object_ResolveKind(groupHandle, OBJECT_TYPE_GROUP);
+	if(group == NULL)
+		return OBJECT_GROUP_BAD_GROUP;
+
+	DisplayObject_t* object = Object_Resolve(objectHandle);
+	if(object == NULL)
+		return OBJECT_GROUP_BAD_OBJECT;
+
+	// 0x0041AD10 walks the list from a pseudo-head at group+0x120, so the first
+	// node is unlinked the same way as any other, and clears the child's owner
+	// (0x0041ADA0 with 0) before the node is freed. It leaves the child's own
+	// position alone: only the owner link goes.
+	ObjectChild_t** link = &group->children;
+	while(*link != NULL)
+	{
+		ObjectChild_t* node = *link;
+		if(node->child != object)
+		{
+			link = &node->next;
+			continue;
+		}
+		*link = node->next;
+		object->owner = NULL;
+		free(node);
+		return OBJECT_GROUP_OK;
+	}
+	return OBJECT_GROUP_NOT_IN_GROUP;
+}
+
 uint32_t Object_AddToGroup(uint32_t groupHandle, uint32_t objectHandle, int32_t x, int32_t y)
 {
 	// 0x00442860's order, and its four results: the group first, then the object,

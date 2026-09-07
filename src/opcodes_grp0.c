@@ -243,7 +243,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xE6 230 */ "--Unknown--",
 	/* 0xE7 231 */ "--Unknown--",
 	/* 0xE8 232 */ "AddObjectToGroup",
-	/* 0xE9 233 */ "Unknown_233",
+	/* 0xE9 233 */ "RemoveObjectFromGroup",
 	/* 0xEA 234 */ "--Unknown--",
 	/* 0xEB 235 */ "--Unknown--",
 	/* 0xEC 236 */ "--Unknown--",
@@ -502,7 +502,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xE6 230 */ NULL,
 	/* 0xE7 231 */ NULL,
 	/* 0xE8 232 */ Opcode_Grp0_AddObjectToGroup,
-	/* 0xE9 233 */ Opcode_Grp0_Unknown_233,
+	/* 0xE9 233 */ Opcode_Grp0_RemoveObjectFromGroup,
 	/* 0xEA 234 */ NULL,
 	/* 0xEB 235 */ NULL,
 	/* 0xEC 236 */ NULL,
@@ -2336,9 +2336,44 @@ uint32_t Opcode_Grp0_AddObjectToGroup(Thread_t* thread)
 	}
 }
 
-uint32_t Opcode_Grp0_Unknown_233(Thread_t* thread)
+/*
+ * Grp0 0xE9 (0x00480280 -> 0x00463780 -> 0x004428D0) takes an object back out of
+ * a group: the object's handle is popped first and the group's under it, which
+ * is the same order Grp0 0xE8 puts it in with. Nothing is pushed back; each of
+ * the three failures is reported by the original with its own string and does
+ * not return.
+ */
+uint32_t Opcode_Grp0_RemoveObjectFromGroup(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t objectHandle = Thread_PopStack(thread);
+	uint32_t groupHandle = Thread_PopStack(thread);
+
+	switch(Object_RemoveFromGroup(groupHandle, objectHandle))
+	{
+	case OBJECT_GROUP_OK:
+		printf("[Thread %d]: %sObject 0x%08X left group 0x%08X\n",
+		       thread->threadId, TLevel[thread->level], objectHandle, groupHandle);
+		return 0;
+
+	case OBJECT_GROUP_BAD_GROUP:
+		// 無効なグループハンドルが指定されました (0x004EA4A8)
+		printf("[Thread %d]: %sError: an invalid group handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], groupHandle);
+		return 0xFFFFFFFF;
+
+	case OBJECT_GROUP_BAD_OBJECT:
+		// 無効なオブジェクトハンドルが指定されました (0x004E8BD0)
+		printf("[Thread %d]: %sError: an invalid object handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], objectHandle);
+		return 0xFFFFFFFF;
+
+	default:
+		// 指定されたオブジェクトはグループに登録されていません (0x004EA500)
+		printf("[Thread %d]: %sError: the specified object is not registered with "
+		       "the group (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], objectHandle);
+		return 0xFFFFFFFF;
+	}
 }
 
 uint32_t Opcode_Grp0_Unknown_240(Thread_t* thread)
