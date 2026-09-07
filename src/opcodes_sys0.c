@@ -1768,31 +1768,29 @@ uint32_t Opcode_Sys0_ReadRecordList(Thread_t* thread)
 	return 0;
 }
 
+/*
+ * Sys0 0xA0 (0x0048A2D0 -> 0x00496710) takes the next event off the engine's own
+ * global queue - the head at 0x005669C8 with its tail pointer at 0x00503DEC,
+ * appended to by 0x004966D0 from thirty-seven places: the window procedure, the
+ * display objects, the interpreter's own failure paths. It writes the event's
+ * three words to the address it is given and pushes whether there was one, and
+ * when the queue is empty it writes NOTHING and pushes 0.
+ *
+ * It used to write three words of its own over the caller's buffer on every
+ * single call - 3 and 1, or one of two other triples chosen by the thread's tick
+ * count. Those tick numbers were a recording of one particular run, so the two
+ * special cases had long stopped happening and every call handed the script an
+ * event that never occurred.
+ */
 uint32_t Opcode_Sys0_PopGlobalList(Thread_t* thread)
 {
-	uint32_t* ptr = (uint32_t*)Thread_PopAndResolveAddress(thread);
-	uint32_t res = Engine_PopGlobalList(ptr);
-
-	if(thread->ticks == 27982)
+	uint32_t* out = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	if(out == NULL)
 	{
-		*ptr = 0x00000002; ptr++;
-		*ptr = 0x00000000; ptr++;
-		*ptr = 0x00000000; ptr++;
+		Thread_PushStack(thread, 0);
+		return 0;
 	}
-	else if(thread->ticks == 28053)
-	{
-		*ptr = 0x00000000; ptr++;
-		*ptr = 0x00004000; ptr++;
-		*ptr = 0x00000000; ptr++;
-	}
-	else
-	{
-		*ptr = 0x00000003; ptr++;
-		*ptr = 0x00000001; ptr++;
-		*ptr = 0x00000000; ptr++;
-	}
-
-	Thread_PushStack(thread, res);
+	Thread_PushStack(thread, (uint32_t)Engine_PopGlobalList(out));
 	return 0;
 }
 

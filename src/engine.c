@@ -479,6 +479,18 @@ void Engine_Execute(Engine_t* engine)
 		thread = nextThread;
 	}
 	printf("[Engine]: Engine stopped. Executed %d ticks...\n", totalTicks);
+
+	// A thread that spins on basic opcodes alone prints nothing while it does it,
+	// so where each thread had got to is the one thing a finished run cannot
+	// otherwise say. The list is oldest thread first.
+	for(Thread_t* t = engine->threads; t != NULL; t = t->previousThread)
+	{
+		if(t->flags & THREAD_FLAG_TERMINATED)
+			continue;
+		printf("[Engine]: Thread %d is at %s%s\n", t->threadId,
+		       Thread_Where(t, Thread_GetInstructionPointer(t)),
+		       (t->flags & THREAD_FLAG_WAITING) ? " (waiting on a process)" : "");
+	}
 }
 
 void Engine_ExecuteThread(Engine_t* engine, uint32_t threadId, int ticks)
