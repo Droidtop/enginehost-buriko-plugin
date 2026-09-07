@@ -17,7 +17,7 @@ uint32_t Opcode_Sys0_GetPhysicalMemory(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_14(Thread_t* thread);
 uint32_t Opcode_Sys0_IsWindowActive(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_16(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_17(Thread_t* thread);
+uint32_t Opcode_Sys0_IsKeyDown(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_18(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_19(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_20(Thread_t* thread);

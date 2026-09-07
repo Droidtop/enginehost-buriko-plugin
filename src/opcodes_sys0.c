@@ -34,7 +34,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x0E  14 */ "Unknown_14",
 	/* 0x0F  15 */ "IsWindowActive",
 	/* 0x10  16 */ "Unknown_16",
-	/* 0x11  17 */ "Unknown_17",
+	/* 0x11  17 */ "IsKeyDown",
 	/* 0x12  18 */ "Unknown_18",
 	/* 0x13  19 */ "Unknown_19",
 	/* 0x14  20 */ "Unknown_20",
@@ -293,7 +293,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x0E  14 */ Opcode_Sys0_Unknown_14,
 	/* 0x0F  15 */ Opcode_Sys0_IsWindowActive,
 	/* 0x10  16 */ Opcode_Sys0_Unknown_16,
-	/* 0x11  17 */ Opcode_Sys0_Unknown_17,
+	/* 0x11  17 */ Opcode_Sys0_IsKeyDown,
 	/* 0x12  18 */ Opcode_Sys0_Unknown_18,
 	/* 0x13  19 */ Opcode_Sys0_Unknown_19,
 	/* 0x14  20 */ Opcode_Sys0_Unknown_20,
@@ -637,9 +637,19 @@ uint32_t Opcode_Sys0_Unknown_16(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_17(Thread_t* thread)
+/*
+ * Sys0 0x11 (0x00488190) pops a Windows virtual-key code and pushes whether it
+ * is held down: the original takes bit 15 of GetAsyncKeyState, the "down right
+ * now" bit, and drops bit 0, the "pressed since last asked" bit.
+ */
+uint32_t Opcode_Sys0_IsKeyDown(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t vk = Thread_PopStack(thread);
+	int down = OS_IsKeyDown(vk);
+	printf("[Thread %d]: %sVirtual key 0x%.2X is %s\n",
+	       thread->threadId, TLevel[thread->level], vk, down ? "down" : "up");
+	Thread_PushStack(thread, down ? 1 : 0);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_18(Thread_t* thread)

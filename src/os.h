@@ -17,4 +17,10 @@ uint32_t OS_FrameInterval();
 // Physical memory, in bytes, as the engine reports it to scripts.
 void OS_GetPhysicalMemory(uint64_t* total, uint64_t* available);
 
+// Whether a Windows virtual-key code is held down right now, the question
+// 0x0046D6E0 answers with GetAsyncKeyState. The engine speaks Win32 virtual
+// keys throughout - they are what the scripts' own key settings hold - so the
+// mapping onto whatever the host uses lives here and nowhere else.
+int OS_IsKeyDown(uint32_t vk);
+
 #endif
