@@ -1,10 +1,13 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 #include "engine.h"
 #include "opcodes.h"
 #include "opcodes_snd0.h"
 #include "thread.h"
+
+uint32_t gSoundChannels[SND0_CHANNEL_COUNT][SND0_CHANNEL_RECORD_WORDS] = {{0}};
 
 char* OpcodesSnd0Mnemonics[256] = {
 	/* 0x00   0 */ "Unknown_0",
@@ -41,7 +44,7 @@ char* OpcodesSnd0Mnemonics[256] = {
 	/* 0x1F  31 */ "--Unknown--",
 	/* 0x20  32 */ "Unknown_32",
 	/* 0x21  33 */ "Unknown_33",
-	/* 0x22  34 */ "Unknown_34",
+	/* 0x22  34 */ "ResetChannel",
 	/* 0x23  35 */ "--Unknown--",
 	/* 0x24  36 */ "Unknown_36",
 	/* 0x25  37 */ "Unknown_37",
@@ -300,7 +303,7 @@ OpcodePtr_t OpcodesSnd0[256] = {
 	/* 0x1F  31 */ NULL,
 	/* 0x20  32 */ Opcode_Snd0_Unknown_32,
 	/* 0x21  33 */ Opcode_Snd0_Unknown_33,
-	/* 0x22  34 */ Opcode_Snd0_Unknown_34,
+	/* 0x22  34 */ Opcode_Snd0_ResetChannel,
 	/* 0x23  35 */ NULL,
 	/* 0x24  36 */ Opcode_Snd0_Unknown_36,
 	/* 0x25  37 */ Opcode_Snd0_Unknown_37,
@@ -620,9 +623,29 @@ uint32_t Opcode_Snd0_Unknown_33(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Snd0_Unknown_34(Thread_t* thread)
+/*
+ * Snd0 0x22 (0x004878C0 -> 0x00494510) resets one sound channel: it pops the
+ * channel number, refuses 0x40 or more (0x00497AE0, which reports it and does
+ * not return), clears the channel's whole 0x40-byte record and then stops
+ * whatever that channel was playing (0x004A28A0). Nothing is pushed back.
+ *
+ * The stop has nothing to stop here: this engine has no audio. The record is
+ * cleared because it is the engine's own state and the opcodes that fill it in
+ * will find it as the original leaves it.
+ */
+uint32_t Opcode_Snd0_ResetChannel(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t channel = Thread_PopStack(thread);
+	if(channel >= SND0_CHANNEL_COUNT)
+	{
+		printf("[Thread %d]: %sError: an invalid sound channel [ %u ] was specified\n",
+		       thread->threadId, TLevel[thread->level], channel);
+		return 0xFFFFFFFF;
+	}
+	memset(gSoundChannels[channel], 0, sizeof(gSoundChannels[channel]));
+	printf("[Thread %d]: %sSound channel %u reset\n",
+	       thread->threadId, TLevel[thread->level], channel);
+	return 0;
 }
 
 uint32_t Opcode_Snd0_Unknown_36(Thread_t* thread)
