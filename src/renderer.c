@@ -1079,6 +1079,71 @@ void Renderer_ClearBitmap(Bitmap_t* view)
 		       (size_t)view->width * (size_t)pixelBytes);
 }
 
+// 0x0040E2C0: the 16-bit arm, in five-bit component space. The colour arrives as
+// 0x00RRGGBB and is taken apart into the three fields of an RGB555 pixel, each
+// already multiplied by the weight; the pixel's own fields are multiplied by the
+// inverse, added, and only then shifted back down.
+static void Renderer_FillView16(Bitmap_t* view, uint32_t colour, uint32_t weight)
+{
+	uint32_t inverse = 0x100 - weight;
+	uint32_t red     = ((colour >> 9) & 0x7C00) * weight;
+	uint32_t green   = ((colour >> 6) & 0x03E0) * weight;
+	uint32_t blue    = ((colour >> 3) & 0x001F) * weight;
+
+	for(int row = 0; row < view->height; row++)
+	{
+		uint16_t* pixels = (uint16_t*)(view->bitmap + (size_t)row * view->stride);
+		for(int column = 0; column < view->width; column++)
+		{
+			uint32_t pixel = pixels[column];
+			uint32_t out = ((((pixel & 0x7C00) * inverse) + red)   >> 8) & 0x7C00;
+			out         += ((((pixel & 0x03E0) * inverse) + green) >> 8) & 0x03E0;
+			out         += (((pixel & 0x001F) * inverse) + blue)   >> 8;
+			pixels[column] = (uint16_t)out;
+		}
+	}
+}
+
+// 0x0040E3B0 and 0x0040E4B0, and 0x0040DC30 when the colour is black: the same
+// sum per byte. packuswb saturates, so the clamp is the instruction's, not a
+// guard against arithmetic this cannot produce.
+static void Renderer_FillView32(Bitmap_t* view, uint32_t colour, uint32_t weight)
+{
+	uint32_t inverse = 0x100 - weight;
+	uint32_t term[4];
+	for(int channel = 0; channel < 4; channel++)
+		term[channel] = (((colour >> (channel * 8)) & 0xFF) * weight) >> 8;
+
+	for(int row = 0; row < view->height; row++)
+	{
+		uint8_t* pixels = view->bitmap + (size_t)row * view->stride;
+		for(int column = 0; column < view->width * 4; column++)
+		{
+			uint32_t out = ((pixels[column] * inverse) >> 8) + term[column & 3];
+			pixels[column] = (uint8_t)(out > 0xFF ? 0xFF : out);
+		}
+	}
+}
+
+int Renderer_FillView(Bitmap_t* view, uint32_t colour, uint32_t weight)
+{
+	// 0x0040E260 dispatches on the view's own pixel mode and does nothing at all
+	// for the modes it has no arm for. Both arms it does have need the source and
+	// the destination to be in the same mode, which they are here: the caller
+	// passes one view as both.
+	if(view->mode == BITMAP_MODE_16)
+	{
+		Renderer_FillView16(view, colour, weight);
+		return 1;
+	}
+	if(view->mode == BITMAP_MODE_24)
+	{
+		Renderer_FillView32(view, colour, weight);
+		return 1;
+	}
+	return 0;
+}
+
 int Renderer_BlitView(Bitmap_t* destination, Bitmap_t* source, int mode, int transparency)
 {
 	return Renderer_BlitBitmaps(destination, 0, 0, source, mode, transparency);

@@ -194,6 +194,13 @@ void Renderer_OffsetRect(Rect_t* rect, int32_t x, int32_t y);
 int Renderer_ClipBitmap(Bitmap_t* view, const Rect_t* rect);
 // 0x0040A620 with no rectangle: every pixel of the view set to zero.
 void Renderer_ClearBitmap(Bitmap_t* view);
+// 0x0040E260: one colour blended over every pixel of a view, which is what a
+// filter object's draw does. Per channel the result is
+// ((pixel * (0x100 - weight)) >> 8) + ((colour * weight) >> 8), so a weight of
+// 0x100 is the colour alone and a weight of 0 leaves the view alone. 1 when the
+// fill was done; 0 for a pixel mode the original has no arm for, which are all
+// of them but 16-bit and 24-bit-in-four-bytes.
+int Renderer_FillView(Bitmap_t* view, uint32_t colour, uint32_t weight);
 // 0x0040A9E0: the blend of one view onto another, corner to corner. The results are
 // Renderer_BlitBitmap's.
 int Renderer_BlitView(Bitmap_t* destination, Bitmap_t* source, int mode, int transparency);
