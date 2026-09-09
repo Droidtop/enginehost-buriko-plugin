@@ -142,7 +142,10 @@ int Renderer_SetAnimationFrames(Renderer_t* renderer, int count, const uint32_t*
 // A bitmap slot's serial, or 0xFFFFFFFF when the slot is empty (0x00408300).
 uint32_t Renderer_BitmapSerial(Renderer_t* renderer, int id);
 // The device's own pixel mode (0x00565B14, read by 0x00407B10). Every display
-// object's surface is built in it; this engine's screens are 32-bit.
+// object's surface, the back buffer and the animated cursor's frames are built in
+// it. It is the pixel mode the script chose with Sys0 0x60, which that opcode has
+// already refused above 1: 16-bit (mode 0) or 24-bit held four bytes to the pixel
+// (mode 1).
 int Renderer_ScreenMode(Renderer_t* renderer);
 // Replaces whatever is in the slot with a cleared bitmap (0x00407DA0); NULL on a bad
 // id, an unusable mode or an allocation failure.

@@ -423,7 +423,11 @@ uint32_t Renderer_BitmapSerial(Renderer_t* renderer, int id)
 int Renderer_ScreenMode(Renderer_t* renderer)
 {
 	(void)renderer;
-	return BITMAP_MODE_32;
+	// 0x00565B14, written only by 0x00442E20 (through 0x00407B00) with the pixel
+	// mode the script chose: 0x00461290 hands its own second argument on as edx,
+	// and Sys0 0x60 has already refused anything from 2 up. So the device runs in
+	// the original's mode 0 or mode 1 and in nothing else.
+	return (int)gDisplayPixelMode;
 }
 
 Bitmap_t* Renderer_CreateBitmap(Renderer_t* renderer, int id, int width, int height, int mode)
