@@ -16,6 +16,9 @@ struct Engine
 	Program_t* programs;
 	Memory_t* memory;
     uint8_t* auxMemory[48];
+    // Beside each aux area, the size it was asked for. The original has no use
+    // for it, but nothing else here can tell whether an address is inside one.
+    uint32_t auxMemorySize[48];
     uint32_t globalBufferSize;
     uint8_t* globalMem;
     int isRunning;
@@ -38,6 +41,17 @@ uint32_t Engine_ReadFileToMemory(Engine_t* engine, const char* archive, const ch
 // A bound on how long Engine_Execute runs, in ticks; 0 is no bound. The engine
 // has no such thing - it is the desktop runner's --ticks.
 extern int gTickLimit;
+
+// A watch on one engine-wide memory word, in the script's own tagged address
+// form (tag 0 is global memory, tag 0x40 and up is aux memory). The value is
+// compared after every interpreter step and every change is reported with the
+// thread and the program offset that made it, which is how a word nothing
+// writes by a literal address is traced back to its writer. Thread-local areas
+// (tags 0x10 and 0x11) are refused rather than watched, because they are a
+// different word per thread and one watch cannot mean all of them.
+#define ENGINE_MAX_WATCHES 8
+int  Engine_AddWatch(uint32_t address, uint32_t width);
+void Engine_CheckWatches(Engine_t* engine, Thread_t* thread, uint32_t address);
 void Engine_Execute(Engine_t* engine);
 void Engine_ExecuteThread(Engine_t* engine, uint32_t threadId, int ticks);
 Thread_t* Engine_GetThreadById(Engine_t* engine, uint32_t threadId);

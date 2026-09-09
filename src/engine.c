@@ -385,6 +385,105 @@ int totalTicks = 0;
 // stops on anything can still end and hand its frame over. Zero is no bound,
 // which is what the game gets.
 int gTickLimit = 0;
+
+// The watch list. It is deliberately kept out of Engine_t: it is a runner
+// facility, set up from the command line before the engine exists.
+typedef struct Watch Watch_t;
+struct Watch
+{
+	uint32_t address;
+	uint32_t width;
+	uint32_t value;
+	int      seen;
+};
+static Watch_t gWatches[ENGINE_MAX_WATCHES];
+static int gWatchCount = 0;
+
+int Engine_AddWatch(uint32_t address, uint32_t width)
+{
+	int tag = address >> 24;
+	if(tag == 0x10 || tag == 0x11 || tag == 0x12)
+	{
+		fprintf(stderr, "[EngineHost]: 0x%.8X is in a thread's own memory, which is a "
+			"different word in every thread; only global (tag 0) and aux (tag 0x40 and "
+			"up) addresses can be watched.\n", address);
+		return 0;
+	}
+	if(width != 1 && width != 2 && width != 4)
+	{
+		fprintf(stderr, "[EngineHost]: A watch is 1, 2 or 4 bytes wide, not %u.\n", width);
+		return 0;
+	}
+	if(gWatchCount == ENGINE_MAX_WATCHES)
+	{
+		fprintf(stderr, "[EngineHost]: No more than %d watches.\n", ENGINE_MAX_WATCHES);
+		return 0;
+	}
+	gWatches[gWatchCount].address = address;
+	gWatches[gWatchCount].width = width;
+	gWatches[gWatchCount].value = 0;
+	gWatches[gWatchCount].seen = 0;
+	gWatchCount++;
+	return 1;
+}
+
+static uint32_t Engine_ReadWatch(Engine_t* engine, Watch_t* watch, int* ok)
+{
+	int tag = watch->address >> 24;
+	uint32_t offset = watch->address & 0x00FFFFFF;
+	uint8_t* base = NULL;
+	uint32_t size = 0;
+
+	if(tag == 0)
+	{
+		base = engine->globalMem;
+		size = engine->globalBufferSize;
+	}
+	else if(tag >= 0x40 && (tag >> 1) - 32 < 48)
+	{
+		base = engine->auxMemory[(tag >> 1) - 32];
+		size = engine->auxMemorySize[(tag >> 1) - 32];
+	}
+
+	// Global memory is re-created larger as the boot goes on and an aux area is
+	// freed when the script is done with it, so an address that is out of the
+	// area today may be in it later: the watch simply says nothing until it is.
+	if(base == NULL || (uint64_t)offset + watch->width > (uint64_t)size)
+	{
+		*ok = 0;
+		return 0;
+	}
+	*ok = 1;
+	if(watch->width == 1)
+		return *(uint8_t*)(base + offset);
+	if(watch->width == 2)
+		return *(uint16_t*)(base + offset);
+	return *(uint32_t*)(base + offset);
+}
+
+void Engine_CheckWatches(Engine_t* engine, Thread_t* thread, uint32_t address)
+{
+	for(int i = 0; i < gWatchCount; i++)
+	{
+		int ok = 0;
+		uint32_t value = Engine_ReadWatch(engine, &gWatches[i], &ok);
+		if(!ok)
+			continue;
+		if(!gWatches[i].seen)
+		{
+			gWatches[i].seen = 1;
+			gWatches[i].value = value;
+			printf("[Watch]: 0x%.8X starts as 0x%.8X\n", gWatches[i].address, value);
+			continue;
+		}
+		if(value == gWatches[i].value)
+			continue;
+		printf("[Watch]: 0x%.8X 0x%.8X -> 0x%.8X, by thread %d at %s (tick %d)\n",
+		       gWatches[i].address, gWatches[i].value, value, thread->threadId,
+		       Thread_Where(thread, address), totalTicks);
+		gWatches[i].value = value;
+	}
+}
 // A thread that has ended stays in the list so its id still resolves, but it must
 // never be scheduled again.
 static int Engine_HasRunnableThread(Engine_t* engine)
@@ -511,7 +610,9 @@ void Engine_ExecuteThread(Engine_t* engine, uint32_t threadId, int ticks)
 			Thread_PushStack(thread, thread->queuePushQueue[thread->queuePush]);
 		}
 
+		uint32_t watchAddress = Thread_GetInstructionPointer(thread);
 		uint32_t res = Thread_Execute(thread);
+		Engine_CheckWatches(engine, thread, watchAddress);
 		if(res == 0xFFFFFFFF)
 		{
 			printf("[Engine]: Stub opcode encountered in %s. Stopping.\n", Thread_Where(thread, Thread_GetInstructionPointer(thread)));
@@ -1007,6 +1108,7 @@ uint32_t Engine_AllocAuxMemory(Engine_t* engine, uint32_t size)
 		if(engine->auxMemory[i] != NULL)
 			continue;
 		engine->auxMemory[i] = (uint8_t*)malloc(size);
+		engine->auxMemorySize[i] = size;
 		printf("[Engine]: Initialised aux memory in slot %d with size 0x%.8X\n", i, size);
 		return (i + 32) * 0x2000000;
 	}

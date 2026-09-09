@@ -33,10 +33,12 @@ Engine_t* gEngine;
 int main(int argc, char** argv)
 {
 	// --shot <file> keeps the frame the engine ends on, which is how a change to
-	// the drawing can be looked at without a screen, and --ticks <n> ends the run
+	// the drawing can be looked at without a screen, --ticks <n> ends the run
 	// after n ticks, which is how a boot that no longer stops on anything is
-	// looked at at all. Both are read out of the arguments first so that the two
-	// positional ones keep their places.
+	// looked at at all, and --watch <addr>[:width] reports every change of one
+	// engine-wide memory word with the thread and program offset that made it.
+	// All three are read out of the arguments first so that the two positional
+	// ones keep their places.
 	const char* shot = NULL;
 	int argumentCount = 0;
 	char* arguments[3] = { NULL, NULL, NULL };
@@ -46,6 +48,19 @@ int main(int argc, char** argv)
 			shot = argv[++i];
 		else if(strcmp(argv[i], "--ticks") == 0 && i + 1 < argc)
 			gTickLimit = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--watch") == 0 && i + 1 < argc)
+		{
+			// --watch <address>[:<width>], the address in the script's own tagged
+			// form and the width in bytes (4 by default).
+			const char* spec = argv[++i];
+			char* end = NULL;
+			uint32_t address = (uint32_t)strtoul(spec, &end, 0);
+			uint32_t width = 4;
+			if(end != NULL && *end == ':')
+				width = (uint32_t)strtoul(end + 1, NULL, 0);
+			if(!Engine_AddWatch(address, width))
+				return 2;
+		}
 		else if(argumentCount < 3)
 			arguments[argumentCount++] = argv[i];
 	}
