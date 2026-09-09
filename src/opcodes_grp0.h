@@ -35,7 +35,7 @@ uint32_t Opcode_Grp0_Unknown_28(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_29(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_30(Thread_t* thread);
 uint32_t Opcode_Grp0_CopyBitmap(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_32(Thread_t* thread);
+uint32_t Opcode_Grp0_AnimateObject(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_33(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_34(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_35(Thread_t* thread);

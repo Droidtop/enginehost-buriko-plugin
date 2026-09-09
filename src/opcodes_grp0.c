@@ -8,6 +8,7 @@
 #include "icon.h"
 #include "object.h"
 #include "thread.h"
+#include "process.h"
 
 char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x00   0 */ "Unknown_0",
@@ -42,7 +43,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x1D  29 */ "Unknown_29",
 	/* 0x1E  30 */ "Unknown_30",
 	/* 0x1F  31 */ "CopyBitmap",
-	/* 0x20  32 */ "Unknown_32",
+	/* 0x20  32 */ "AnimateObject",
 	/* 0x21  33 */ "Unknown_33",
 	/* 0x22  34 */ "Unknown_34",
 	/* 0x23  35 */ "Unknown_35",
@@ -301,7 +302,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x1D  29 */ Opcode_Grp0_Unknown_29,
 	/* 0x1E  30 */ Opcode_Grp0_Unknown_30,
 	/* 0x1F  31 */ Opcode_Grp0_CopyBitmap,
-	/* 0x20  32 */ Opcode_Grp0_Unknown_32,
+	/* 0x20  32 */ Opcode_Grp0_AnimateObject,
 	/* 0x21  33 */ Opcode_Grp0_Unknown_33,
 	/* 0x22  34 */ Opcode_Grp0_Unknown_34,
 	/* 0x23  35 */ Opcode_Grp0_Unknown_35,
@@ -949,17 +950,69 @@ uint32_t Opcode_Grp0_CopyBitmap(Thread_t* thread)
 	}
 }
 
-uint32_t Opcode_Grp0_Unknown_32(Thread_t* thread)
+/*
+ * Grp0 0x20 (0x0047A820 -> 0x00491CD0): fade one display object's effect level to
+ * a target over a duration, and hold the thread that asked until it is there.
+ *
+ * The six values pop in this order: the key mask and whether a key may cut the
+ * animation short (0x00431F60's pair, both zero everywhere the boot uses this,
+ * and the mask is what 0x00497D40 range-checks); a value the animation keeps at
+ * +0x38; the duration in milliseconds; the target effect level, which
+ * 0x00497F40 refuses above 0x100; and the object's handle.
+ *
+ * Nothing is pushed here. The animation is joined to the thread (0x004452A0)
+ * and 2 is returned, the result that means the thread is waiting; the animation
+ * pushes its own two values when it finishes, as the original does at
+ * 0x0043215B.
+ */
+uint32_t Opcode_Grp0_AnimateObject(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint32_t value3 = Thread_PopStack(thread);
-	uint32_t value4 = Thread_PopStack(thread);
-	uint32_t value5 = Thread_PopStack(thread);
-	uint32_t value6 = Thread_PopStack(thread);
-	Thread_SchedulePush(thread, 0x00000000);
-	Thread_SchedulePush(thread, 0x00000078);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t keyMask = Thread_PopStack(thread);
+	uint32_t allowKey = Thread_PopStack(thread);
+	uint32_t field38 = Thread_PopStack(thread);
+	uint32_t duration = Thread_PopStack(thread);
+	uint32_t targetEffect = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(targetEffect > 0x100)
+	{
+		/* 0x00497F40. */
+		printf("[Thread %d]: %sError: the effect level 0x%.8X is out of range\n",
+		       thread->threadId, TLevel[thread->level], targetEffect);
+		return 0xFFFFFFFF;
+	}
+	if(allowKey != 0 || keyMask != 0)
+	{
+		/* 0x00431F60 registers the animation with the key and mouse handling at
+		   0x0046D840 / 0x0046D8A0 so a press can cut it short. None of that is
+		   written, and the boot never asks for it. */
+		printf("[Thread %d]: %sError: an animation a key may cut short (0x00431F60, mask 0x%.8X) is not written yet\n",
+		       thread->threadId, TLevel[thread->level], keyMask);
+		return 0xFFFFFFFF;
+	}
+
+	Process_t* process = Process_CreateObjectAnimation(thread, handle, targetEffect, duration);
+	if(process == NULL)
+	{
+		/* 0x00491DBA answers -1 for a handle the display root cannot resolve. Here
+		   the handle is usually fine and the KIND behind it is what is missing:
+		   both animations the boot starts are on the filter object scrdrv makes
+		   with Grp0 0x60, and this engine hands out a 0x90000000 counter with no
+		   object behind it (0x0043F130 builds the real one, in the eight slots at
+		   root+0x864). Say which, rather than call a good handle invalid. */
+		if((handle & OBJECT_TAG_MASK) == 0x90000000u)
+			printf("[Thread %d]: %sError: animating the filter object [ 0x%.8X ] needs the filter "
+			       "to be a real display object (0x0043F130, root+0x864); Grp0 0x60 only hands out "
+			       "a handle here\n",
+			       thread->threadId, TLevel[thread->level], handle);
+		else
+			printf("[Thread %d]: %sError: the specified object [ 0x%.8X ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+	Thread_SetProcess(thread, process);
+	printf("[Thread %d]: %sAnimating the effect level of object 0x%.8X to 0x%.2X over %u ms (+0x38 = 0x%.8X)\n",
+	       thread->threadId, TLevel[thread->level], handle, targetEffect, duration, field38);
 	return 2;
 }
 
