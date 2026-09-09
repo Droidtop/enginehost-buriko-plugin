@@ -33,7 +33,6 @@ void Engine_Init(Engine_t* engine)
 		engine->auxMemory[i] = NULL;
 	engine->globalBufferSize = 0;
 	engine->globalMem = NULL;
-	engine->filterObjectHandle = 0x90000000;
 	engine->knobObjectHandle = 0xE0000000;
 	engine->nextThreadRequest = 0;
 	engine->renderer = Renderer_Init(engine);

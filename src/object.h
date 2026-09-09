@@ -11,7 +11,7 @@
 //
 //   tag   slots  table       resolver    what it is
 //   0x80  0x200  root+0x05C  0x0043E6B0  a sprite      (built here)
-//   0x90  0x008  root+0x864  0x0043F130
+//   0x90  0x008  root+0x864  0x0043F130  a filter      (built here; type 7)
 //   0x91  0x008  root+0x88C  0x0043F430
 //   0xA0  0x008  root+0x8B4  0x0043F990
 //   0xA1  0x004  root+0x8DC  0x0043FE10
@@ -30,9 +30,11 @@
 #define OBJECT_INDEX_MASK   0x00FFFFFFu
 
 #define OBJECT_TAG_SPRITE   0x80000000u
+#define OBJECT_TAG_FILTER   0x90000000u
 #define OBJECT_TAG_WINDOW   0xB0000000u
 #define OBJECT_TAG_GROUP    0xF1000000u
 #define SPRITE_SLOT_COUNT   0x200
+#define FILTER_SLOT_COUNT   0x008
 #define WINDOW_SLOT_COUNT   0x010
 #define GROUP_SLOT_COUNT    0x008
 // The screen object, which the display root builds at root+0x50 (0x0041E960, vtable
@@ -44,6 +46,9 @@
 #define OBJECT_TYPE_SCREEN  1
 #define OBJECT_TYPE_SPRITE  2
 #define OBJECT_TYPE_WINDOW  3
+// The filter (0x00420B00, vtable 0x004E4BA4): a plain display object sized to the
+// whole drawing device that draws one colour over whatever is under it.
+#define OBJECT_TYPE_FILTER  7
 #define OBJECT_TYPE_GROUP   9
 // CDspObjVirtual (0x0042AD30, vtable 0x004E4FA4): a display object with no class of
 // its own that another object owns. It is the one type 0x0041AC10 will re-parent
@@ -123,7 +128,15 @@ struct DisplayObject
 	// but the dispatch is written out, so the day content exists it is already
 	// the original's dispatch and not a special case.
 	int32_t   contentKind;        // +0x244
+	// +0x134. A sprite's kind, and a filter's content family: 0 is a colour and 1
+	// a bitmap-backed filter (0x00420C00's first switch).
 	uint32_t  kind;               // +0x134
+	// A filter's own two, which 0x00420D30 writes: which arm of the colour family
+	// it draws with, and the colour itself as 0x00RRGGBB. The original overlays
+	// them on +0x138 and +0x13C, which belong to a sprite in a sprite; one struct
+	// stands for every class here, so they are fields of their own.
+	uint32_t  filterArm;
+	uint32_t  filterColour;
 	// A sprite's content, as the kind 0 arm (0x004274E0) leaves it: the bitmap
 	// itself and the serial that bitmap slot had when it was handed over, so a slot
 	// refilled behind the sprite's back can be told apart from the image it was
@@ -276,6 +289,15 @@ void Object_SetPosition(DisplayObject_t* object, int32_t x, int32_t y);
 // the tree, not something a script can name or the walk can draw - and its owner is
 // set before it is attached, which is exactly the case 0x0041AC10 lets through.
 DisplayObject_t* Object_CreateVirtual(DisplayObject_t* owner);
+// Grp0 0x60's object (0x0043F070 with the constructor 0x00420B00): a filter in one
+// of the eight slots, blended with 0xC0 and sized to the drawing device, so that it
+// covers the screen. 0 when all eight are taken, which is the original's answer too.
+uint32_t Object_CreateFilter(Renderer_t* renderer);
+// Grp0 0x65's worker (0x0043F1F0 with 0x00420D30): the colour, the effect level and
+// the draw layer of a filter, and its place in the display list after the layer
+// moved. 0 when it was handed no filter, 1 when it was set.
+int Object_SetFilterColour(DisplayObject_t* filter, uint32_t colour,
+                           uint32_t effectLevel, uint32_t drawLayer);
 // The flag and the walk down the children, as the original's setters do it.
 void Object_SetVisible(DisplayObject_t* object, int visible);
 void Object_SetEnabled(DisplayObject_t* object, int enabled);

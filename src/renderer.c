@@ -1116,11 +1116,20 @@ static void Renderer_FillView32(Bitmap_t* view, uint32_t colour, uint32_t weight
 
 	for(int row = 0; row < view->height; row++)
 	{
-		uint8_t* pixels = view->bitmap + (size_t)row * view->stride;
-		for(int column = 0; column < view->width * 4; column++)
+		uint32_t* pixels = (uint32_t*)(view->bitmap + (size_t)row * view->stride);
+		for(int column = 0; column < view->width; column++)
 		{
-			uint32_t out = ((pixels[column] * inverse) >> 8) + term[column & 3];
-			pixels[column] = (uint8_t)(out > 0xFF ? 0xFF : out);
+			uint32_t pixel = pixels[column];
+			uint32_t out = 0;
+			for(int channel = 0; channel < 4; channel++)
+			{
+				uint32_t value = ((((pixel >> (channel * 8)) & 0xFF) * inverse) >> 8)
+				               + term[channel];
+				if(value > 0xFF)
+					value = 0xFF;
+				out |= value << (channel * 8);
+			}
+			pixels[column] = out;
 		}
 	}
 }

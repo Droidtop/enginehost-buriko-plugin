@@ -48,6 +48,9 @@
 static DisplayObject_t* gSprites[SPRITE_SLOT_COUNT] = { NULL };
 static uint32_t gSpriteCount = 0;
 static uint32_t gSpriteSerial = 0;
+static DisplayObject_t* gFilters[FILTER_SLOT_COUNT] = { NULL };
+static uint32_t gFilterCount = 0;
+static uint32_t gFilterSerial = 0;
 static DisplayObject_t* gWindows[WINDOW_SLOT_COUNT] = { NULL };
 static uint32_t gWindowCount = 0;
 static uint32_t gWindowSerial = 0;
@@ -67,6 +70,7 @@ typedef struct ObjectKind
 
 static const ObjectKind_t gKinds[] = {
 	{ OBJECT_TAG_SPRITE, OBJECT_TYPE_SPRITE, SPRITE_SLOT_COUNT, gSprites, &gSpriteCount, &gSpriteSerial },
+	{ OBJECT_TAG_FILTER, OBJECT_TYPE_FILTER, FILTER_SLOT_COUNT, gFilters, &gFilterCount, &gFilterSerial },
 	{ OBJECT_TAG_WINDOW, OBJECT_TYPE_WINDOW, WINDOW_SLOT_COUNT, gWindows, &gWindowCount, &gWindowSerial },
 	{ OBJECT_TAG_GROUP,  OBJECT_TYPE_GROUP,  GROUP_SLOT_COUNT,  gGroups,  &gGroupCount,  &gGroupSerial  },
 };
@@ -773,6 +777,61 @@ DisplayObject_t* Object_CreateVirtual(DisplayObject_t* owner)
 	return object;
 }
 
+uint32_t Object_CreateFilter(Renderer_t* renderer)
+{
+	// 0x0043F070 allocates and files the object exactly as every other kind does;
+	// what follows is the class constructor at 0x00420B00.
+	uint32_t handle = Object_Create(OBJECT_TAG_FILTER);
+	if(handle == 0)
+		return 0;
+
+	DisplayObject_t* filter = Object_Resolve(handle);
+	// 0x0041B6D0 with 0xC0, over the base's own 0x80. Its arm of 0x0041B840 is
+	// ((0x100 - transparency) * opacity * effectLevel) >> 16, so the effect level
+	// is the weight the fill is given and the base's 0 makes a fresh filter
+	// invisible until something raises it.
+	filter->unknownA8 = 0xC0;
+	// 0x00420D30 with (0, 0, 0): no colour, no effect level, the draw layer 0.
+	filter->kind = 0;
+	filter->filterArm = 0;
+	filter->filterColour = 0;
+	filter->layer = 0;
+	// 0x00420E40: the object's surface is matched to the drawing device's own -
+	// the same width, height and pixel mode - which is what gives a filter with no
+	// pixels of its own bounds that cover the whole screen.
+	Bitmap_t* device = Renderer_BackBuffer(renderer);
+	if(device != NULL)
+		Object_SetSurfaceSize(renderer, filter, device->width, device->height);
+
+	return handle;
+}
+
+int Object_SetFilterColour(DisplayObject_t* filter, uint32_t colour,
+                           uint32_t effectLevel, uint32_t drawLayer)
+{
+	if(filter == NULL)
+		return 0;
+
+	// 0x00420D30, in its own order: the colour arm at +0x138, the colour at +0x13C,
+	// the effect level through vtable+0x48 and the draw layer through vtable+0x54,
+	// then +0x134 cleared.
+	filter->filterArm = 0;
+	filter->filterColour = colour;
+	Object_SetEffectLevel(filter, effectLevel);
+	// 0x0041B980 refuses 0x10000 and above; Grp0 0x65's own 0x00497D40 has already
+	// made that fatal, so anything that arrives here is in range.
+	filter->layer = drawLayer;
+	// 0x00420D70 is then offered a bitmap id, which 0x0043F1F0 fixes at -1 for this
+	// opcode: it answers 0 without looking at anything and leaves +0x134 at 0, the
+	// colour family. A filter backed by a bitmap comes from another opcode.
+	filter->kind = 0;
+
+	// 0x004308B0: the draw layer is part of the list key, so the object has to be
+	// taken out and put back for the order to stay right.
+	Object_ListResort(filter);
+	return 1;
+}
+
 uint32_t Object_RemoveFromGroup(uint32_t groupHandle, uint32_t objectHandle)
 {
 	// 0x004428D0's order and its three results: the group, then the object, then
@@ -1099,6 +1158,33 @@ static void Object_Draw(Renderer_t* renderer, DisplayObject_t* object,
 			if(!Renderer_ClipBitmap(&view, rect))
 				return;
 			Renderer_BlitView(target, &view, (int)object->unknownA8, (int)transparency);
+			return;
+		}
+
+		case OBJECT_TYPE_FILTER:
+		{
+			// 0x00420C00. The first switch is on the content family at +0x134:
+			// 0 is a colour, 1 a filter backed by a bitmap (through 0x00407F20
+			// and 0x0040E5C0), and anything else draws nothing.
+			if(object->kind != 0)
+			{
+				printf("[Renderer]: Warning: a filter backed by a bitmap"
+				       " (0x00420C00, +0x134 = %u) is not written yet\n",
+				       object->kind);
+				return;
+			}
+			// The second, on +0x138, through the four-entry table at 0x00420D14:
+			// arm 0 is the plain fill (0x0040E260) and the other three are
+			// 0x00410D50, 0x00411130 and 0x00410D80.
+			if(object->filterArm != 0)
+			{
+				printf("[Renderer]: Warning: the filter arm %u (0x00420D14) is"
+				       " not written yet\n", object->filterArm);
+				return;
+			}
+			if(!Renderer_FillView(target, object->filterColour, transparency))
+				printf("[Renderer]: Warning: 0x0040E260 has no arm for the pixel"
+				       " mode %d, so the filter draws nothing\n", target->mode);
 			return;
 		}
 

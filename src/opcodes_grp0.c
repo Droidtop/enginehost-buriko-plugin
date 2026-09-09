@@ -111,8 +111,8 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x61  97 */ "DestroyFilterObject",
 	/* 0x62  98 */ "--Unknown--",
 	/* 0x63  99 */ "--Unknown--",
-	/* 0x64 100 */ "Unknown_100",
-	/* 0x65 101 */ "Unknown_101",
+	/* 0x64 100 */ "ShowFilterObject",
+	/* 0x65 101 */ "SetFilterColour",
 	/* 0x66 102 */ "Unknown_102",
 	/* 0x67 103 */ "--Unknown--",
 	/* 0x68 104 */ "--Unknown--",
@@ -370,8 +370,8 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x61  97 */ Opcode_Grp0_DestroyFilterObject,
 	/* 0x62  98 */ NULL,
 	/* 0x63  99 */ NULL,
-	/* 0x64 100 */ Opcode_Grp0_Unknown_100,
-	/* 0x65 101 */ Opcode_Grp0_Unknown_101,
+	/* 0x64 100 */ Opcode_Grp0_ShowFilterObject,
+	/* 0x65 101 */ Opcode_Grp0_SetFilterColour,
 	/* 0x66 102 */ Opcode_Grp0_Unknown_102,
 	/* 0x67 103 */ NULL,
 	/* 0x68 104 */ NULL,
@@ -994,20 +994,9 @@ uint32_t Opcode_Grp0_AnimateObject(Thread_t* thread)
 	Process_t* process = Process_CreateObjectAnimation(thread, handle, targetEffect, duration);
 	if(process == NULL)
 	{
-		/* 0x00491DBA answers -1 for a handle the display root cannot resolve. Here
-		   the handle is usually fine and the KIND behind it is what is missing:
-		   both animations the boot starts are on the filter object scrdrv makes
-		   with Grp0 0x60, and this engine hands out a 0x90000000 counter with no
-		   object behind it (0x0043F130 builds the real one, in the eight slots at
-		   root+0x864). Say which, rather than call a good handle invalid. */
-		if((handle & OBJECT_TAG_MASK) == 0x90000000u)
-			printf("[Thread %d]: %sError: animating the filter object [ 0x%.8X ] needs the filter "
-			       "to be a real display object (0x0043F130, root+0x864); Grp0 0x60 only hands out "
-			       "a handle here\n",
-			       thread->threadId, TLevel[thread->level], handle);
-		else
-			printf("[Thread %d]: %sError: the specified object [ 0x%.8X ] is invalid\n",
-			       thread->threadId, TLevel[thread->level], handle);
+		/* 0x00491DBA answers -1 for a handle the display root cannot resolve. */
+		printf("[Thread %d]: %sError: the specified object [ 0x%.8X ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], handle);
 		return 0xFFFFFFFF;
 	}
 	Thread_SetProcess(thread, process);
@@ -1490,37 +1479,115 @@ uint32_t Opcode_Grp0_Unknown_92(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
+/*
+ * Grp0 0x60 (0x0047D470 -> 0x004626E0 -> 0x0043F070). Nothing pops. The object
+ * goes into the first free one of the eight slots at root+0x864 and its handle
+ * is pushed; when all eight are taken the original pushes 0 and then reports it
+ * with the message at 0x004E9750, which is fatal.
+ */
 uint32_t Opcode_Grp0_CreateFilterObject(Thread_t* thread)
 {
-	Thread_PushStack(thread, thread->engine->filterObjectHandle);
-	thread->engine->filterObjectHandle++;
+	uint32_t handle = Object_CreateFilter(thread->engine->renderer);
+	if(handle == 0)
+	{
+		printf("[Thread %d]: %sError: no free filter object slot (all %d are taken)\n",
+		       thread->threadId, TLevel[thread->level], FILTER_SLOT_COUNT);
+		return 0xFFFFFFFF;
+	}
+
+	Thread_PushStack(thread, handle);
+	printf("[Thread %d]: %sCreated the filter object [ 0x%.8X ]\n",
+	       thread->threadId, TLevel[thread->level], handle);
 	return 0;
 }
 
+/*
+ * Grp0 0x61 (0x0047D4A0 -> 0x004626F0 -> 0x0043F170): the object comes out of
+ * the display list, is freed and gives its slot back. The original reports a
+ * handle that names no filter with 0x004E978C, which is fatal.
+ */
 uint32_t Opcode_Grp0_DestroyFilterObject(Thread_t* thread)
 {
-	uint32_t data = Thread_PopStack(thread);
-	thread->engine->filterObjectHandle--;
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(Object_ResolveKind(handle, OBJECT_TYPE_FILTER) == NULL)
+	{
+		printf("[Thread %d]: %sError: the specified object [ 0x%.8X ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+
+	Object_Destroy(handle);
+	printf("[Thread %d]: %sDestroyed the filter object [ 0x%.8X ]\n",
+	       thread->threadId, TLevel[thread->level], handle);
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_100(Thread_t* thread)
+/*
+ * Grp0 0x64 (0x0047D4D0 -> 0x00462720 -> 0x0043F2B0): the filter's visible flag,
+ * with the same would-it-be-drawn bracket the other visibility opcodes have.
+ */
+uint32_t Opcode_Grp0_ShowFilterObject(Thread_t* thread)
 {
-    uint32_t unknown = Thread_PopStack(thread);
-    uint32_t filterObject = Thread_PopStack(thread);
-    printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-    return 0;
+	uint32_t visible = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	DisplayObject_t* filter = Object_ResolveKind(handle, OBJECT_TYPE_FILTER);
+	if(filter == NULL)
+	{
+		printf("[Thread %d]: %sError: the specified object [ 0x%.8X ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+
+	Object_ApplyVisible(filter, (int)visible);
+	printf("[Thread %d]: %sFilter object [ 0x%.8X ] is now %s\n",
+	       thread->threadId, TLevel[thread->level], handle,
+	       visible != 0 ? "visible" : "hidden");
+	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_101(Thread_t* thread)
+/*
+ * Grp0 0x65 (0x0047D510 -> 0x00462700 -> 0x0043F1F0). Four values pop: the draw
+ * layer, which 0x00497D40 refuses at 0x10000 and above; the effect level, which
+ * 0x00497F40 refuses above 0x100; the colour, as 0x00RRGGBB; and the handle.
+ * Both range checks are fatal before the handle is even looked at.
+ */
+uint32_t Opcode_Grp0_SetFilterColour(Thread_t* thread)
 {
-    uint32_t value1 = Thread_PopStack(thread);
-    uint32_t opacity = Thread_PopStack(thread);
-    uint32_t unknown = Thread_PopStack(thread);
-    uint32_t filterObject = Thread_PopStack(thread);
-    printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-    return 0;
+	uint32_t drawLayer = Thread_PopStack(thread);
+	uint32_t effectLevel = Thread_PopStack(thread);
+	uint32_t colour = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(drawLayer >= 0x10000)
+	{
+		/* 0x00497D40. */
+		printf("[Thread %d]: %sError: the draw layer 0x%.8X is out of range\n",
+		       thread->threadId, TLevel[thread->level], drawLayer);
+		return 0xFFFFFFFF;
+	}
+	if(effectLevel > OBJECT_EFFECT_LEVEL_MAX)
+	{
+		/* 0x00497F40. */
+		printf("[Thread %d]: %sError: the effect level 0x%.8X is out of range\n",
+		       thread->threadId, TLevel[thread->level], effectLevel);
+		return 0xFFFFFFFF;
+	}
+
+	DisplayObject_t* filter = Object_ResolveKind(handle, OBJECT_TYPE_FILTER);
+	if(filter == NULL)
+	{
+		printf("[Thread %d]: %sError: the specified object [ 0x%.8X ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+
+	Object_SetFilterColour(filter, colour, effectLevel, drawLayer);
+	printf("[Thread %d]: %sFilter object [ 0x%.8X ] is colour 0x%.6X at effect level"
+	       " 0x%.2X on draw layer 0x%.4X\n",
+	       thread->threadId, TLevel[thread->level], handle, colour, effectLevel, drawLayer);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_102(Thread_t* thread)
