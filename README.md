@@ -108,3 +108,14 @@ Feel free to join our Discord server: https://discord.gg/3zFTJWUNt7
 Notice
 ------
 OpenBGI (this project) is primarily related to visual novels. This project is unrelated to an AI/AGI project with a similar name.
+
+Enginehost Android wrapper
+--------------------------
+
+The Enginehost wrapper advertises this incomplete interpreter under the
+`buriko` plugin family. Generic BGI titles use context `compiled-script-v1`;
+AUGUST titles using the same BGI scenario line use the explicit
+`august-compiled-script-v1` context. Both currently target compiled-script
+version `1.0` and share the same experimental opcode implementation. The
+separate context records game-family compatibility without pretending AUGUST
+is a distinct runtime engine or overstating current playability.

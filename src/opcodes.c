@@ -3,7 +3,9 @@
 #include <stdbool.h>
 #include <string.h>
 #include "opcodes.h"
+#include "opcodes_user.h"
 #include "opcodes_sys0.h"
+#include "opcodes_sys1.h"
 #include "opcodes_grp0.h"
 #include "opcodes_grp1.h"
 #include "opcodes_grp2.h"
@@ -113,7 +115,7 @@ char* OpcodesMnemonics[256] = {
 	/* 0x60  96 */ "Memcpy",
 	/* 0x61  97 */ "Memclr",
 	/* 0x62  98 */ "Unknown",
-	/* 0x63  99 */ "Unknown",
+	/* 0x63  99 */ "Memeq",
 	/* 0x64 100 */ "Unknown",
 	/* 0x65 101 */ "Unknown",
 	/* 0x66 102 */ "Unknown",
@@ -143,7 +145,7 @@ char* OpcodesMnemonics[256] = {
 	/* 0x7E 126 */ "Unknown",
 	/* 0x7F 127 */ "Unknown",
 	/* 0x80 128 */ "Sys0",
-	/* 0x81 129 */ "Unknown",
+	/* 0x81 129 */ "Sys1",
 	/* 0x82 130 */ "Unknown",
 	/* 0x83 131 */ "Unknown",
 	/* 0x84 132 */ "Unknown",
@@ -269,7 +271,7 @@ char* OpcodesMnemonics[256] = {
 	/* 0xFC 252 */ "Unknown",
 	/* 0xFD 253 */ "Unknown",
 	/* 0xFE 254 */ "Unknown",
-	/* 0xFF 255 */ "Unknown",
+	/* 0xFF 255 */ "User",
 };
 
 OpcodePtr_t Opcodes[256] = {
@@ -372,7 +374,7 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0x60  96 */ Opcode_Memcpy,
 	/* 0x61  97 */ Opcode_Memclr,
 	/* 0x62  98 */ 0,
-	/* 0x63  99 */ 0,
+	/* 0x63  99 */ Opcode_Memeq,
 	/* 0x64 100 */ 0,
 	/* 0x65 101 */ 0,
 	/* 0x66 102 */ 0,
@@ -402,7 +404,7 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0x7E 126 */ 0,
 	/* 0x7F 127 */ 0,
 	/* 0x80 128 */ Opcode_Sys0,
-	/* 0x81 129 */ 0,
+	/* 0x81 129 */ Opcode_Sys1,
 	/* 0x82 130 */ 0,
 	/* 0x83 131 */ 0,
 	/* 0x84 132 */ 0,
@@ -528,7 +530,7 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0xFC 252 */ 0,
 	/* 0xFD 253 */ 0,
 	/* 0xFE 254 */ 0,
-	/* 0xFF 255 */ 0,
+	/* 0xFF 255 */ Opcode_User,
 };
 
 uint32_t Opcode_Push8(Thread_t* thread)
@@ -554,18 +556,21 @@ uint32_t Opcode_Push32(Thread_t* thread)
 
 uint32_t Opcode_CodeOffset(Thread_t* thread)
 {
-	uint16_t data = Thread_ReadCode16(thread);
+	// 0x004737D0: movsx of the immediate, added to the instruction
+	// pointer in 32 bits. A backward branch is a negative offset.
+	int16_t offset = (int16_t)Thread_ReadCode16(thread);
 	uint32_t ip = Thread_GetInstructionPointer(thread);
-	data += ip;
-	Thread_PushStack(thread, data);
+	Thread_PushStack(thread, (uint32_t)(ip + offset));
 	return 0;
 }
 
 uint32_t Opcode_CodeAddr(Thread_t* thread)
 {
-	uint16_t offset = Thread_ReadCode16(thread);
+	// 0x004737A0, the same signed offset as CodeOffset, tagged as an
+	// address in code memory (the original tags it 0x04000000).
+	int16_t offset = (int16_t)Thread_ReadCode16(thread);
 	uint32_t ip = Thread_GetInstructionPointer(thread);
-	Thread_PushStack(thread, (ip + offset) | 0x11000000);
+	Thread_PushStack(thread, (uint32_t)(ip + offset) | 0x11000000);
 	return 0;
 }
 
@@ -674,7 +679,7 @@ uint32_t Opcode_Sys0(Thread_t* thread)
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
 	if(opcode != 0x5F || (opcode == 0x5F && !thread->silenceYield))
-		printf("[Thread %d]: %sSys0 Executing opcode Sys0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesSys0Mnemonics[opcode], opcode, opcode, GoldenLog[GoldenLogIndex].time);
+		printf("[Thread %d]: %sSys0 Executing opcode Sys0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesSys0Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesSys0[opcode] == NULL)
 	{
@@ -687,12 +692,30 @@ uint32_t Opcode_Sys0(Thread_t* thread)
 	return res;
 }
 
+uint32_t Opcode_Sys1(Thread_t* thread)
+{
+	uint8_t opcode = Thread_ReadCode8(thread);
+	thread->inBasicOpcode = 0;
+	thread->opcode = (thread->opcode << 8) | opcode;
+	printf("[Thread %d]: %sSys1 Executing opcode Sys1.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesSys1Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
+	thread->level++;
+	if(OpcodesSys1[opcode] == NULL)
+	{
+		thread->level--;
+		printf("[Thread %d]: %sError: opcode 0x81%.2X (%d) not implemented\n", thread->threadId, TLevel[thread->level], opcode, opcode);
+		return 0xFFFFFFFF;
+	}
+	uint32_t res = OpcodesSys1[opcode](thread);
+	thread->level--;
+	return res;
+}
+
 uint32_t Opcode_Grp0(Thread_t* thread)
 {
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sGrp0 Executing opcode Grp0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesGrp0Mnemonics[opcode], opcode, opcode, GoldenLog[GoldenLogIndex].time);
+	printf("[Thread %d]: %sGrp0 Executing opcode Grp0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesGrp0Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesGrp0[opcode] == NULL)
 	{
@@ -710,7 +733,7 @@ uint32_t Opcode_Grp1(Thread_t* thread)
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sGrp1 Executing opcode Grp1.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesGrp1Mnemonics[opcode], opcode, opcode, GoldenLog[GoldenLogIndex].time);
+	printf("[Thread %d]: %sGrp1 Executing opcode Grp1.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesGrp1Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesGrp1[opcode] == NULL)
 	{
@@ -728,7 +751,7 @@ uint32_t Opcode_Grp2(Thread_t* thread)
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sGrp2 Executing opcode Grp2.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesGrp2Mnemonics[opcode], opcode, opcode, GoldenLog[GoldenLogIndex].time);
+	printf("[Thread %d]: %sGrp2 Executing opcode Grp2.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesGrp2Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesGrp2[opcode] == NULL)
 	{
@@ -746,7 +769,7 @@ uint32_t Opcode_Snd0(Thread_t* thread)
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sSnd0 Executing opcode Snd0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesSnd0Mnemonics[opcode], opcode, opcode, GoldenLog[GoldenLogIndex].time);
+	printf("[Thread %d]: %sSnd0 Executing opcode Snd0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesSnd0Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesSnd0[opcode] == NULL)
 	{
@@ -764,7 +787,7 @@ uint32_t Opcode_Ext0(Thread_t* thread)
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sExt0 Executing opcode Ext0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesExt0Mnemonics[opcode], opcode, opcode, GoldenLog[GoldenLogIndex].time);
+	printf("[Thread %d]: %sExt0 Executing opcode Ext0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesExt0Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesExt0[opcode] == NULL)
 	{
@@ -782,7 +805,7 @@ uint32_t Opcode_Ext1(Thread_t* thread)
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sExt1 Executing opcode Ext1.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesExt1Mnemonics[opcode], opcode, opcode, GoldenLog[GoldenLogIndex].time);
+	printf("[Thread %d]: %sExt1 Executing opcode Ext1.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesExt1Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesExt1[opcode] == NULL)
 	{
@@ -954,11 +977,15 @@ uint32_t Opcode_Neq(Thread_t* thread)
 	return 0;
 }
 
+// 0x00473F30: the right operand comes off the stack first, and the comparison is
+// `setle` on `cmp left, right` - less or equal. It was a copy of Geq one function
+// below (0x00473F60, the same shape with `setge`), which made every `<=` in every
+// script answer the opposite of itself whenever the two sides were not equal.
 uint32_t Opcode_Leq(Thread_t* thread)
 {
 	int32_t right = Thread_PopStack(thread);
 	int32_t left = Thread_PopStack(thread);
-	Thread_PushStack(thread, left >= right);
+	Thread_PushStack(thread, left <= right);
 	return 0;
 }
 
@@ -1074,6 +1101,20 @@ uint32_t Opcode_DoubleAnyNotZero(Thread_t* thread)
 	uint32_t value1 = Thread_PopStack(thread);
 	uint32_t value2 = Thread_PopStack(thread);
 	Thread_PushStack(thread, value1 != 0 || value2 != 0);
+	return 0;
+}
+
+// 0x00474480: the length comes off the stack first, then the two addresses. The
+// original compares four bytes at a time and then the tail one byte at a time, and
+// pushes back whether the difference it ends with is zero - so this answers "the same",
+// not "which is bigger", however much of a memcmp its body looks like.
+uint32_t Opcode_Memeq(Thread_t* thread)
+{
+	uint32_t size = Thread_PopStack(thread);
+	const uint8_t* left = Thread_PopAndResolveAddress(thread);
+	const uint8_t* right = Thread_PopAndResolveAddress(thread);
+
+	Thread_PushStack(thread, memcmp(left, right, size) == 0);
 	return 0;
 }
 

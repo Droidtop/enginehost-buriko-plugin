@@ -12,7 +12,7 @@ char* OpcodesExt0Mnemonics[256] = {
     /* 0x02   2 */ "--Unknown--",
     /* 0x03   3 */ "--Unknown--",
     /* 0x04   4 */ "Unknown_4",
-    /* 0x05   5 */ "Unknown_5",
+    /* 0x05   5 */ "SetCursorAutoHideTimeout",
     /* 0x06   6 */ "--Unknown--",
     /* 0x07   7 */ "--Unknown--",
     /* 0x08   8 */ "Unknown_8",
@@ -200,13 +200,13 @@ char* OpcodesExt0Mnemonics[256] = {
     /* 0xBE 190 */ "--Unknown--",
     /* 0xBF 191 */ "--Unknown--",
     /* 0xC0 192 */ "--Unknown--",
-    /* 0xC1 193 */ "--Unknown--",
+    /* 0xC1 193 */ "RegisterFont",
     /* 0xC2 194 */ "--Unknown--",
     /* 0xC3 195 */ "--Unknown--",
-    /* 0xC4 196 */ "--Unknown--",
+    /* 0xC4 196 */ "EnumerateFontFamilies",
     /* 0xC5 197 */ "--Unknown--",
     /* 0xC6 198 */ "--Unknown--",
-    /* 0xC7 199 */ "--Unknown--",
+    /* 0xC7 199 */ "SetFontSubstitution",
     /* 0xC8 200 */ "--Unknown--",
     /* 0xC9 201 */ "--Unknown--",
     /* 0xCA 202 */ "--Unknown--",
@@ -271,7 +271,7 @@ OpcodePtr_t OpcodesExt0[256] = {
     /* 0x02   2 */ NULL,
     /* 0x03   3 */ NULL,
     /* 0x04   4 */ Opcode_Ext0_Unknown_4,
-    /* 0x05   5 */ Opcode_Ext0_Unknown_5,
+    /* 0x05   5 */ Opcode_Ext0_SetCursorAutoHideTimeout,
     /* 0x06   6 */ NULL,
     /* 0x07   7 */ NULL,
     /* 0x08   8 */ Opcode_Ext0_Unknown_8,
@@ -459,13 +459,13 @@ OpcodePtr_t OpcodesExt0[256] = {
     /* 0xBE 190 */ NULL,
     /* 0xBF 191 */ NULL,
     /* 0xC0 192 */ NULL,
-    /* 0xC1 193 */ NULL,
+    /* 0xC1 193 */ Opcode_Ext0_RegisterFont,
     /* 0xC2 194 */ NULL,
     /* 0xC3 195 */ NULL,
-    /* 0xC4 196 */ NULL,
+    /* 0xC4 196 */ Opcode_Ext0_EnumerateFontFamilies,
     /* 0xC5 197 */ NULL,
     /* 0xC6 198 */ NULL,
-    /* 0xC7 199 */ NULL,
+    /* 0xC7 199 */ Opcode_Ext0_SetFontSubstitution,
     /* 0xC8 200 */ NULL,
     /* 0xC9 201 */ NULL,
     /* 0xCA 202 */ NULL,
@@ -524,6 +524,36 @@ OpcodePtr_t OpcodesExt0[256] = {
     /* 0xFF 255 */ NULL,
 };
 
+uint32_t Opcode_Ext0_RegisterFont(Thread_t* thread)
+{
+	uint32_t kind = Thread_PopStack(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+
+	if(kind == 0)
+		Engine_SetFontCharset(name, 0x80);
+	else if(kind == 1)
+		Engine_SetFontCharset(name, 0);
+
+	Thread_PushStack(thread, Engine_InternFontName(name));
+	return 0;
+}
+
+uint32_t Opcode_Ext0_EnumerateFontFamilies(Thread_t* thread)
+{
+	char* buffer = (char*)Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, Engine_EnumerateFontFamilies(buffer));
+	return 0;
+}
+
+uint32_t Opcode_Ext0_SetFontSubstitution(Thread_t* thread)
+{
+	const char* replacement = (const char*)Thread_PopAndResolveAddress(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+	printf("[Thread %d]: %sSubstitute font %s with %s\n", thread->threadId, TLevel[thread->level], name != NULL ? name : "(default)", replacement != NULL ? replacement : "(none)");
+	Engine_SetFontSubstitution(name, replacement);
+	return 0;
+}
+
 uint32_t Opcode_Ext0_Unknown_0(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
@@ -534,9 +564,11 @@ uint32_t Opcode_Ext0_Unknown_4(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Ext0_Unknown_5(Thread_t* thread)
+uint32_t Opcode_Ext0_SetCursorAutoHideTimeout(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t timeout = Thread_PopStack(thread);
+	Engine_SetCursorAutoHideTimeout(timeout);
+	return 0;
 }
 
 uint32_t Opcode_Ext0_Unknown_8(Thread_t* thread)

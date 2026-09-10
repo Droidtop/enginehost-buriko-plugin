@@ -12,7 +12,7 @@ SRCDIR      := src
 BUILDDIR    := bin
 
 # C sources
-CSOURCES    := $(shell find $(SRCDIR) -name '*.c')
+CSOURCES    := $(shell find $(SRCDIR) -name '*.c') ../../src/dsc.c
 
 # Additional libraries
 LIBRARIES   := 

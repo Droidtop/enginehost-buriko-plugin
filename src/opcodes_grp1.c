@@ -1,9 +1,14 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 #include "engine.h"
+#include "icon.h"
 #include "opcodes.h"
+#include "nametable.h"
+#include "object.h"
 #include "opcodes_grp1.h"
+#include "renderer.h"
 #include "thread.h"
 
 char* OpcodesGrp1Mnemonics[256] = {
@@ -20,8 +25,8 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x0A  10 */ "--Unknown--",
     /* 0x0B  11 */ "--Unknown--",
     /* 0x0C  12 */ "--Unknown--",
-    /* 0x0D  13 */ "--Unknown--",
-    /* 0x0E  14 */ "--Unknown--",
+    /* 0x0D  13 */ "Unknown_13",
+    /* 0x0E  14 */ "SetFontAdjust",
     /* 0x0F  15 */ "--Unknown--",
     /* 0x10  16 */ "Unknown_16",
     /* 0x11  17 */ "Unknown_17",
@@ -35,10 +40,10 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x19  25 */ "Unknown_25",
     /* 0x1A  26 */ "--Unknown--",
     /* 0x1B  27 */ "--Unknown--",
-    /* 0x1C  28 */ "Unknown_28",
+    /* 0x1C  28 */ "ScaleBitmap",
     /* 0x1D  29 */ "--Unknown--",
     /* 0x1E  30 */ "Unknown_30",
-    /* 0x1F  31 */ "Unknown_31",
+    /* 0x1F  31 */ "DuplicateBitmap",
     /* 0x20  32 */ "--Unknown--",
     /* 0x21  33 */ "--Unknown--",
     /* 0x22  34 */ "--Unknown--",
@@ -56,7 +61,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x2E  46 */ "--Unknown--",
     /* 0x2F  47 */ "--Unknown--",
     /* 0x30  48 */ "--Unknown--",
-    /* 0x31  49 */ "--Unknown--",
+    /* 0x31  49 */ "SetObjectHidden",
     /* 0x32  50 */ "--Unknown--",
     /* 0x33  51 */ "Unknown_51",
     /* 0x34  52 */ "--Unknown--",
@@ -143,10 +148,10 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x85 133 */ "--Unknown--",
     /* 0x86 134 */ "--Unknown--",
     /* 0x87 135 */ "--Unknown--",
-    /* 0x88 136 */ "Unknown_136",
-    /* 0x89 137 */ "Unknown_137",
+    /* 0x88 136 */ "SetWindowFont",
+    /* 0x89 137 */ "SetWindowGapCoefficient",
     /* 0x8A 138 */ "Unknown_138",
-    /* 0x8B 139 */ "Unknown_139",
+    /* 0x8B 139 */ "SetWindowSwingingStyle",
     /* 0x8C 140 */ "Unknown_140",
     /* 0x8D 141 */ "Unknown_141",
     /* 0x8E 142 */ "Unknown_142",
@@ -157,11 +162,11 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x93 147 */ "Unknown_147",
     /* 0x94 148 */ "Unknown_148",
     /* 0x95 149 */ "Unknown_149",
-    /* 0x96 150 */ "Unknown_150",
+    /* 0x96 150 */ "LoadNameTable",
     /* 0x97 151 */ "--Unknown--",
     /* 0x98 152 */ "SetPhoneticMargin",
     /* 0x99 153 */ "--Unknown--",
-    /* 0x9A 154 */ "--Unknown--",
+    /* 0x9A 154 */ "SetFunctionParameter",
     /* 0x9B 155 */ "--Unknown--",
     /* 0x9C 156 */ "Unknown_156",
     /* 0x9D 157 */ "Unknown_157",
@@ -191,9 +196,9 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0xB5 181 */ "--Unknown--",
     /* 0xB6 182 */ "--Unknown--",
     /* 0xB7 183 */ "--Unknown--",
-    /* 0xB8 184 */ "Unknown_184",
+    /* 0xB8 184 */ "CreateIconEx",
     /* 0xB9 185 */ "--Unknown--",
-    /* 0xBA 186 */ "Unknown_186",
+    /* 0xBA 186 */ "SetIconContent",
     /* 0xBB 187 */ "--Unknown--",
     /* 0xBC 188 */ "--Unknown--",
     /* 0xBD 189 */ "--Unknown--",
@@ -279,8 +284,8 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x0A  10 */ NULL,
     /* 0x0B  11 */ NULL,
     /* 0x0C  12 */ NULL,
-    /* 0x0D  13 */ NULL,
-    /* 0x0E  14 */ NULL,
+    /* 0x0D  13 */ Opcode_Grp1_Unknown_13,
+    /* 0x0E  14 */ Opcode_Grp1_SetFontAdjust,
     /* 0x0F  15 */ NULL,
     /* 0x10  16 */ Opcode_Grp1_Unknown_16,
     /* 0x11  17 */ Opcode_Grp1_Unknown_17,
@@ -294,10 +299,10 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x19  25 */ Opcode_Grp1_Unknown_25,
     /* 0x1A  26 */ NULL,
     /* 0x1B  27 */ NULL,
-    /* 0x1C  28 */ Opcode_Grp1_Unknown_28,
+    /* 0x1C  28 */ Opcode_Grp1_ScaleBitmap,
     /* 0x1D  29 */ NULL,
     /* 0x1E  30 */ Opcode_Grp1_Unknown_30,
-    /* 0x1F  31 */ Opcode_Grp1_Unknown_31,
+    /* 0x1F  31 */ Opcode_Grp1_DuplicateBitmap,
     /* 0x20  32 */ NULL,
     /* 0x21  33 */ NULL,
     /* 0x22  34 */ NULL,
@@ -315,7 +320,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x2E  46 */ NULL,
     /* 0x2F  47 */ NULL,
     /* 0x30  48 */ NULL,
-    /* 0x31  49 */ NULL,
+    /* 0x31  49 */ Opcode_Grp1_SetObjectHidden,
     /* 0x32  50 */ NULL,
     /* 0x33  51 */ Opcode_Grp1_Unknown_51,
     /* 0x34  52 */ NULL,
@@ -402,10 +407,10 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x85 133 */ NULL,
     /* 0x86 134 */ NULL,
     /* 0x87 135 */ NULL,
-    /* 0x88 136 */ Opcode_Grp1_Unknown_136,
-    /* 0x89 137 */ Opcode_Grp1_Unknown_137,
+    /* 0x88 136 */ Opcode_Grp1_SetWindowFont,
+    /* 0x89 137 */ Opcode_Grp1_SetWindowGapCoefficient,
     /* 0x8A 138 */ Opcode_Grp1_Unknown_138,
-    /* 0x8B 139 */ Opcode_Grp1_Unknown_139,
+    /* 0x8B 139 */ Opcode_Grp1_SetWindowSwingingStyle,
     /* 0x8C 140 */ Opcode_Grp1_Unknown_140,
     /* 0x8D 141 */ Opcode_Grp1_Unknown_141,
     /* 0x8E 142 */ Opcode_Grp1_Unknown_142,
@@ -416,11 +421,11 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x93 147 */ Opcode_Grp1_Unknown_147,
     /* 0x94 148 */ Opcode_Grp1_Unknown_148,
     /* 0x95 149 */ Opcode_Grp1_Unknown_149,
-    /* 0x96 150 */ Opcode_Grp1_Unknown_150,
+    /* 0x96 150 */ Opcode_Grp1_LoadNameTable,
     /* 0x97 151 */ NULL,
     /* 0x98 152 */ Opcode_Grp1_SetPhoneticMargin,
     /* 0x99 153 */ NULL,
-    /* 0x9A 154 */ NULL,
+    /* 0x9A 154 */ Opcode_Grp1_SetFunctionParameter,
     /* 0x9B 155 */ NULL,
     /* 0x9C 156 */ Opcode_Grp1_Unknown_156,
     /* 0x9D 157 */ Opcode_Grp1_Unknown_157,
@@ -450,9 +455,9 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0xB5 181 */ NULL,
     /* 0xB6 182 */ NULL,
     /* 0xB7 183 */ NULL,
-    /* 0xB8 184 */ Opcode_Grp1_Unknown_184,
+    /* 0xB8 184 */ Opcode_Grp1_CreateIconEx,
     /* 0xB9 185 */ NULL,
-    /* 0xBA 186 */ Opcode_Grp1_Unknown_186,
+    /* 0xBA 186 */ Opcode_Grp1_SetIconContent,
     /* 0xBB 187 */ NULL,
     /* 0xBC 188 */ NULL,
     /* 0xBD 189 */ NULL,
@@ -524,6 +529,51 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0xFF 255 */ NULL,
 };
 
+uint32_t Opcode_Grp1_SetFunctionParameter(Thread_t* thread)
+{
+	int32_t value = (int32_t)Thread_PopStack(thread);
+	uint32_t function = Thread_PopStack(thread);
+
+	uint32_t result = Engine_SetFunctionParameter(function, value);
+	if(result == 0x80000007)
+	{
+		printf("[Thread %d]: %sError: 0x%.8X is not a valid function number\n", thread->threadId, TLevel[thread->level], function);
+		return 0xFFFFFFFF;
+	}
+	if(result == 0x80000008)
+	{
+		printf("[Thread %d]: %sError: %d is not a valid parameter for function 0x%.8X\n", thread->threadId, TLevel[thread->level], value, function);
+		return 0xFFFFFFFF;
+	}
+	return 0;
+}
+
+uint32_t Opcode_Grp1_SetFontAdjust(Thread_t* thread)
+{
+	int32_t originY = (int32_t)Thread_PopStack(thread);
+	int32_t originX = (int32_t)Thread_PopStack(thread);
+	uint32_t scaleY = Thread_PopStack(thread);
+	uint32_t scaleX = Thread_PopStack(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+
+	printf("[Thread %d]: %sAdjust font \"%s\" by %d.%04X/%d.%04X at %d.%04X, %d.%04X\n", thread->threadId, TLevel[thread->level], name != NULL ? name : "(none)", scaleX >> 16, scaleX & 0xFFFF, scaleY >> 16, scaleY & 0xFFFF, originX >> 16, originX & 0xFFFF, originY >> 16, originY & 0xFFFF);
+
+	uint32_t result = Engine_SetFontAdjust(name, scaleX, scaleY, originX, originY);
+	if(result != 0)
+	{
+		printf("[Thread %d]: %sError: %s rejected\n", thread->threadId, TLevel[thread->level], result == 0x80000005 ? "scale" : "origin");
+		return result;
+	}
+	return 0;
+}
+
+uint32_t Opcode_Grp1_Unknown_13(Thread_t* thread)
+{
+	uint32_t value = Thread_PopStack(thread);
+	Engine_SetGrp1FlagUnknown13(value);
+	return 0;
+}
+
 uint32_t Opcode_Grp1_Unknown_16(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
@@ -564,9 +614,47 @@ uint32_t Opcode_Grp1_Unknown_25(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_28(Thread_t* thread)
+/*
+ * Grp1 0x1C (0x00481740 -> 0x00402B90) scales one bitmap into another. The script
+ * pushes the destination, the source, the horizontal rate, the vertical rate and
+ * the filter flag, both rates being 16.16 fixed point, so they pop back to front.
+ * All four of the original's failures are fatal and name what caused them
+ * (0x004EA8DC, 0x004EA858, 0x004EA90C, 0x004EA94C).
+ */
+uint32_t Opcode_Grp1_ScaleBitmap(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int filter      = (int)Thread_PopStack(thread);
+	int rateY       = (int)Thread_PopStack(thread);
+	int rateX       = (int)Thread_PopStack(thread);
+	int source      = (int)Thread_PopStack(thread);
+	int destination = (int)Thread_PopStack(thread);
+
+	Engine_t* engine = thread->engine;
+	switch(Renderer_ScaleBitmap(engine->renderer, destination, source, rateX, rateY, filter))
+	{
+		case 0:
+			return 0;
+		case 1:
+			printf("[Thread %d]: %sError: the specified destination bitmap [ %d ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], destination);
+			return 0xFFFFFFFF;
+		case 2:
+			printf("[Thread %d]: %sError: the specified reference bitmap [ %d ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], source);
+			return 0xFFFFFFFF;
+		case 3:
+			printf("[Thread %d]: %sError: the specified reference bitmap [ %d ] is not TRUECOLOR\n",
+			       thread->threadId, TLevel[thread->level], source);
+			return 0xFFFFFFFF;
+		case 4:
+			printf("[Thread %d]: %sError: an invalid stretch rate [ %d , %d ] was specified\n",
+			       thread->threadId, TLevel[thread->level], rateY, rateX);
+			return 0xFFFFFFFF;
+		default:
+			printf("[Thread %d]: %sError: the smooth scaler for rates [ %d , %d ] is not written yet\n",
+			       thread->threadId, TLevel[thread->level], rateX, rateY);
+			return 0xFFFFFFFF;
+	}
 }
 
 uint32_t Opcode_Grp1_Unknown_30(Thread_t* thread)
@@ -574,9 +662,32 @@ uint32_t Opcode_Grp1_Unknown_30(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_31(Thread_t* thread)
+/*
+ * Grp1 0x1F (0x00481A50 -> 0x00403450) makes one bitmap a copy of another. The
+ * source pops first and the destination second; the destination is created at the
+ * source's own size and pixel mode, the whole surface is copied, and the source's
+ * offset pair goes with it. Both failures are fatal in the original and name the
+ * bitmap that caused them (0x004E8B74, 0x004E8B44).
+ */
+uint32_t Opcode_Grp1_DuplicateBitmap(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int source      = (int)Thread_PopStack(thread);
+	int destination = (int)Thread_PopStack(thread);
+
+	Engine_t* engine = thread->engine;
+	switch(Renderer_DuplicateBitmap(engine->renderer, destination, source))
+	{
+		case 0:
+			return 0;
+		case 1:
+			printf("[Thread %d]: %sError: the specified destination bitmap [ %d ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], destination);
+			return 0xFFFFFFFF;
+		default:
+			printf("[Thread %d]: %sError: the specified source bitmap [ %d ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], source);
+			return 0xFFFFFFFF;
+	}
 }
 
 uint32_t Opcode_Grp1_Unknown_51(Thread_t* thread)
@@ -674,14 +785,65 @@ uint32_t Opcode_Grp1_Unknown_104(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_136(Thread_t* thread)
+uint32_t Opcode_Grp1_SetWindowFont(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value364 = Thread_PopStack(thread);
+	uint32_t value354 = Thread_PopStack(thread);
+	uint32_t style = Thread_PopStack(thread);
+	uint32_t width = Thread_PopStack(thread);
+	uint32_t size = Thread_PopStack(thread);
+	uint32_t number = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	const char* family = Engine_FontNameById(number);
+	if(family == NULL)
+	{
+		printf("[Thread %d]: %sError: the font number [ %d ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], number);
+		return 0xFFFFFFFF;
+	}
+
+	window->field354 = (int)value354;
+	window->field364 = (int)value364;
+	window->fontFamily = family;
+	window->fontSize = (int)size;
+	window->fontWidth = (int)width;
+	window->fontStyle = (int)style;
+	window->fontScaledWidth = (int)((size * width) / 100);
+
+	printf("[Thread %d]: %sWindow font \"%s\" (number %d), size %d, width %d, style %d\n",
+	       thread->threadId, TLevel[thread->level], family, number, size, width, style);
+	return 0;
 }
 
-uint32_t Opcode_Grp1_Unknown_137(Thread_t* thread)
+uint32_t Opcode_Grp1_SetWindowGapCoefficient(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+	if(value > SCREEN_MAX_GAP_COEFFICIENT)
+	{
+		printf("[Thread %d]: %sError: the gap coefficient [ %d ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], value);
+		return 0xFFFFFFFF;
+	}
+	window->gapCoefficient = (int)value;
+	return 0;
 }
 
 uint32_t Opcode_Grp1_Unknown_138(Thread_t* thread)
@@ -689,9 +851,26 @@ uint32_t Opcode_Grp1_Unknown_138(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_139(Thread_t* thread)
+uint32_t Opcode_Grp1_SetWindowSwingingStyle(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t style = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+	if(style > SCREEN_MAX_SWINGING_STYLE)
+	{
+		printf("[Thread %d]: %sError: an invalid message swinging style [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], style);
+		return 0xFFFFFFFF;
+	}
+	window->swingingStyle = (int)style;
+	return 0;
 }
 
 uint32_t Opcode_Grp1_Unknown_140(Thread_t* thread)
@@ -749,9 +928,15 @@ uint32_t Opcode_Grp1_Unknown_149(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_150(Thread_t* thread)
+uint32_t Opcode_Grp1_LoadNameTable(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+
+	uint32_t result = NameTable_Load(text);
+	printf("[Thread %d]: %sLoad the name table from %d bytes of text: %s\n", thread->threadId, TLevel[thread->level], text != NULL ? (int)strlen(text) : 0, result != 0 ? "all of it" : "stopped early");
+
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
 uint32_t Opcode_Grp1_SetPhoneticMargin(Thread_t* thread)
@@ -776,14 +961,69 @@ uint32_t Opcode_Grp1_Unknown_157(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_184(Thread_t* thread)
+// Grp1 0xB8 (0x00485070) pops a window handle, makes a DCIPIconEx out of it
+// (0x0046C7B0 with the kind 1) and pushes the icon's handle. iconmngr._bp does this
+// once and then configures the icon through the opcodes beside this one.
+uint32_t Opcode_Grp1_CreateIconEx(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t windowHandle = Thread_PopStack(thread);
+	uint32_t handle = Icon_Create(windowHandle, ICON_KIND_EX);
+
+	printf("[Thread %d]: %sIcon 0x%08X made from window 0x%08X\n",
+	       thread->threadId, TLevel[thread->level], handle, windowHandle);
+	Thread_PushStack(thread, handle);
+	return 0;
 }
 
-uint32_t Opcode_Grp1_Unknown_186(Thread_t* thread)
+// Grp1 0xBA (0x004850A0) gives an Ex icon its content. It pops the address of the
+// descriptor tree and resolves it, pops the icon's handle, and pushes back what
+// 0x0046CCE0 answers: 0 when the icon took the content, 1 when the handle is not an
+// icon, 4 when it is a plain DCIPIcon rather than an Ex (0x00448590 reads +0x24 and
+// 0x0046CCF9 insists on 1), and 2 or 3 for the two malformed shapes of the tree.
+// The descriptor is freed either way: the icon copies what it keeps.
+uint32_t Opcode_Grp1_SetIconContent(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	const uint32_t* root = (const uint32_t*)Thread_PopAndResolveAddress(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Icon_t* icon = Icon_Resolve(handle);
+	if(icon == NULL)
+	{
+		printf("[Thread %d]: %sIcon 0x%08X does not exist\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		Thread_PushStack(thread, 1);
+		return 0;
+	}
+	if(icon->kind != ICON_KIND_EX)
+	{
+		printf("[Thread %d]: %sIcon 0x%08X is not an Ex icon and has no content\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		Thread_PushStack(thread, 4);
+		return 0;
+	}
+
+	IconContent_t* content = NULL;
+	uint32_t status = Icon_ReadContent(thread, root, &content);
+	if(status != 0)
+	{
+		printf("[Thread %d]: %sIcon 0x%08X was given a malformed content descriptor (%u)\n",
+		       thread->threadId, TLevel[thread->level], handle, status);
+		Thread_PushStack(thread, status);
+		return 0;
+	}
+
+	printf("[Thread %d]: %sIcon 0x%08X content: %u entr%s (",
+	       thread->threadId, TLevel[thread->level], handle, content->entryCount,
+	       content->entryCount == 1 ? "y" : "ies");
+	for(uint32_t i = 0; i < content->entryCount; i++)
+		printf("%s%u parts", i == 0 ? "" : ", ", content->entries[i].partCount);
+	printf(")\n");
+
+	// 0x0044A9E0. The icon takes the descriptor over, and the opcode pushes what it
+	// answers - 0 done, 0x80000001 a bad entry count, 0x80000002 a bad entry.
+	uint32_t result = Icon_SetContent(thread->engine->renderer, icon, content);
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
 uint32_t Opcode_Grp1_Unknown_191(Thread_t* thread)
@@ -791,3 +1031,26 @@ uint32_t Opcode_Grp1_Unknown_191(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
+// Grp1 0x31 (0x00481AE0 -> 0x004620B0 -> 0x004434D0) sets the display object's second
+// hiding flag, +0x0C. It is the twin of Grp0 0x31, which sets +0x04: an object is
+// drawn only when +0x04 is set and +0x0C is clear (0x0041AF00), and the two
+// propagation flags Grp0 0x38 writes decide which of them reaches the children.
+// The script pushes the handle and then the flag, so the flag is popped first, and
+// an unresolvable handle is fatal: "an invalid object handle was specified"
+// (0x004E8BD0).
+uint32_t Opcode_Grp1_SetObjectHidden(Thread_t* thread)
+{
+	uint32_t hidden = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	Object_ApplyHidden(object, (int)hidden);
+	return 0;
+}

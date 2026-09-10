@@ -38,7 +38,7 @@ char* OpcodesExt1Mnemonics[256] = {
     /* 0x1C  28 */ "--Unknown--",
     /* 0x1D  29 */ "--Unknown--",
     /* 0x1E  30 */ "--Unknown--",
-    /* 0x1F  31 */ "--Unknown--",
+    /* 0x1F  31 */ "SetControlMode",
     /* 0x20  32 */ "Unknown_32",
     /* 0x21  33 */ "--Unknown--",
     /* 0x22  34 */ "--Unknown--",
@@ -297,7 +297,7 @@ OpcodePtr_t OpcodesExt1[256] = {
     /* 0x1C  28 */ NULL,
     /* 0x1D  29 */ NULL,
     /* 0x1E  30 */ NULL,
-    /* 0x1F  31 */ NULL,
+    /* 0x1F  31 */ Opcode_Ext1_SetControlMode,
     /* 0x20  32 */ Opcode_Ext1_Unknown_32,
     /* 0x21  33 */ NULL,
     /* 0x22  34 */ NULL,
@@ -697,4 +697,15 @@ uint32_t Opcode_Ext1_Unknown_79(Thread_t* thread)
 uint32_t Opcode_Ext1_Unknown_240(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
+}
+
+uint32_t Opcode_Ext1_SetControlMode(Thread_t* thread)
+{
+	uint32_t mode = Thread_PopStack(thread);
+	if(!Engine_SetControlMode(mode))
+	{
+		printf("[Thread %d]: %sError: %d is not a valid control mode\n", thread->threadId, TLevel[thread->level], mode);
+		return 0xFFFFFFFF;
+	}
+	return 0;
 }

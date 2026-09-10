@@ -31,9 +31,17 @@ INCDIR := src
 # Compile & Link, Compile, Assemble and Link utilities
 CC = gcc #i686-w64-mingw32-gcc
 
-# Compiler, assembler and linker options
-CFLAGS = -g -fsanitize=address `sdl2-config --cflags` -DSPNG_USE_MINIZ
-LDFLAGS = -g -fsanitize=address `sdl2-config --libs` -lm
+# Compiler, assembler and linker options. OPT and SAN are overridable because the
+# boot is composed frame by frame in real time: the whole screen is blended every
+# frame until dirty rectangles exist, and at -O0 under the address sanitiser that
+# is slow enough that the engine's own clock falls far behind the wall clock and a
+# script that waits on time takes minutes to get anywhere. `make OPT=-O2 SAN=`
+# builds the same engine fast enough to watch a boot through; the default is
+# unchanged, sanitised and unoptimised, because that is what finds the bugs.
+OPT ?=
+SAN ?= -fsanitize=address
+CFLAGS = -g $(OPT) $(SAN) `sdl2-config --cflags` -DSPNG_USE_MINIZ
+LDFLAGS = -g $(SAN) `sdl2-config --libs` -lm
 
 # System utilities
 RM = rm -f

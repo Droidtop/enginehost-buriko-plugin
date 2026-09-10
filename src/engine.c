@@ -3,12 +3,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <strings.h>
+#include <sys/stat.h>
 #include <ctype.h>
 #include <time.h>
 #include "engine.h"
+#include "nametable.h"
+#include "icon.h"
+#include "object.h"
+#include "region.h"
+#include "arc.h"
 #include "renderer.h"
 #include "golden_log.h"
+#include "font.h"
 #include "os.h"
+
+int gWheelToObjects = 1;
+uint32_t gMessageInterval = 0;
+uint32_t gMessageDelay = 0;
 
 void Engine_Init(Engine_t* engine)
 {
@@ -21,13 +33,16 @@ void Engine_Init(Engine_t* engine)
 		engine->auxMemory[i] = NULL;
 	engine->globalBufferSize = 0;
 	engine->globalMem = NULL;
-	engine->windowObjectHandle = 0xC0000000;
-	engine->filterObjectHandle = 0x90000000;
-	engine->spriteObjectHandle = 0x80000000;
 	engine->knobObjectHandle = 0xE0000000;
 	engine->nextThreadRequest = 0;
 	engine->renderer = Renderer_Init(engine);
 	engine->window = NULL;
+	// The original engine allocates global memory before it runs a line of script:
+	// its startup path at 0x0046D340 calls the same allocator the InitGlobalMem
+	// opcode uses (0x0046BD10) with level 4, i.e. 0x1000 << 4 = 64 KiB. Scripts
+	// rely on that; ipl._bp reads global memory long before it calls InitGlobalMem,
+	// and without this the read resolves against a NULL base.
+	Engine_InitGlobalMemory(engine, 4);
 	printf("[Engine]: Engine initialised\n");
 }
 
@@ -70,6 +85,9 @@ Thread_t* Engine_CreateThread(Engine_t* engine, uint32_t stackSize, uint32_t cod
 	thread->engine = engine;
 	thread->opcode = 0;
 	thread->waitTicks = 0;
+	thread->process = NULL;
+	thread->messages = NULL;
+	thread->messagesTail = NULL;
 	thread->queuePush = 0;
 
 	thread->silenceBasicOpcodeLog = 1;
@@ -135,66 +153,53 @@ char* Engine_SearchForArchive(const char* archive)
     return NULL;
 }
 
+// The engine runs on Windows, where the file system matches names without regard to
+// case; every lookup here has to do that itself. A match must also be a real file:
+// the original asks GetFileAttributesA and rejects the answer when the directory bit
+// is set, so a directory of the right name is not a file of that name.
+static char* Engine_ResolveInDirectory(const char* directory, const char* name)
+{
+	DIR* dir = opendir(directory);
+	if(dir == NULL)
+		return NULL;
+
+	char* found = NULL;
+	struct dirent* entry;
+	while((entry = readdir(dir)) != NULL)
+	{
+		if(strcasecmp(entry->d_name, name) != 0)
+			continue;
+
+		char path[512];
+		int length = snprintf(path, sizeof(path), "%s/%s", directory, entry->d_name);
+		if(length < 0 || length >= (int)sizeof(path))
+			break;
+
+		// An unpacked file wins over the packed one only if it has content.
+		// Fureraba ships four directories left behind by an unpacker - each a
+		// packlist.txt and one zero-byte stub named after a file that really lives
+		// in the matching archive - and an empty stub must not hide the real thing.
+		struct stat info;
+		if(stat(path, &info) != 0 || !S_ISREG(info.st_mode) || info.st_size == 0)
+			break;
+
+		found = (char*)malloc(strlen(path) + 1);
+		if(found != NULL)
+			strcpy(found, path);
+		break;
+	}
+	closedir(dir);
+	return found;
+}
+
 char* Engine_SearchForFile(const char* archive, const char* filename)
 {
 	char* arcPath = Engine_SearchForArchive(archive);
 	if(arcPath == NULL)
 		return NULL;
-
-    DIR *dir;
-    struct dirent *entry;
-
-    dir = opendir(arcPath);
-    if(dir == NULL)
-    {
-        perror("[Engine]");
-        free(arcPath);
-        return NULL;
-    }
-
-    char fileName[256];
-	strcpy(fileName, filename);
-	for(int i = 0; fileName[i] != '\0'; i++)
-		fileName[i] = tolower(fileName[i]);
-
-	char path[256];
-	int found = 0;
-    while((entry = readdir(dir)) != NULL)
-    {
-        char* name = entry->d_name;
-        int i;
-		for(i = 0; name[i] != '\0'; i++)
-			path[i] = tolower(name[i]);
-		path[i] = 0;
-
-		if(strcmp(path, fileName) == 0)
-		{
-			strcpy(path, name);
-			found = 1;
-			break;
-		}
-    }
-    closedir(dir);
-    if(found)
-    {
-		char fullpath[256];
-		int cx = snprintf(fullpath, 256, "%s/%s", arcPath, path);
-		free(arcPath);
-		if(cx < 0 || cx > 256)
-		{
-			// TODO: Error
-			return NULL;
-		}
-
-		char* finalpath = (char*)malloc(strlen(fullpath) + 1);
-		strcpy(finalpath, fullpath);
-		return finalpath;
-	}
-	else
-	{
-		free(arcPath);
-		return NULL;
-	}
+	char* path = Engine_ResolveInDirectory(arcPath, filename);
+	free(arcPath);
+	return path;
 }
 
 uint8_t* Engine_ReadFile(Engine_t* engine, const char* archive, const char* filename, size_t* outSize)
@@ -203,8 +208,11 @@ uint8_t* Engine_ReadFile(Engine_t* engine, const char* archive, const char* file
 	char* path = Engine_SearchForFile(archive, filename);
 	if(!path)
 	{
-		printf("[Engine]: Failed to find file \"%s\" from archive \"%s\"\n", filename, archive);
-		return 0;
+		// Not unpacked on disk: read it out of the archive as shipped.
+		uint8_t* packed = Arc_ReadFile(archive, filename, outSize);
+		if(packed == NULL)
+			printf("[Engine]: Failed to find file \"%s\" from archive \"%s\"\n", filename, archive);
+		return packed;
 	}
 	printf("[Engine]: Found file at \"%s\"\n", path);
 
@@ -266,8 +274,10 @@ uint32_t Engine_LoadProgram(Engine_t* engine, const char* archive, const char* f
 	uint8_t* code = Engine_ReadFile(engine, archive, filename, &fileSize);
 	if(code == NULL)
 		return 1;
-	Thread_LoadCode(thread, code, filename);
+	uint32_t location = Thread_LoadCode(thread, code, fileSize, filename);
 	free(code);
+	if(location == THREAD_LOAD_FAILED)
+		return 1;
 
 	return thread->threadId;
 }
@@ -279,8 +289,17 @@ uint32_t Engine_ReadFileToMemory(Engine_t* engine, const char* archive, const ch
 	char* path = Engine_SearchForFile(archive, filename);
 	if(!path)
 	{
-		printf("[Engine]: Failed to find file \"%s\" from archive \"%s\"\n", filename, archive);
-		return 0;
+		// Not unpacked on disk: read it out of the archive as shipped.
+		size_t packedSize = 0;
+		uint8_t* packed = Arc_ReadFile(archive, filename, &packedSize);
+		if(packed == NULL)
+		{
+			printf("[Engine]: Failed to find file \"%s\" from archive \"%s\"\n", filename, archive);
+			return 0;
+		}
+		memcpy(buffer, packed, packedSize);
+		free(packed);
+		return (uint32_t)packedSize;
 	}
 	printf("[Engine]: Found file at \"%s\"\n", path);
 
@@ -323,6 +342,23 @@ uint32_t Engine_ReadFileToMemory(Engine_t* engine, const char* archive, const ch
 	return size;
 }
 
+/*
+ * 0x00444C70, the search the thread opcodes use: it walks the tree of threads
+ * from the root down, and a thread that has ended is no longer in it.
+ *
+ * This engine keeps an ended thread in its list so that the scheduler can step
+ * over it and so that its id still resolves, which is why the two lookups are
+ * not the same function. A script that waits for a thread to finish asks this
+ * one, and would wait for ever on the other.
+ */
+Thread_t* Engine_GetLiveThreadById(Engine_t* engine, uint32_t threadId)
+{
+	Thread_t* thread = Engine_GetThreadById(engine, threadId);
+	if(thread != NULL && (thread->flags & THREAD_FLAG_TERMINATED))
+		return NULL;
+	return thread;
+}
+
 Thread_t* Engine_GetThreadById(Engine_t* engine, uint32_t threadId)
 {
 	Thread_t* thread = engine->threads;
@@ -344,6 +380,121 @@ void Engine_Sleep(int microseconds)
 }
 
 int totalTicks = 0;
+// Not the engine's: a bound for the desktop runner, so a run that no longer
+// stops on anything can still end and hand its frame over. Zero is no bound,
+// which is what the game gets.
+int gTickLimit = 0;
+
+// The watch list. It is deliberately kept out of Engine_t: it is a runner
+// facility, set up from the command line before the engine exists.
+typedef struct Watch Watch_t;
+struct Watch
+{
+	uint32_t address;
+	uint32_t width;
+	uint32_t value;
+	int      seen;
+};
+static Watch_t gWatches[ENGINE_MAX_WATCHES];
+static int gWatchCount = 0;
+
+int Engine_AddWatch(uint32_t address, uint32_t width)
+{
+	int tag = address >> 24;
+	if(tag == 0x10 || tag == 0x11 || tag == 0x12)
+	{
+		fprintf(stderr, "[EngineHost]: 0x%.8X is in a thread's own memory, which is a "
+			"different word in every thread; only global (tag 0) and aux (tag 0x40 and "
+			"up) addresses can be watched.\n", address);
+		return 0;
+	}
+	if(width != 1 && width != 2 && width != 4)
+	{
+		fprintf(stderr, "[EngineHost]: A watch is 1, 2 or 4 bytes wide, not %u.\n", width);
+		return 0;
+	}
+	if(gWatchCount == ENGINE_MAX_WATCHES)
+	{
+		fprintf(stderr, "[EngineHost]: No more than %d watches.\n", ENGINE_MAX_WATCHES);
+		return 0;
+	}
+	gWatches[gWatchCount].address = address;
+	gWatches[gWatchCount].width = width;
+	gWatches[gWatchCount].value = 0;
+	gWatches[gWatchCount].seen = 0;
+	gWatchCount++;
+	return 1;
+}
+
+static uint32_t Engine_ReadWatch(Engine_t* engine, Watch_t* watch, int* ok)
+{
+	int tag = watch->address >> 24;
+	uint32_t offset = watch->address & 0x00FFFFFF;
+	uint8_t* base = NULL;
+	uint32_t size = 0;
+
+	if(tag == 0)
+	{
+		base = engine->globalMem;
+		size = engine->globalBufferSize;
+	}
+	else if(tag >= 0x40 && (tag >> 1) - 32 < 48)
+	{
+		base = engine->auxMemory[(tag >> 1) - 32];
+		size = engine->auxMemorySize[(tag >> 1) - 32];
+	}
+
+	// Global memory is re-created larger as the boot goes on and an aux area is
+	// freed when the script is done with it, so an address that is out of the
+	// area today may be in it later: the watch simply says nothing until it is.
+	if(base == NULL || (uint64_t)offset + watch->width > (uint64_t)size)
+	{
+		*ok = 0;
+		return 0;
+	}
+	*ok = 1;
+	if(watch->width == 1)
+		return *(uint8_t*)(base + offset);
+	if(watch->width == 2)
+		return *(uint16_t*)(base + offset);
+	return *(uint32_t*)(base + offset);
+}
+
+void Engine_CheckWatches(Engine_t* engine, Thread_t* thread, uint32_t address)
+{
+	for(int i = 0; i < gWatchCount; i++)
+	{
+		int ok = 0;
+		uint32_t value = Engine_ReadWatch(engine, &gWatches[i], &ok);
+		if(!ok)
+			continue;
+		if(!gWatches[i].seen)
+		{
+			gWatches[i].seen = 1;
+			gWatches[i].value = value;
+			printf("[Watch]: 0x%.8X starts as 0x%.8X\n", gWatches[i].address, value);
+			continue;
+		}
+		if(value == gWatches[i].value)
+			continue;
+		printf("[Watch]: 0x%.8X 0x%.8X -> 0x%.8X, by thread %d at %s (tick %d)\n",
+		       gWatches[i].address, gWatches[i].value, value, thread->threadId,
+		       Thread_Where(thread, address), totalTicks);
+		gWatches[i].value = value;
+	}
+}
+// A thread that has ended stays in the list so its id still resolves, but it must
+// never be scheduled again.
+static int Engine_HasRunnableThread(Engine_t* engine)
+{
+	for(Thread_t* thread = engine->threads; thread != NULL; thread = thread->previousThread)
+	{
+		if(!(thread->flags & THREAD_FLAG_TERMINATED))
+			return 1;
+	}
+	return 0;
+}
+
 void Engine_Execute(Engine_t* engine)
 {
 	engine->isRunning = 1;
@@ -351,9 +502,21 @@ void Engine_Execute(Engine_t* engine)
 	Thread_t* thread = engine->threads;
 	Thread_t* nextThread;
 	int lastSleep = 0;
+	// 0x0048CD5F runs one interpreter step and then the whole of a frame's work,
+	// of which composing the screen (0x00461D20) is one call. It is the deadline in
+	// 0x00566744, not the step count, that decides when that happens, so the frame
+	// is timed here too rather than drawn on every tick.
+	uint32_t nextFrame = 0;
 	while(engine->isRunning)
 	{
 		OS_Poll();
+
+		uint32_t frameNow = OS_GetTicks();
+		if(frameNow >= nextFrame)
+		{
+			Renderer_DrawScreen(engine->renderer);
+			nextFrame = frameNow + OS_FrameInterval();
+		}
 
 		if(GoldenLogTotal)
 		{
@@ -364,17 +527,24 @@ void Engine_Execute(Engine_t* engine)
 				int delta = GoldenLog[GoldenLogIndex].time - lastSleep;
 				if(delta > 20000)
 				{
-					Renderer_DrawScreen(engine->renderer);
 					lastSleep = GoldenLog[GoldenLogIndex].time;
 					Engine_Sleep(delta);
 				}
 			}
 		}
 
-		if(thread->waitTicks == 0)
-			Engine_ExecuteThread(engine, thread->threadId, 1);
-		else
-			thread->waitTicks--;
+		// 0x0048CFB2: a thread waiting on a process runs the process instead of
+		// an instruction, and only runs again once the process is finished.
+		int waiting = 0;
+		if(thread->flags & THREAD_FLAG_WAITING)
+			waiting = (Thread_RunProcess(thread) == 0);
+		if(!waiting)
+		{
+			if(thread->waitTicks == 0)
+				Engine_ExecuteThread(engine, thread->threadId, 1);
+			else
+				thread->waitTicks--;
+		}
 		if(engine->nextThreadRequest)
 		{
 			nextThread = Engine_GetThreadById(engine, engine->nextThreadRequest);
@@ -384,9 +554,41 @@ void Engine_Execute(Engine_t* engine)
 			nextThread = Engine_GetThreadById(engine, thread->threadId + 1);
 		if(nextThread == NULL)
 			nextThread = Engine_GetThreadById(engine, 2);
+
+		if(!Engine_HasRunnableThread(engine))
+		{
+			printf("[Engine]: Every thread has ended.\n");
+			engine->isRunning = 0;
+			break;
+		}
+		if(gTickLimit != 0 && totalTicks >= gTickLimit)
+		{
+			printf("[Engine]: The %d tick limit was reached.\n", gTickLimit);
+			engine->isRunning = 0;
+			break;
+		}
+		while(nextThread == NULL || (nextThread->flags & THREAD_FLAG_TERMINATED))
+		{
+			uint32_t after = (nextThread == NULL) ? 1 : nextThread->threadId;
+			nextThread = Engine_GetThreadById(engine, after + 1);
+			if(nextThread == NULL)
+				nextThread = Engine_GetThreadById(engine, 2);
+		}
 		thread = nextThread;
 	}
 	printf("[Engine]: Engine stopped. Executed %d ticks...\n", totalTicks);
+
+	// A thread that spins on basic opcodes alone prints nothing while it does it,
+	// so where each thread had got to is the one thing a finished run cannot
+	// otherwise say. The list is oldest thread first.
+	for(Thread_t* t = engine->threads; t != NULL; t = t->previousThread)
+	{
+		if(t->flags & THREAD_FLAG_TERMINATED)
+			continue;
+		printf("[Engine]: Thread %d is at %s%s\n", t->threadId,
+		       Thread_Where(t, Thread_GetInstructionPointer(t)),
+		       (t->flags & THREAD_FLAG_WAITING) ? " (waiting on a process)" : "");
+	}
 }
 
 void Engine_ExecuteThread(Engine_t* engine, uint32_t threadId, int ticks)
@@ -407,10 +609,12 @@ void Engine_ExecuteThread(Engine_t* engine, uint32_t threadId, int ticks)
 			Thread_PushStack(thread, thread->queuePushQueue[thread->queuePush]);
 		}
 
+		uint32_t watchAddress = Thread_GetInstructionPointer(thread);
 		uint32_t res = Thread_Execute(thread);
+		Engine_CheckWatches(engine, thread, watchAddress);
 		if(res == 0xFFFFFFFF)
 		{
-			printf("[Engine]: Stub opcode encountered. Stopping.\n");
+			printf("[Engine]: Stub opcode encountered in %s. Stopping.\n", Thread_Where(thread, Thread_GetInstructionPointer(thread)));
 			engine->isRunning = 0;
 			break;
 		}
@@ -432,9 +636,20 @@ void Engine_ExecuteThread(Engine_t* engine, uint32_t threadId, int ticks)
 			engine->isRunning = 0;
 			break;
 		}
+		// Result 4 is the outermost frame returning: the thread is over. The
+		// original handles it at 0x0048D06C by setting bit 31 of the thread's flags
+		// word at +0x70 and, unlike a yield, staying where it is instead of stepping
+		// on; the scheduler sees the mark on its next visit and unlinks the thread.
+		if(res == 4)
+		{
+			thread->flags |= THREAD_FLAG_TERMINATED;
+			thread->running = 0;
+			printf("[Engine]: Thread %d has ended.\n", thread->threadId);
+			break;
+		}
 		if(res != 0 && res != 1 && res != 2 && res != 3)
 		{
-			printf("[Engine]: Non-zero result from opcode. Stopping.\n");
+			printf("[Engine]: Non-zero result from opcode (%u / 0x%.8X). Stopping.\n", res, res);
 			engine->isRunning = 0;
 			break;
 		}
@@ -481,6 +696,379 @@ void SetGlobalUnknownVal001(uint32_t value)
 	gUnknownVal001 = value;
 }
 
+// Sys0 0x52 in the original engine (fureraba.exe 0x004891D0) pops one value and
+// stores it in a global at 0x00503EF8. The only consumer is the main loop
+// (0x0048CE1E): when no timed event is pending it passes this value to the frame
+// wait (0x00493C70 -> 0x004528A0), which turns it into a SetWaitableTimer delay of
+// n milliseconds (0.5 ms for the special case n == 1). Zero means "do not sleep on
+// this path", and the loop falls back to its own one-millisecond wait.
+uint32_t gIdleWaitTime = 0;
+void Engine_SetIdleWaitTime(uint32_t value)
+{
+	gIdleWaitTime = value;
+}
+
+// Sys1 0x60 (fureraba.exe 0x0048C260 -> 0x004611C0) fills one of the engine's eight
+// display-mode slots. The original keeps two parallel eight-entry arrays, widths at
+// 0x00506B8C and heights at 0x00506BAC; the window-creation path at 0x004612A0 reads
+// slot 0x00506B88 out of them and adds the window border extents before sizing the
+// window, which is what identifies the two arrays as width and height. The return
+// value is a status the script reads back: 1 for a slot out of range, 2 if either
+// dimension is zero, 0 on success. Nothing is written in the two failure cases.
+// The eight slots start out filled, not empty: the original's two arrays are
+// initialised data (0x00506B8C and 0x00506BAC), and a game that never calls Sys1
+// 0x60 still gets a size out of them. Fureraba rewrites only slot 7 and then asks
+// for slot 6, so without these defaults it would ask for a screen of no size.
+uint32_t gDisplayModeWidth[8] =
+	{ 320, 640, 800, 1024, 1024, 1024, 1280, 1920 };
+uint32_t gDisplayModeHeight[8] =
+	{ 240, 480, 600,  768,  576,  600,  720, 1080 };
+uint32_t Engine_SetDisplayModeSize(uint32_t index, uint32_t width, uint32_t height)
+{
+	if(index >= 8)
+		return 1;
+	if(width == 0 || height == 0)
+		return 2;
+	gDisplayModeWidth[index] = width;
+	gDisplayModeHeight[index] = height;
+	return 0;
+}
+
+// Sys1 0x62 (fureraba.exe 0x0048C2C0 -> 0x0045E9B0) sets a display flag at
+// 0x0050721C, rejecting anything above 1 and reporting success as 1 / failure as 0.
+// Two places read it back through the getter at 0x0045E9D0: the adapter chooser at
+// 0x0045E670 only walks IDirect3D9::GetAdapterMonitor to find the adapter holding
+// the game window when the flag is 1, and the dialog scopes at 0x00460140 and
+// 0x0045F6A0 only call IDirect3DDevice9::SetDialogBoxMode when it is 0. What the
+// game calls this option is not established from the binary, so it keeps the
+// engine's own numbering.
+// Sys0 0x60 (fureraba.exe 0x00489460 -> 0x00461290) chooses which of the eight
+// slots above the game runs in, and in which pixel mode. The original refuses a
+// pixel mode of 2 or more with "an invalid pixel mode was set" (0x004EBA28) and a
+// size index of 8 or more with "an invalid screen size was set" (0x004EBA50), both
+// fatal, and then hands the three values to 0x00461290, which sizes the window from
+// the slot plus the window border extents and builds the drawing device.
+// The third argument reaches 0x00461290 as its [ebp+0x10] and decides between
+// building the device there and a shorter path; what the game calls it is not
+// established from the binary, so it is carried and named by its position rather
+// than guessed at.
+uint32_t gDisplaySizeIndex = 0;
+uint32_t gDisplayPixelMode = 0;
+uint32_t gDisplayModeThirdArgument = 0;
+void Engine_SetDisplayMode(Engine_t* engine, uint32_t sizeIndex, uint32_t pixelMode, uint32_t third)
+{
+	gDisplaySizeIndex = sizeIndex;
+	gDisplayPixelMode = pixelMode;
+	gDisplayModeThirdArgument = third;
+	if(engine != NULL && engine->window != NULL)
+		SDL_SetWindowSize(engine->window,
+		                  (int)gDisplayModeWidth[sizeIndex],
+		                  (int)gDisplayModeHeight[sizeIndex]);
+	printf("[Engine]: Display mode is size %u (%ux%u), pixel mode %u\n",
+	       sizeIndex, gDisplayModeWidth[sizeIndex], gDisplayModeHeight[sizeIndex], pixelMode);
+}
+
+uint32_t Engine_ScreenWidth(void)
+{
+	return gDisplayModeWidth[gDisplaySizeIndex & 7];
+}
+
+uint32_t Engine_ScreenHeight(void)
+{
+	return gDisplayModeHeight[gDisplaySizeIndex & 7];
+}
+
+uint32_t gDisplayFlagUnknown98 = 0;
+uint32_t Engine_SetDisplayFlagUnknown98(uint32_t value)
+{
+	if(value > 1)
+		return 0;
+	gDisplayFlagUnknown98 = value;
+	return 1;
+}
+
+// Grp0 0x06 (fureraba.exe 0x004796B0 -> 0x00461FB0 -> 0x00442F50) moves the mouse
+// cursor. It writes x and y into the input object at +0x40 and +0x44 and raises the
+// pending flag at +0x4C of its child object, so the move is applied by the input
+// pump rather than immediately. The reader at 0x00442F70 only hands the position
+// back when both coordinates are inside the client area, which is what pins +0x40
+// as x and +0x44 as y. The original stores the request unclamped; the clamp is on
+// the read side, so this does the same.
+int gMousePosX = 0;
+int gMousePosY = 0;
+int gMousePosPending = 0;
+void Engine_SetMousePosition(int x, int y)
+{
+	gMousePosX = x;
+	gMousePosY = y;
+	gMousePosPending = 1;
+}
+
+// Grp1 0x0D (fureraba.exe 0x004808D0 -> 0x00469100 -> 0x0042DD10) pops one value
+// into the global at 0x00565B60 and pushes nothing. The single reader, at
+// 0x0042E1F2, is a gate: when the global is zero the routine keeps the value it has
+// just computed, and when it is non-zero it consults 0x0042DC40 and discards that
+// value if the query answers 2. What the option is called is not established from
+// the binary, so it keeps the engine's numbering.
+uint32_t gGrp1FlagUnknown13 = 0;
+void Engine_SetGrp1FlagUnknown13(uint32_t value)
+{
+	gGrp1FlagUnknown13 = value;
+}
+
+// Ext0 0xC7 (fureraba.exe 0x00479440 -> 0x004690E0 -> 0x0042D900) fills the engine's
+// font substitution table: a singly linked list of { name, replacement } whose head
+// is 0x00565B5C, plus a fallback replacement at 0x00565B4C used when a name is not
+// listed. The text path at 0x0042DF60 is what identifies it: when the face name a
+// script asked for does not match the one already selected, it looks the name up
+// through 0x0042ECB0 and draws with whatever comes back. A NULL name sets the
+// fallback instead of an entry, and a NULL replacement clears the entry's own
+// replacement without removing the entry - both are the original's behaviour.
+FontSubstitution_t* gFontSubstitutions = NULL;
+char* gFontSubstitutionDefault = NULL;
+
+static char* Engine_DupString(const char* str)
+{
+	if(str == NULL)
+		return NULL;
+	char* copy = (char*)malloc(strlen(str) + 1);
+	if(copy != NULL)
+		strcpy(copy, str);
+	return copy;
+}
+
+void Engine_SetFontSubstitution(const char* name, const char* replacement)
+{
+	if(name == NULL)
+	{
+		free(gFontSubstitutionDefault);
+		gFontSubstitutionDefault = Engine_DupString(replacement);
+		return;
+	}
+
+	FontSubstitution_t* entry = gFontSubstitutions;
+	while(entry != NULL && strcmp(entry->name, name) != 0)
+		entry = entry->next;
+
+	if(entry == NULL)
+	{
+		entry = (FontSubstitution_t*)malloc(sizeof(FontSubstitution_t));
+		if(entry == NULL)
+			return;
+		entry->name = Engine_DupString(name);
+		entry->replacement = NULL;
+		// The original starts a fresh entry's charset at -1 (0x0042D9A0), i.e. "not
+		// stated", until Ext0 0xC1 sets one.
+		entry->charset = -1;
+		entry->next = gFontSubstitutions;
+		gFontSubstitutions = entry;
+	}
+	else
+	{
+		free(entry->replacement);
+		entry->replacement = NULL;
+	}
+
+	entry->replacement = Engine_DupString(replacement);
+}
+
+const char* Engine_GetFontSubstitution(const char* name)
+{
+	for(FontSubstitution_t* entry = gFontSubstitutions; entry != NULL; entry = entry->next)
+	{
+		if(strcmp(entry->name, name) == 0)
+			return entry->replacement != NULL ? entry->replacement : gFontSubstitutionDefault;
+	}
+	return gFontSubstitutionDefault;
+}
+
+// Ext0 0xC4 (fureraba.exe 0x004793E0 -> 0x004690D0 -> 0x0042DBC0) enumerates the
+// installed font families. The original walks EnumFontFamiliesEx with an all-zero
+// LOGFONT, so it sees every family, and its callback at 0x0042ED30 keeps three
+// running totals: how many families it saw, where to write the next name, and how
+// many bytes the names take with their terminators. Which of those it returns
+// depends on the argument: with no buffer it returns the byte count, so a script can
+// size a buffer, and with a buffer it fills it with NUL-terminated names and returns
+// how many it wrote. Fureraba calls it both ways in that order.
+// Ext0 0xC1 (fureraba.exe 0x00479340 -> 0x00468BF0) does two things with one font
+// name. First it records which character set the font should be looked up under, in
+// the same table Ext0 0xC7 uses: 0 from the script means SHIFTJIS_CHARSET (0x80) and
+// 1 means ANSI_CHARSET (0), which is what the query at 0x0042DC80 drops into
+// LOGFONT.lfCharSet before calling EnumFontFamiliesEx. Anything else leaves the
+// entry alone. Then it interns the name in a second list (head 0x0056631C, counter
+// 0x00566314) and returns the id, so later opcodes can name the font by number.
+void Engine_SetFontCharset(const char* name, int charset)
+{
+	if(name == NULL)
+		return;
+
+	FontSubstitution_t* entry = gFontSubstitutions;
+	while(entry != NULL && strcmp(entry->name, name) != 0)
+		entry = entry->next;
+
+	if(entry == NULL)
+	{
+		entry = (FontSubstitution_t*)malloc(sizeof(FontSubstitution_t));
+		if(entry == NULL)
+			return;
+		entry->name = Engine_DupString(name);
+		entry->replacement = NULL;
+		entry->charset = -1;
+		entry->next = gFontSubstitutions;
+		gFontSubstitutions = entry;
+	}
+
+	entry->charset = charset;
+}
+
+FontName_t* gFontNames = NULL;
+static uint32_t gFontNameCounter = 0;
+
+uint32_t Engine_InternFontName(const char* name)
+{
+	if(name == NULL)
+		return 0;
+
+	for(FontName_t* entry = gFontNames; entry != NULL; entry = entry->next)
+	{
+		if(strcmp(entry->name, name) == 0)
+			return entry->id;
+	}
+
+	FontName_t* entry = (FontName_t*)malloc(sizeof(FontName_t));
+	if(entry == NULL)
+		return 0;
+	entry->id = gFontNameCounter++;
+	entry->name = Engine_DupString(name);
+	entry->next = gFontNames;
+	gFontNames = entry;
+	return entry->id;
+}
+
+const char* Engine_FontNameById(uint32_t id)
+{
+	for(FontName_t* entry = gFontNames; entry != NULL; entry = entry->next)
+	{
+		if(entry->id == id)
+			return entry->name;
+	}
+	return NULL;
+}
+
+// Grp1 0x0E (fureraba.exe 0x004808F0 -> 0x00461F10 -> 0x00407BC0 -> 0x0042EEB0)
+// attaches a scale and an origin to a named font, which it finds by walking the list
+// at +0xAC of the object held in 0x00566750. Fureraba calls it once for every family
+// Ext0 0xC4 handed back, with all four values zero, which is what identifies the name
+// as a font family rather than anything else. The script sees only whether it was
+// accepted: the two rejections have their own messages in the binary, "invalid scale"
+// and "invalid coordinates", and both are fatal.
+//
+// The validator at 0x0042EC10 is what says how the numbers are meant. Both scales
+// are 16.16 fixed point and must be between 1.0 and 2.0, except that scaleX may also
+// be 0, meaning "use scaleY"; all four values zero is accepted as a reset. The origin
+// is 16.16 too, and each axis must be no larger than 1.0 - 1/scale - that is, the
+// visible rectangle is 1/scale of the whole and the origin may move it only as far
+// as its own far edge. The original computes that bound in double precision as
+// 65536.0 - 4294967296.0 / scale and truncates it, so this does the same.
+FontAdjust_t* gFontAdjusts = NULL;
+
+static int32_t Engine_FontAdjustOriginLimit(uint32_t scale)
+{
+	return (int32_t)(65536.0 - 4294967296.0 / (double)scale);
+}
+
+uint32_t Engine_SetFontAdjust(const char* name, uint32_t scaleX, uint32_t scaleY, int32_t originX, int32_t originY)
+{
+	if(scaleX == 0 && scaleY == 0 && originX == 0 && originY == 0)
+		return 0;
+
+	if((scaleX < 0x10000 || scaleX > 0x20000) && scaleX != 0)
+		return 0x80000005;
+	if(scaleY < 0x10000 || scaleY > 0x20000)
+		return 0x80000005;
+
+	uint32_t reference = scaleX != 0 ? scaleX : scaleY;
+	if(originX > Engine_FontAdjustOriginLimit(reference))
+		return 0x80000006;
+	if(originY > Engine_FontAdjustOriginLimit(scaleY))
+		return 0x80000006;
+
+	if(name == NULL)
+		return 0;
+
+	FontAdjust_t* entry = gFontAdjusts;
+	while(entry != NULL && strcmp(entry->name, name) != 0)
+		entry = entry->next;
+
+	if(entry == NULL)
+	{
+		entry = (FontAdjust_t*)malloc(sizeof(FontAdjust_t));
+		if(entry == NULL)
+			return 0;
+		entry->name = Engine_DupString(name);
+		entry->next = gFontAdjusts;
+		gFontAdjusts = entry;
+	}
+
+	entry->scaleX = scaleX;
+	entry->scaleY = scaleY;
+	entry->originX = originX;
+	entry->originY = originY;
+	return 0;
+}
+
+// Grp1 0x9A (fureraba.exe 0x00484A90 -> 0x00463490 -> 0x00434490) sets one of four
+// values by number. The engine calls the selector a "function number" and the value
+// a "function parameter" in its own two error messages, and rejects anything else:
+// an unknown number is fatal, and so is a negative value for function 0x80000001,
+// which is the only one that checks its parameter. The four destinations are
+// 0x0050764C, 0x00565CF4, 0x00507654 and 0x00565D30; what they mean is not
+// established from the binary, so they are held by number here.
+uint32_t gFunctionParameters[4] = { 0 };
+
+uint32_t Engine_SetFunctionParameter(uint32_t function, int32_t value)
+{
+	int slot;
+	switch(function)
+	{
+		case 0x00000000: slot = 0; break;
+		case 0x80000000: slot = 1; break;
+		case 0x80000001:
+			if(value < 0)
+				return 0x80000008;
+			slot = 2;
+			break;
+		case 0x80000002: slot = 3; break;
+		default:
+			return 0x80000007;
+	}
+
+	gFunctionParameters[slot] = (uint32_t)value;
+	return 0;
+}
+
+uint32_t Engine_EnumerateFontFamilies(char* buffer)
+{
+	Font_Init();
+
+	uint32_t count = Font_GetFamilyCount();
+	uint32_t bytes = 0;
+
+	for(uint32_t i = 0; i < count; i++)
+	{
+		const char* name = Font_GetFamilyName(i);
+		size_t length = strlen(name) + 1;
+		if(buffer != NULL)
+		{
+			memcpy(buffer, name, length);
+			buffer += length;
+		}
+		bytes += (uint32_t)length;
+	}
+
+	return buffer != NULL ? count : bytes;
+}
+
 int Engine_InitGlobalMemory(Engine_t* engine, uint32_t level)
 {
 	if(level < 0 || level >= 13)
@@ -519,6 +1107,7 @@ uint32_t Engine_AllocAuxMemory(Engine_t* engine, uint32_t size)
 		if(engine->auxMemory[i] != NULL)
 			continue;
 		engine->auxMemory[i] = (uint8_t*)malloc(size);
+		engine->auxMemorySize[i] = size;
 		printf("[Engine]: Initialised aux memory in slot %d with size 0x%.8X\n", i, size);
 		return (i + 32) * 0x2000000;
 	}
@@ -530,6 +1119,32 @@ uint8_t* Engine_GetAuxMemory(Engine_t* engine, uint8_t slot)
 	if(slot >= 48)
 		return NULL;
 	return NULL;
+}
+
+// Sys0 0x21 (fureraba.exe 0x00488550 -> 0x0048DEA0) releases the aux memory area an
+// address belongs to. The original finds the area by decoding the address the same
+// way its resolver does, frees the block and clears the slot, and answers 1. A null
+// address is accepted and answers 1 without freeing anything. An address that is not
+// in any allocated area is fatal - "an invalid address was given as the target of a
+// global memory free" - so this reports it and stops the thread rather than ignoring
+// it.
+uint32_t Engine_FreeAuxMemory(Engine_t* engine, uint32_t address)
+{
+	if(address == 0)
+		return 1;
+
+	int tag = address >> 24;
+	if(tag < 0x40)
+		return 0;
+
+	int slot = (tag >> 1) - 32;
+	if(slot < 0 || slot >= 48 || engine->auxMemory[slot] == NULL)
+		return 0;
+
+	free(engine->auxMemory[slot]);
+	engine->auxMemory[slot] = NULL;
+	printf("[Engine]: Freed aux memory in slot %d\n", slot);
+	return 1;
 }
 
 uint32_t gFrameTimeMs = 0;
@@ -592,12 +1207,614 @@ void Engine_SetAntialiasingLevel(int level)
 	return;
 }
 
+// Sys0 0x66 (fureraba.exe 0x00489580) is the window title, not the cursor shape:
+// it resolves one script address and hands the string to SetWindowTextA on the game
+// window, then, if that worked, caches it in a 256-byte buffer at 0x00506A88. A
+// title of 256 characters or more is not cached, though the window still gets it.
+//
+// Sys0 0x67 (0x004895B0) is the cursor shape. It accepts 0 to 4, which the window
+// procedure at 0x00498FBC uses to index the cursor handles at 0x005666C4 before
+// calling SetCursor; anything higher is fatal, with its own message about an invalid
+// mouse cursor shape number.
+char gWindowTitle[256] = { 0 };
+void Engine_SetWindowTitle(const char* title)
+{
+	if(title == NULL)
+		return;
+	if(strlen(title) < sizeof(gWindowTitle))
+		strcpy(gWindowTitle, title);
+	printf("[Engine]: Window title is now \"%s\"\n", title);
+}
+
 int gCursorShape = 0;
+
+// Named record tables. A script creates a table of fixed-size records keyed by name,
+// then writes records into it by name. The engine keeps them as a singly linked list
+// of tables at 0x005669A4, each 12 bytes: the id, the container, and the next table.
+// Ids come from the counter at 0x0056699C, which is incremented before use, so the
+// first table is 1 and an id is never reused while the engine runs. The container is
+// the 0x14-byte structure initialised by 0x00452910: the record size at +0x00 (with
+// a size of zero replaced by 0x400) and the record list head at +0x10. Each record
+// (0x00452960) is 16 bytes: the key's hash, a copy of the key string, a buffer of
+// exactly one record's bytes, and the next record.
+//
+// The opcodes and the error codes they push back:
+//   Sys0 0xD0 (0x0048A860 -> 0x00496230) create: pops the record size and then the
+//       address to write the new id to. A record size of 0 or 1 is refused with
+//       0x80000001 and nothing is created.
+//   Sys0 0xD1 (0x0048A8A0 -> 0x004962E0) destroy: pops an id. An id that is not
+//       there is 0x80000002.
+//   Sys0 0xD2 (0x0048A8D0 -> 0x00496350) set: pops the address to read the record
+//       from, then the key, then the id. An unknown id is 0x80000002. An existing
+//       key is overwritten in place, a new one is added.
+//   Sys0 0xD3 (0x0048A910 -> 0x00496380 -> 0x00452A40) delete: pops the key and
+//       then the id, unlinks the record and frees its key, its buffer and the
+//       record. A key that is not there is 0x80000003.
+//   Sys0 0xD4 (0x0048A940 -> 0x004963B0) read: pops an index, then a key, then
+//       the id, then where to put the record, and has two forms decided by
+//       whether the key resolved to anything. With a key it is looked up by name
+//       (0x00452AE0); with a null key the INDEX names the record instead, by
+//       position in the table's own list (0x00452B80). Either way a record that
+//       is not there is 0x80000003 and a whole record's bytes are copied out.
+// Success is 0 in every case. Sys0 0xCF builds an 0x28-byte iterator over a table
+// and is a larger piece again.
+//
+// New records go on the END of the list (0x004529C2 links the node the walk
+// stopped on), which is what makes 0xD4's index form mean insertion order.
+
+typedef struct RecordTableEntry
+{
+	char* key;
+	uint8_t* value;
+	struct RecordTableEntry* next;
+} RecordTableEntry_t;
+
+typedef struct RecordTable
+{
+	uint32_t id;
+	uint32_t recordSize;
+	RecordTableEntry_t* entries;
+	struct RecordTable* next;
+} RecordTable_t;
+
+static RecordTable_t* gRecordTables = NULL;
+static uint32_t gRecordTableCounter = 0;
+
+static RecordTable_t* Engine_FindRecordTable(uint32_t id)
+{
+	RecordTable_t* table = gRecordTables;
+	while(table != NULL && table->id != id)
+		table = table->next;
+	return table;
+}
+
+static Ring_t*  gRings = NULL;
+static uint32_t gRingCounter = 0;
+
+static Ring_t* Engine_FindRing(uint32_t id)
+{
+	for(Ring_t* ring = gRings; ring != NULL; ring = ring->next)
+	{
+		if(ring->id == id)
+			return ring;
+	}
+	return NULL;
+}
+
+static void Engine_FreeRingItem(RingItem_t* item)
+{
+	free(item->record);
+	free(item);
+}
+
+// 0x0046C350. A zero capacity or record size is refused with 2, before
+// anything is allocated and before the id counter moves.
+uint32_t Engine_CreateRing(uint32_t capacity, uint32_t recordSize, uint32_t* idOut)
+{
+	if(capacity == 0 || recordSize == 0)
+		return 2;
+	Ring_t* ring = (Ring_t*)malloc(sizeof(Ring_t));
+	if(ring == NULL)
+		return 2;
+	ring->id = ++gRingCounter;
+	ring->capacity = capacity;
+	ring->recordSize = recordSize;
+	ring->items = NULL;
+	ring->next = gRings;
+	gRings = ring;
+	if(idOut != NULL)
+		*idOut = ring->id;
+	printf("[Engine]: Created record list %d, %d records of %d bytes\n",
+		ring->id, capacity, recordSize);
+	return 0;
+}
+
+// 0x0046C3A0, which frees every record with the list itself.
+uint32_t Engine_DestroyRing(uint32_t id)
+{
+	Ring_t** link = &gRings;
+	while(*link != NULL)
+	{
+		Ring_t* ring = *link;
+		if(ring->id != id)
+		{
+			link = &ring->next;
+			continue;
+		}
+		*link = ring->next;
+		while(ring->items != NULL)
+		{
+			RingItem_t* item = ring->items;
+			ring->items = item->next;
+			Engine_FreeRingItem(item);
+		}
+		free(ring);
+		printf("[Engine]: Destroyed record list %d\n", id);
+		return 0;
+	}
+	return 1;
+}
+
+// 0x0046C420.
+uint32_t Engine_RingCount(uint32_t id, uint32_t* countOut)
+{
+	Ring_t* ring = Engine_FindRing(id);
+	if(ring == NULL)
+		return 1;
+	uint32_t count = 0;
+	for(RingItem_t* item = ring->items; item != NULL; item = item->next)
+		count++;
+	if(countOut != NULL)
+		*countOut = count;
+	return 0;
+}
+
+// 0x0046C460: the new record goes to the front, and everything from the
+// capacity onwards is freed, so index 0 is always the newest.
+uint32_t Engine_RingAdd(uint32_t id, const uint8_t* record)
+{
+	Ring_t* ring = Engine_FindRing(id);
+	if(ring == NULL)
+		return 1;
+	RingItem_t* item = (RingItem_t*)malloc(sizeof(RingItem_t));
+	if(item == NULL)
+		return 1;
+	item->record = (uint8_t*)malloc(ring->recordSize);
+	if(item->record == NULL)
+	{
+		free(item);
+		return 1;
+	}
+	memcpy(item->record, record, ring->recordSize);
+	item->next = ring->items;
+	ring->items = item;
+
+	RingItem_t** link = &ring->items;
+	for(uint32_t index = 0; *link != NULL; index++)
+	{
+		if(index < ring->capacity)
+		{
+			link = &(*link)->next;
+			continue;
+		}
+		RingItem_t* extra = *link;
+		*link = NULL;
+		while(extra != NULL)
+		{
+			RingItem_t* next = extra->next;
+			Engine_FreeRingItem(extra);
+			extra = next;
+		}
+		break;
+	}
+	return 0;
+}
+
+// 0x0046C500. 2 when the list is shorter than the index.
+uint32_t Engine_RingRead(uint32_t id, uint32_t index, uint8_t* out)
+{
+	Ring_t* ring = Engine_FindRing(id);
+	if(ring == NULL)
+		return 1;
+	RingItem_t* item = ring->items;
+	for(uint32_t i = 0; item != NULL && i < index; i++)
+		item = item->next;
+	if(item == NULL)
+		return 2;
+	if(out != NULL)
+		memcpy(out, item->record, ring->recordSize);
+	return 0;
+}
+
+// 0x0046C560: drop count records from index onwards, or as many as are left.
+uint32_t Engine_RingDrop(uint32_t id, uint32_t index, uint32_t count)
+{
+	Ring_t* ring = Engine_FindRing(id);
+	if(ring == NULL)
+		return 1;
+	RingItem_t** link = &ring->items;
+	for(uint32_t i = 0; i < index; i++)
+	{
+		if(*link == NULL)
+			return 2;
+		link = &(*link)->next;
+	}
+	if(*link == NULL)
+		return 2;
+	RingItem_t* item = *link;
+	for(uint32_t i = 0; i < count && item != NULL; i++)
+	{
+		RingItem_t* next = item->next;
+		Engine_FreeRingItem(item);
+		item = next;
+	}
+	*link = item;
+	return 0;
+}
+
+uint32_t Engine_CreateRecordTable(uint32_t recordSize, uint32_t* idOut)
+{
+	RecordTable_t* table;
+
+	// The original refuses a record size of 0 or 1 outright ("cmp edi, 1; jbe").
+	if(recordSize <= 1)
+		return 0x80000001;
+
+	table = (RecordTable_t*)malloc(sizeof(RecordTable_t));
+	if(table == NULL)
+		return 0x80000001;
+
+	table->id = ++gRecordTableCounter;
+	table->recordSize = recordSize;
+	table->entries = NULL;
+	table->next = gRecordTables;
+	gRecordTables = table;
+	*idOut = table->id;
+	printf("[Engine]: Created record table %d, %d bytes per record\n",
+		table->id, recordSize);
+	return 0;
+}
+
+uint32_t Engine_DestroyRecordTable(uint32_t id)
+{
+	RecordTable_t** link = &gRecordTables;
+	RecordTable_t* table;
+
+	while(*link != NULL && (*link)->id != id)
+		link = &(*link)->next;
+	if(*link == NULL)
+		return 0x80000002;
+
+	table = *link;
+	*link = table->next;
+	while(table->entries != NULL)
+	{
+		RecordTableEntry_t* entry = table->entries;
+		table->entries = entry->next;
+		free(entry->key);
+		free(entry->value);
+		free(entry);
+	}
+	free(table);
+	printf("[Engine]: Destroyed record table %d\n", id);
+	return 0;
+}
+
+uint32_t Engine_SetRecord(uint32_t id, const char* key, const uint8_t* value)
+{
+	RecordTable_t* table = Engine_FindRecordTable(id);
+	RecordTableEntry_t* entry;
+
+	if(table == NULL)
+		return 0x80000002;
+
+	for(entry = table->entries; entry != NULL; entry = entry->next)
+	{
+		if(strcmp(entry->key, key) == 0)
+		{
+			memcpy(entry->value, value, table->recordSize);
+			return 0;
+		}
+	}
+
+	entry = (RecordTableEntry_t*)malloc(sizeof(RecordTableEntry_t));
+	if(entry == NULL)
+		return 0x80000002;
+	entry->key = strdup(key);
+	entry->value = (uint8_t*)malloc(table->recordSize);
+	if(entry->key == NULL || entry->value == NULL)
+	{
+		free(entry->key);
+		free(entry->value);
+		free(entry);
+		return 0x80000002;
+	}
+	memcpy(entry->value, value, table->recordSize);
+
+	// 0x004529C2 links the new record onto the node the search stopped on, so a
+	// new key goes on the END of the list. Sys0 0xD4 can ask for a record by its
+	// position, so the order is not an implementation detail.
+	entry->next = NULL;
+	RecordTableEntry_t** link = &table->entries;
+	while(*link != NULL)
+		link = &(*link)->next;
+	*link = entry;
+	printf("[Engine]: Record table %d: added key %s\n", id, key);
+	return 0;
+}
+
+// 0x00452A40, reached through 0x00496380. The record is unlinked and its key,
+// its buffer and the record itself are freed.
+uint32_t Engine_DeleteRecord(uint32_t id, const char* key)
+{
+	RecordTable_t* table = Engine_FindRecordTable(id);
+	if(table == NULL)
+		return 0x80000002;
+	if(key == NULL)
+		return 0x80000003;
+
+	RecordTableEntry_t** link = &table->entries;
+	while(*link != NULL)
+	{
+		RecordTableEntry_t* entry = *link;
+		if(strcmp(entry->key, key) != 0)
+		{
+			link = &entry->next;
+			continue;
+		}
+		*link = entry->next;
+		printf("[Engine]: Record table %d: deleted key %s\n", id, entry->key);
+		free(entry->key);
+		free(entry->value);
+		free(entry);
+		return 0;
+	}
+	return 0x80000003;
+}
+
+// 0x00452AE0, the named form of Sys0 0xD4: a whole record's bytes are copied out.
+uint32_t Engine_ReadRecordByKey(uint32_t id, const char* key, uint8_t* out)
+{
+	RecordTable_t* table = Engine_FindRecordTable(id);
+	if(table == NULL)
+		return 0x80000002;
+	if(key == NULL || out == NULL)
+		return 0x80000003;
+
+	for(RecordTableEntry_t* entry = table->entries; entry != NULL; entry = entry->next)
+	{
+		if(strcmp(entry->key, key) != 0)
+			continue;
+		memcpy(out, entry->value, table->recordSize);
+		return 0;
+	}
+	return 0x80000003;
+}
+
+// 0x00452B80, the positional form: the index counts down the table's own list,
+// which is insertion order because new records go on the end.
+uint32_t Engine_ReadRecordByIndex(uint32_t id, uint32_t index, uint8_t* out)
+{
+	RecordTable_t* table = Engine_FindRecordTable(id);
+	if(table == NULL)
+		return 0x80000002;
+	if(out == NULL)
+		return 0x80000003;
+
+	RecordTableEntry_t* entry = table->entries;
+	for(uint32_t i = 0; i < index && entry != NULL; i++)
+		entry = entry->next;
+	if(entry == NULL)
+		return 0x80000003;
+	memcpy(out, entry->value, table->recordSize);
+	return 0;
+}
+
+// Whether the game window is shown. Sys0 0x64 (0x00489540) pops a value, hands it to
+// 0x0049A300 and then flushes the input state table at 0x0046DBA0. It pushes nothing.
+//
+// 0x0049A300 does nothing at all until graphics are up (0x005666F0). Otherwise a zero
+// hides the window with ShowWindow(SW_HIDE) and a non-zero shows it with
+// ShowWindow(SW_SHOWNORMAL), preceded by a SetWindowPos to the current display size
+// when the pending-reposition flag at 0x00566A6C is set, and followed by a clear of
+// that flag. Either way it records the new state at 0x00566A70 (read back by
+// 0x0049A3B0) and recomputes "this window is the active one" at 0x005666E8 from
+// GetActiveWindow.
+//
+// The flush at 0x0046DBA0 walks 256 entries of 0x18 bytes from 0x00518C98 and zeroes
+// four dwords of each, so no key or button is left looking held across the change.
+// OpenBGI keeps no such table yet; when it does, this is where it is cleared.
+int gWindowVisible = 1;
+
+void Engine_SetWindowVisible(uint32_t visible)
+{
+	gWindowVisible = visible != 0;
+	printf("[Engine]: Set WindowVisible to %d\n", gWindowVisible);
+}
+
+// Whether sound resumes when the window is activated again. Sys1 0x68 (0x0048C370)
+// pops a value, stores it at 0x00566A4C and pushes back what was there before, so it
+// is a swap rather than a plain set and a script can save and restore it.
+//
+// The flag is read in two places. The window activation handler at 0x00499020 stops
+// every sound object in the list at 0x005076C8 whenever the window is deactivated,
+// but restarts them on activation only through 0x00461E10, which does nothing at all
+// unless this flag is set. The idle bookkeeping at 0x00498900 also consults it before
+// stamping a resume time. Nothing gates the per-frame sound update at 0x00461E00,
+// which the frame loop calls at 0x0048CDB9 either way.
+//
+// OpenBGI has neither the sound object list nor the activation handler yet, so the
+// flag is only recorded here; there is nothing for it to gate.
+int gAudioResumeOnActivate = 0;
+
+uint32_t Engine_SetAudioResumeOnActivate(uint32_t value)
+{
+	uint32_t previous = (uint32_t)gAudioResumeOnActivate;
+	gAudioResumeOnActivate = (int)value;
+	printf("[Engine]: Set AudioResumeOnActivate to %d (was %d)\n",
+		(int)value, (int)previous);
+	return previous;
+}
+
+// Cursor auto-hide. Ext0 0x05 (0x00478340) pops a timeout in milliseconds and hands
+// it to the setter at 0x0048E9E0. A non-zero timeout arms the mechanism: it records
+// the timeout, sets the deadline to now + timeout (the clock at 0x004988B0, which is
+// timeGetTime or GetTickCount depending on 0x00566A48), marks the cursor as shown,
+// and clears the remembered cursor position to 0x80000000 in both axes so the first
+// sample counts as a move. Re-arming while already active only refreshes the timeout
+// and the deadline. A zero timeout disables it and, if the cursor is currently
+// hidden, shows it again; if the cursor was already shown, nothing else happens.
+//
+// The watcher itself is the per-frame routine at 0x0048EC40. While the window is
+// active it samples the cursor in client coordinates and, if the position changed or
+// left the client area, or any mouse button is down, it shows the cursor and pushes
+// the deadline out again; otherwise, once the deadline passes, it hides the cursor.
+// While the window is not active the cursor is always shown. That watcher is not
+// wired up here: OpenBGI has no per-frame engine tick and no cursor visibility to
+// drive yet, so this records the state the original records and nothing pretends to
+// hide anything.
+#define ENGINE_CURSOR_POSITION_UNKNOWN ((int)0x80000000)
+
+int gCursorAutoHideTimeout = 0;
+int gCursorAutoHideActive = 0;
+int gCursorShown = 0;
+uint32_t gCursorAutoHideDeadline = 0;
+int gCursorLastX = ENGINE_CURSOR_POSITION_UNKNOWN;
+int gCursorLastY = ENGINE_CURSOR_POSITION_UNKNOWN;
+
+void Engine_SetCursorAutoHideTimeout(uint32_t timeout)
+{
+	if(!gCursorAutoHideActive)
+	{
+		if(timeout == 0)
+			return;
+		gCursorAutoHideActive = 1;
+		gCursorShown = 1;
+		gCursorAutoHideTimeout = (int)timeout;
+		gCursorAutoHideDeadline = OS_GetTicks() + timeout;
+		gCursorLastX = ENGINE_CURSOR_POSITION_UNKNOWN;
+		gCursorLastY = ENGINE_CURSOR_POSITION_UNKNOWN;
+		printf("[Engine]: Cursor auto-hide armed at %d ms\n", (int)timeout);
+		return;
+	}
+
+	if(timeout != 0)
+	{
+		gCursorAutoHideTimeout = (int)timeout;
+		gCursorAutoHideDeadline = OS_GetTicks() + timeout;
+		printf("[Engine]: Cursor auto-hide re-armed at %d ms\n", (int)timeout);
+		return;
+	}
+
+	gCursorAutoHideActive = 0;
+	if(!gCursorShown)
+		gCursorShown = 1;
+	printf("[Engine]: Cursor auto-hide disabled\n");
+}
+
+// Ext1 0x1F (fureraba.exe 0x004760A0 -> 0x00491270) selects the engine's "control
+// mode", which is the name its own error message uses. The setter takes 0, 1 or 2
+// and nothing else; a larger number is fatal and names itself in the message.
+//
+// The mode is read by the routine at 0x00490F90, which Ext1 0x18, 0x24 and 0x2C all
+// call, and it decides how that routine derives its second 16.16 rate from a total
+// (t) and two counts (a, b). The first rate is always (t << 16) / a; the second is
+//   mode 0: (t << 16) / b                      - the two counts are rated apart
+//   mode 1: (t << 16) / (a + b) - (t << 16) / a - the shortfall against the pair
+//   mode 2: ((t << 16) / a) * b / a            - the first rate scaled by b / a
+// A zero divisor anywhere makes the whole result zero rather than faulting, and
+// mode 1's second rate is a signed difference, so it is normally negative.
+// An unset mode is 0, which is what the engine starts in.
+int gControlMode = 0;
+
+uint32_t Engine_SetControlMode(uint32_t mode)
+{
+	if(mode > 2)
+		return 0;
+	gControlMode = (int)mode;
+	printf("[Engine]: Set ControlMode to %d\n", (int)mode);
+	return 1;
+}
+
+// Screen mapping mode: how a point in the game's base coordinate space is placed in
+// the actual window. Set by Sys1 0x63 (0x0048C2F0 -> the setter at 0x0045E9E0), which
+// accepts only 0, 1 and 2, stores the value at 0x00565E98 and pushes 1, or changes
+// nothing and pushes 0. Unlike the control mode, a rejected value is not fatal here;
+// the script is told and carries on.
+//
+// Sys0 0x63 (0x00489520) is the older boolean form of the same setting: it pops one
+// value and calls the same setter with (value != 0) ? 0 : 1, discarding the result.
+// So a true value means mode 0 and a false value means mode 1.
+//
+// The mode is read through the resolver at 0x0045EA00, which returns the stored mode
+// as it stands for 0 and 1 but treats 2 as "decide now": it compares the current
+// display size (0x00461220 / 0x00461240) against the game's base size halved
+// (0x0045E700 called with 1) and answers 2 only when the halved size is at least as
+// large as the display in both directions, otherwise 0. The transform at 0x0045EA50
+// then scales for modes 0 and 1 and merely centres for mode 2, which is what makes
+// this a mapping mode rather than a scale factor.
+//
+// That resolver is Sys1 0x61 and is deliberately not implemented yet: OpenBGI tracks
+// neither the current display mode index nor the game's base size, so mode 2 cannot
+// be resolved faithfully, and inventing an answer would put the game's coordinates
+// somewhere the original would not.
+int gScreenMappingMode = 0;
+
+uint32_t Engine_SetScreenMappingMode(uint32_t mode)
+{
+	if(mode > 2)
+		return 0;
+	gScreenMappingMode = (int)mode;
+	printf("[Engine]: Set ScreenMappingMode to %d\n", (int)mode);
+	return 1;
+}
+
+// Master volume. Grp0 0xF3 (0x00480420) pops one value and hands it to the setter at
+// 0x0048F880, which takes 0 to 128 and rejects anything larger. The setter turns the
+// step into DirectSound attenuation in hundredths of a decibel:
+//   volume 0        -> -10000, DirectSound's silence, not the value the curve gives
+//   volume 1 to 128 -> -round((128 - volume) * 100 / 2.6666666666)
+// (the divisor is the double at 0x004EC8E0), so 128 is 0 and the scale is 37.5
+// hundredths of a decibel per step. The result is stored at 0x00566928 and pushed
+// into the sound device through its vtable slot +0x1C, except while the mute flag at
+// 0x0056692C is set, when the value is still recorded but the device is left alone.
+// The opcode itself discards the setter's success flag and pushes nothing.
+int gMasterVolume = 128;
+int gMasterVolumeAttenuation = 0;
+int gMasterVolumeMuted = 0;
+
+uint32_t Engine_SetMasterVolume(uint32_t volume)
+{
+	if(volume > 128)
+		return 0;
+	gMasterVolume = (int)volume;
+	gMasterVolumeAttenuation = volume == 0
+		? -10000
+		: -(int)((128 - volume) * 100 / 2.6666666666 + 0.5);
+	printf("[Engine]: Set MasterVolume to %d (%d hundredths of a dB)\n",
+		gMasterVolume, gMasterVolumeAttenuation);
+	return 1;
+}
+
 int gFlagUnknown10 = 0;
 void Engine_SetFlagUnknown10(int value)
 {
 	gFlagUnknown10 = value;
 	printf("[Engine]: Set FlagUnknown10 to %d\n", value);
+}
+
+// 0x00401600. The base is stored whatever it is; the period and the five words
+// after it are the clock's own running state, which this engine does not keep, so
+// a base that would start the clock says so instead of being half-honoured.
+uint32_t gClockBase = 0;
+void Engine_SetClockBase(uint32_t base)
+{
+	gClockBase = base;
+	printf("[Engine]: The playback clock's base is %u\n", base);
+	if(base != 0)
+		printf("[Engine]: Warning: a clock base that is not zero derives the period"
+		       " at 0x00565AC8 and the state the query at 0x00401670 reads, which is"
+		       " not written yet\n");
 }
 
 int gEnableSearchPaths = 0;
@@ -620,6 +1837,143 @@ void Engine_SetFlagUnknown1to4(int value)
 	printf("[Engine]: Set FlagUnknown4 to %d\n", value);
 }
 
+// Sys0 0xE8 (fureraba.exe 0x0048ACE0) writes the game's own identifier into the
+// address the script hands it. In the original it is a compile-time constant of the
+// executable, four dwords at 0x004EBDAC that spell "FriendToLoverHD" with its
+// terminator, copied out as exactly 16 bytes; the same constant is handed to the
+// startup call at 0x00472610. Fureraba's ipl script carries two copies of the same
+// literal in its string pool, next to "UserData" and "%s%s", which is how the save
+// files come to be named UserData\FriendToLoverHD000.sud.
+//
+// It is not in the game's data and not in the executable's version resource, but the
+// handler that returns it has a fixed shape, so it can be recovered from the game's
+// own executable at startup; gameid.c does that, and the command line can override
+// it. Until either happens this is empty, which is at least honest about not knowing.
+char gGameId[ENGINE_GAME_ID_SIZE] = { 0 };
+
+void Engine_SetGameId(const char* id)
+{
+	memset(gGameId, 0, sizeof(gGameId));
+	if(id == NULL)
+		return;
+	// The original copies a fixed 16 bytes, so an identifier that fills the field
+	// leaves no terminator; do the same rather than truncating to 15.
+	size_t length = strlen(id);
+	if(length > sizeof(gGameId))
+		length = sizeof(gGameId);
+	memcpy(gGameId, id, length);
+}
+
+// Base opcode 0xFF (fureraba.exe 0x00498D20) is the group the script fills in for
+// itself: user-defined instructions, which the engine calls "mediation programs"
+// (0x004EC6E8). Numbers 0x00 to 0xEF are the script's own, held in the table at
+// 0x00560FC0 - all 0xFFFEFEFE in the image, so it is built at run time.
+//
+// Defining one (0x00498B20) clears whatever the number held, loads the named program
+// into a 0x20000 scratch buffer through 0x00465C30, and keeps it only if something
+// loaded: an 8-byte entry with the program's name strdup'd at +0 and a right-sized
+// copy of the loaded bytes at +4, after which the scratch buffer is freed. A load of
+// zero length is not recorded and the define reports failure.
+//
+// Undefining one (0x00498AB0) frees both and nulls the slot, and reports whether
+// there was anything there.
+UserInstruction_t gUserInstructions[USER_INSTRUCTION_COUNT] = { 0 };
+
+int Engine_UndefineUserInstruction(uint32_t number)
+{
+	if(number >= USER_INSTRUCTION_COUNT)
+		return 0;
+
+	UserInstruction_t* instruction = &gUserInstructions[number];
+	if(instruction->program == NULL && instruction->code == NULL)
+		return 0;
+
+	free(instruction->program);
+	free(instruction->code);
+	instruction->program = NULL;
+	instruction->code = NULL;
+	instruction->codeSize = 0;
+	return 1;
+}
+
+int Engine_DefineUserInstruction(Engine_t* engine, uint32_t number, const char* archive, const char* program)
+{
+	if(number >= USER_INSTRUCTION_COUNT)
+		return 0;
+
+	Engine_UndefineUserInstruction(number);
+
+	size_t size = 0;
+	uint8_t* code = Engine_ReadFile(engine, archive, program, &size);
+	if(code == NULL || size == 0)
+	{
+		// The original keeps nothing when nothing loaded, and says so.
+		free(code);
+		printf("[Engine]: User instruction 0x%.2X: could not load \"%s\" from \"%s\"\n", number, program, archive);
+		return 0;
+	}
+
+	UserInstruction_t* instruction = &gUserInstructions[number];
+	instruction->program = (char*)malloc(strlen(program) + 1);
+	if(instruction->program != NULL)
+		strcpy(instruction->program, program);
+	instruction->code = code;
+	instruction->codeSize = size;
+	printf("[Engine]: User instruction 0x%.2X is \"%s\" from \"%s\" (%zu bytes)\n", number, program, archive, size);
+	return 1;
+}
+
+void Engine_FreeUserInstructions(void)
+{
+	for(uint32_t i = 0; i < USER_INSTRUCTION_COUNT; i++)
+		Engine_UndefineUserInstruction(i);
+}
+
+// Sys0 0x39 (fureraba.exe 0x00488B80 -> 0x0046B510) points the engine at a directory
+// and answers whether it took. The original asks GetFileAttributesA for the path and
+// refuses it unless it exists and has the directory bit set - so, unlike Sys0 0x34,
+// this one wants a directory and nothing else. It then stores the path in the buffer
+// at 0x00518978, appending a separator with "%s\" unless the path already ends in
+// one, and pushes 1; a path that is not a directory is stored nowhere and pushes 0.
+char gUserDirectory[512] = { 0 };
+
+int Engine_SetUserDirectory(const char* path)
+{
+	if(path == NULL || path[0] == 0)
+		return 0;
+
+	char resolved[512];
+	int length = snprintf(resolved, sizeof(resolved), "%s", path);
+	if(length < 0 || length >= (int)sizeof(resolved))
+		return 0;
+	for(char* c = resolved; *c != 0; c++)
+	{
+		if(*c == '\\')
+			*c = '/';
+	}
+
+	struct stat info;
+	if(stat(resolved, &info) != 0 || !S_ISDIR(info.st_mode))
+	{
+		printf("[Engine]: \"%s\" is not a directory\n", path);
+		return 0;
+	}
+
+	// The original keeps the trailing separator so the path can be pasted straight
+	// in front of a file name. Separators are '/' here, as everywhere else.
+	if(length > 0 && resolved[length - 1] != '/')
+	{
+		if(length + 1 >= (int)sizeof(resolved))
+			return 0;
+		resolved[length] = '/';
+		resolved[length + 1] = 0;
+	}
+
+	strcpy(gUserDirectory, resolved);
+	printf("[Engine]: User directory is now \"%s\"\n", gUserDirectory);
+	return 1;
+}
+
 SearchPathNode_t* gSearchPaths = NULL;
 void Engine_AddSearchPath(char* path)
 {
@@ -639,6 +1993,71 @@ void Engine_AddSearchPath(char* path)
 	gSearchPaths = node;
 
 	printf("[Engine]: Added search path \"%s\"\n", copy);
+}
+
+// Sys0 0x34 (fureraba.exe 0x00488A40 -> 0x00466740) answers whether a file exists,
+// and it answers from the disk and the archives rather than from any list of names.
+// Its shape there is:
+//
+//   with no archive named, an absolute name (one starting "\" or with ":" second)
+//   is tested where it stands; otherwise the bare name is looked for under the
+//   install directory, and then under the second data root when the game has one;
+//
+//   with an archive named, the bare name is still tried under the install directory
+//   first - that is how an unpacked file wins over the packed one - and only then is
+//   the name looked up inside the archive.
+//
+// Either way the loose search also walks the search paths added by Sys0 0x37, but
+// only while Sys0 0x36 has them enabled: the list head is masked with that flag
+// before the walk at 0x00466620, so a disabled list is skipped rather than emptied.
+//
+// OpenBGI has one root, the game folder it was pointed at, and no second data root.
+int Engine_FileExists(const char* archive, const char* filename)
+{
+	if(filename == NULL || filename[0] == 0)
+		return 0;
+
+	char* path = Engine_ResolveInDirectory(".", filename);
+	if(path != NULL)
+	{
+		free(path);
+		return 1;
+	}
+
+	if(gEnableSearchPaths)
+	{
+		for(SearchPathNode_t* node = gSearchPaths; node != NULL; node = node->next)
+		{
+			char directory[512];
+			int length = snprintf(directory, sizeof(directory), "./%s", node->path);
+			if(length < 0 || length >= (int)sizeof(directory))
+				continue;
+			for(char* c = directory; *c != 0; c++)
+			{
+				if(*c == '\\')
+					*c = '/';
+			}
+
+			path = Engine_ResolveInDirectory(directory, filename);
+			if(path != NULL)
+			{
+				free(path);
+				return 1;
+			}
+		}
+	}
+
+	if(archive == NULL || archive[0] == 0)
+		return 0;
+
+	path = Engine_SearchForFile(archive, filename);
+	if(path != NULL)
+	{
+		free(path);
+		return 1;
+	}
+
+	return Arc_FileExists(archive, filename);
 }
 
 int gFlagUnknown20 = 0;
@@ -830,6 +2249,11 @@ void Engine_Free(Engine_t* engine)
 
 	Renderer_Free(engine->renderer);
 
+	Engine_FreeUserInstructions();
+	Icon_FreeAll();
+	Object_FreeAll();
+	NameTable_FreeAll();
+	Region_FreeAll();
 	while(gSearchPaths)
 	{
 		SearchPathNode_t* next = gSearchPaths->next;
@@ -837,4 +2261,35 @@ void Engine_Free(Engine_t* engine)
 		free(gSearchPaths);
 		gSearchPaths = next;
 	}
+}
+
+// Grp0 0x07 (0x004796E0) pops one value and hands it to 0x00402070, which stores it
+// at 0x00565AE0 and clears the companion at 0x00565AE4. The pair is a wait window,
+// and its only consumer is Grp0 0x10 (0x00479960), the loader: the poll at
+// 0x00402080 is called with the loader's own "not ready" answer and behaves as
+//
+//   if(timeout > 0)
+//   {
+//       if(deadline == 0) { deadline = now + timeout; return 1; }  // start waiting
+//       if(ready) return 1;                                        // nothing to wait for
+//       if(deadline > now) return 1;                               // still inside the window
+//       deadline = 0; return 0;                                    // window expired
+//   }
+//   if(!ready) deadline = 0;
+//   return ready;
+//
+// so a timeout of zero means "do not wait at all" and the loader's answer passes
+// straight through. Setting the timeout always restarts the window, which is why the
+// deadline is cleared here rather than recomputed: the first poll arms it.
+uint32_t gLoadWaitTimeout = 0;
+uint32_t gLoadWaitDeadline = 0;
+
+void Engine_SetLoadWaitTimeout(uint32_t timeout)
+{
+	gLoadWaitTimeout = timeout;
+	gLoadWaitDeadline = 0;
+	if(timeout == 0)
+		printf("[Engine]: Load wait window disabled\n");
+	else
+		printf("[Engine]: Load wait window set to %u ms\n", timeout);
 }

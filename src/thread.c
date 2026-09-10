@@ -6,6 +6,7 @@
 #include "engine.h"
 #include "opcodes.h"
 #include "golden_log.h"
+#include "process.h"
 
 char* TLevel[4] = {
 	"",
@@ -14,14 +15,33 @@ char* TLevel[4] = {
 	"            "
 };
 
-uint32_t Thread_LoadCode(Thread_t* thread, uint8_t* code, const char* filename)
+uint32_t Thread_LoadCode(Thread_t* thread, uint8_t* code, size_t codeSize, const char* filename)
 {
+	// The sixteen-byte program header, then the program the header points at, both
+	// have to be inside the file: an empty or truncated file is a real thing to be
+	// handed and must be refused by name, not read past.
+	if(codeSize < 16)
+	{
+		printf("[Thread %d]: %sError: \"%s\" is %u bytes, too short to hold a program header\n", thread->threadId, TLevel[thread->level], filename, (unsigned int)codeSize);
+		return THREAD_LOAD_FAILED;
+	}
+	uint32_t programSize = *(uint32_t*)(code + 4);
+	uint32_t programOffset = *(uint32_t*)(code);
+	if((uint64_t)programOffset + programSize > (uint64_t)codeSize)
+	{
+		printf("[Thread %d]: %sError: \"%s\" is %u bytes, but its header names a program of 0x%.8X at 0x%.8X\n", thread->threadId, TLevel[thread->level], filename, (unsigned int)codeSize, programSize, programOffset);
+		return THREAD_LOAD_FAILED;
+	}
+	if((uint64_t)thread->codeSpaceUsed + programSize > (uint64_t)thread->codeSize)
+	{
+		printf("[Thread %d]: %sError: \"%s\" needs 0x%.8X bytes and only 0x%.8X of the thread's 0x%.8X are left\n", thread->threadId, TLevel[thread->level], filename, programSize, thread->codeSize - thread->codeSpaceUsed, thread->codeSize);
+		return THREAD_LOAD_FAILED;
+	}
+
 	Program_t* program = (Program_t*)malloc(sizeof(Program_t));
 	size_t nameLen = strlen(filename);
 	program->filename = (char*)malloc(nameLen + 1);
 	strcpy(program->filename, filename);
-	uint32_t programSize = *(uint32_t*)(code + 4);
-	uint32_t programOffset = *(uint32_t*)(code);
 	program->size = programSize;
 	program->location = thread->codeSpaceUsed;
 	program->previousProgram = thread->programs;
@@ -33,6 +53,23 @@ uint32_t Thread_LoadCode(Thread_t* thread, uint8_t* code, const char* filename)
 	printf("[Thread %d]: %sLoaded code (0x%.8X) from \"%s\" into 0x%.8X\n", thread->threadId, TLevel[thread->level], program->size, program->filename, program->location);
 
 	return program->location;
+}
+
+const char* Thread_Where(Thread_t* thread, uint32_t address)
+{
+	static char where[160];
+	Program_t* program = thread->programs;
+	while(program != NULL)
+	{
+		if(address >= program->location && address < program->location + program->size)
+		{
+			snprintf(where, sizeof(where), "%s+0x%.4X", program->filename, address - program->location);
+			return where;
+		}
+		program = program->previousProgram;
+	}
+	snprintf(where, sizeof(where), "0x%.8X (no program)", address);
+	return where;
 }
 
 uint32_t Thread_DeleteProgram(Thread_t* thread)
@@ -321,6 +358,60 @@ uint32_t Thread_PopStack(Thread_t* thread)
 	return data;
 }
 
+// 0x004452A0.
+void Thread_SetProcess(Thread_t* thread, Process_t* process)
+{
+	if(thread->process != NULL)
+		Process_Destroy(thread->process);
+	thread->process = process;
+	thread->flags |= THREAD_FLAG_WAITING;
+}
+
+// 0x004452D0.
+int Thread_RunProcess(Thread_t* thread)
+{
+	if(thread->process == NULL)
+		return -1;
+	int result = Process_Run(thread->process);
+	if(result != 0)
+	{
+		Process_Destroy(thread->process);
+		thread->process = NULL;
+		thread->flags &= ~THREAD_FLAG_WAITING;
+	}
+	return result;
+}
+
+// 0x004453A0: the new value goes on the tail, so messages arrive in order.
+void Thread_PostMessage(Thread_t* thread, uint32_t value)
+{
+	Message_t* message = (Message_t*)malloc(sizeof(Message_t));
+	if(message == NULL)
+		return;
+	message->value = value;
+	message->next = NULL;
+	if(thread->messagesTail == NULL)
+		thread->messages = message;
+	else
+		thread->messagesTail->next = message;
+	thread->messagesTail = message;
+}
+
+// 0x004453E0, which writes nothing when the queue is empty.
+int Thread_TakeMessage(Thread_t* thread, uint32_t* value)
+{
+	Message_t* message = thread->messages;
+	if(message == NULL)
+		return 0;
+	thread->messages = message->next;
+	if(thread->messages == NULL)
+		thread->messagesTail = NULL;
+	if(value != NULL)
+		*value = message->value;
+	free(message);
+	return 1;
+}
+
 void Thread_SchedulePush(Thread_t* thread, uint32_t data)
 {
 	thread->queuePushQueue[thread->queuePush] = data;
@@ -410,10 +501,12 @@ uint32_t Thread_Execute(Thread_t* thread)
 	uint32_t res = Opcodes[opcode](thread);
 	thread->level--;
 
-	if(GoldenLog[GoldenLogIndex].thread == thread->threadId && GoldenLog[GoldenLogIndex].tick == thread->ticks)
+	// The golden log is a debugging aid recorded from the original engine; a
+	// game run without one has nothing to compare against.
+	if(GoldenLogTotal && GoldenLogIndex < GoldenLogTotal && GoldenLog[GoldenLogIndex].thread == thread->threadId && GoldenLog[GoldenLogIndex].tick == thread->ticks)
 	{
 		int idx = GoldenLogIndex;
-		while(GoldenLog[idx].tick == thread->ticks)
+		while(idx < GoldenLogTotal && GoldenLog[idx].tick == thread->ticks)
 		{
 			switch(GoldenLog[idx].type)
 			{
@@ -522,6 +615,12 @@ uint8_t* Thread_PopAndResolveAddress(Thread_t* thread)
     return ptr;
 }
 
+/*
+ * The size is the script's own log2 code, the width the read and write opcodes
+ * carry in their operand byte: 0 is a byte, 1 is a word, 2 is a dword. It is
+ * not a byte count; BGI_SIZE_DWORD is what a caller writing a 32-bit result
+ * out of an opcode wants.
+ */
 uint32_t Thread_WriteIntToMemory(Thread_t* thread, uint8_t* ptr, uint8_t size, uint32_t value)
 {
 	switch(size)

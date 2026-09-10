@@ -5,7 +5,10 @@
 #include "renderer.h"
 #include "opcodes.h"
 #include "opcodes_grp0.h"
+#include "icon.h"
+#include "object.h"
 #include "thread.h"
+#include "process.h"
 
 char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x00   0 */ "Unknown_0",
@@ -14,33 +17,33 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x03   3 */ "Unknown_0x03",
 	/* 0x04   4 */ "Unknown_4",
 	/* 0x05   5 */ "Unknown_5",
-	/* 0x06   6 */ "--Unknown--",
-	/* 0x07   7 */ "--Unknown--",
+	/* 0x06   6 */ "SetMousePosition",
+	/* 0x07   7 */ "SetLoadWaitTimeout",
 	/* 0x08   8 */ "Unknown_8",
-	/* 0x09   9 */ "Unknown_9",
+	/* 0x09   9 */ "SetDrawPriority",
 	/* 0x0A  10 */ "Unknown_10",
 	/* 0x0B  11 */ "Unknown_11",
-	/* 0x0C  12 */ "SetOpacity",
+	/* 0x0C  12 */ "ShowWindows",
 	/* 0x0D  13 */ "SetAntialiasingLevel",
 	/* 0x0E  14 */ "Unknown_0x0E",
 	/* 0x0F  15 */ "Unknown_15",
-	/* 0x10  16 */ "Unknown_0x10",
-	/* 0x11  17 */ "Unknown_17",
-	/* 0x12  18 */ "Unknown_18",
-	/* 0x13  19 */ "Unknown_0x13",
+	/* 0x10  16 */ "LoadBitmap",
+	/* 0x11  17 */ "CreateBitmap",
+	/* 0x12  18 */ "DestroyBitmap",
+	/* 0x13  19 */ "FillBitmap",
 	/* 0x14  20 */ "Unknown_20",
 	/* 0x15  21 */ "Unknown_21",
-	/* 0x16  22 */ "Unknown_22",
+	/* 0x16  22 */ "GetBitmapInfo",
 	/* 0x17  23 */ "--Unknown--",
-	/* 0x18  24 */ "Unknown_24",
+	/* 0x18  24 */ "BlitBitmap",
 	/* 0x19  25 */ "Unknown_25",
 	/* 0x1A  26 */ "Unknown_26",
 	/* 0x1B  27 */ "Unknown_27",
 	/* 0x1C  28 */ "Unknown_28",
 	/* 0x1D  29 */ "Unknown_29",
 	/* 0x1E  30 */ "Unknown_30",
-	/* 0x1F  31 */ "Unknown_31",
-	/* 0x20  32 */ "Unknown_32",
+	/* 0x1F  31 */ "CopyBitmap",
+	/* 0x20  32 */ "AnimateObject",
 	/* 0x21  33 */ "Unknown_33",
 	/* 0x22  34 */ "Unknown_34",
 	/* 0x23  35 */ "Unknown_35",
@@ -57,14 +60,14 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x2E  46 */ "--Unknown--",
 	/* 0x2F  47 */ "--Unknown--",
 	/* 0x30  48 */ "Unknown_48",
-	/* 0x31  49 */ "Unknown_49",
-	/* 0x32  50 */ "Unknown_50",
+	/* 0x31  49 */ "SetObjectEnabled",
+	/* 0x32  50 */ "SetObjectEffectLevel",
 	/* 0x33  51 */ "Unknown_51",
-	/* 0x34  52 */ "Unknown_52",
+	/* 0x34  52 */ "SetObjectTransparency",
 	/* 0x35  53 */ "Unknown_53",
 	/* 0x36  54 */ "--Unknown--",
-	/* 0x37  55 */ "Unknown_55",
-	/* 0x38  56 */ "Unknown_56",
+	/* 0x37  55 */ "SetObjectPosition",
+	/* 0x38  56 */ "SetObjectParameter",
 	/* 0x39  57 */ "--Unknown--",
 	/* 0x3A  58 */ "--Unknown--",
 	/* 0x3B  59 */ "--Unknown--",
@@ -88,14 +91,14 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x4D  77 */ "Unknown_77",
 	/* 0x4E  78 */ "--Unknown--",
 	/* 0x4F  79 */ "--Unknown--",
-	/* 0x50  80 */ "Unknown_80",
-	/* 0x51  81 */ "Unknown_81",
+	/* 0x50  80 */ "CreateSpriteObject",
+	/* 0x51  81 */ "DestroyObject",
 	/* 0x52  82 */ "--Unknown--",
 	/* 0x53  83 */ "Unknown_83",
-	/* 0x54  84 */ "Unknown_84",
+	/* 0x54  84 */ "SetSpriteVisible",
 	/* 0x55  85 */ "Unknown_85",
 	/* 0x56  86 */ "Unknown_86",
-	/* 0x57  87 */ "Unknown_87",
+	/* 0x57  87 */ "SetSpriteBitmap",
 	/* 0x58  88 */ "Unknown_88",
 	/* 0x59  89 */ "Unknown_89",
 	/* 0x5A  90 */ "Unknown_90",
@@ -108,8 +111,8 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x61  97 */ "DestroyFilterObject",
 	/* 0x62  98 */ "--Unknown--",
 	/* 0x63  99 */ "--Unknown--",
-	/* 0x64 100 */ "Unknown_100",
-	/* 0x65 101 */ "Unknown_101",
+	/* 0x64 100 */ "ShowFilterObject",
+	/* 0x65 101 */ "SetFilterColour",
 	/* 0x66 102 */ "Unknown_102",
 	/* 0x67 103 */ "--Unknown--",
 	/* 0x68 104 */ "--Unknown--",
@@ -160,10 +163,10 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x95 149 */ "SetSplits2",
 	/* 0x96 150 */ "SetSplits",
 	/* 0x97 151 */ "SetUnknownGrp0Val1and2",
-	/* 0x98 152 */ "Unknown_152",
-	/* 0x99 153 */ "Unknown_153",
-	/* 0x9A 154 */ "Unknown_154",
-	/* 0x9B 155 */ "Unknown_155",
+	/* 0x98 152 */ "SetAnimationFrames",
+	/* 0x99 153 */ "SetAnimationInterval",
+	/* 0x9A 154 */ "SetAnimationPlacement",
+	/* 0x9B 155 */ "SetMessageTiming",
 	/* 0x9C 156 */ "Unknown_156",
 	/* 0x9D 157 */ "Unknown_157",
 	/* 0x9E 158 */ "Unknown_158",
@@ -199,7 +202,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xBC 188 */ "Unknown_188",
 	/* 0xBD 189 */ "Unknown_189",
 	/* 0xBE 190 */ "Unknown_190",
-	/* 0xBF 191 */ "Unknown_191",
+	/* 0xBF 191 */ "TakeIconEvent",
 	/* 0xC0 192 */ "--Unknown--",
 	/* 0xC1 193 */ "--Unknown--",
 	/* 0xC2 194 */ "--Unknown--",
@@ -229,19 +232,19 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xDA 218 */ "Unknown_218",
 	/* 0xDB 219 */ "Unknown_219",
 	/* 0xDC 220 */ "Unknown_220",
-	/* 0xDD 221 */ "Unknown_221",
+	/* 0xDD 221 */ "SetWheelToObjects",
 	/* 0xDE 222 */ "Unknown_222",
 	/* 0xDF 223 */ "Unknown_223",
 	/* 0xE0 224 */ "CreateGroupObject",
-	/* 0xE1 225 */ "Unknown_225",
+	/* 0xE1 225 */ "DestroyGroup",
 	/* 0xE2 226 */ "--Unknown--",
 	/* 0xE3 227 */ "--Unknown--",
-	/* 0xE4 228 */ "Unknown_228",
+	/* 0xE4 228 */ "ShowGroupObject",
 	/* 0xE5 229 */ "Unknown_229",
 	/* 0xE6 230 */ "--Unknown--",
 	/* 0xE7 231 */ "--Unknown--",
 	/* 0xE8 232 */ "AddObjectToGroup",
-	/* 0xE9 233 */ "Unknown_233",
+	/* 0xE9 233 */ "RemoveObjectFromGroup",
 	/* 0xEA 234 */ "--Unknown--",
 	/* 0xEB 235 */ "--Unknown--",
 	/* 0xEC 236 */ "--Unknown--",
@@ -251,7 +254,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xF0 240 */ "Unknown_240",
 	/* 0xF1 241 */ "Unknown_241",
 	/* 0xF2 242 */ "Unknown_242",
-	/* 0xF3 243 */ "Unknown_243",
+	/* 0xF3 243 */ "SetMasterVolume",
 	/* 0xF4 244 */ "--Unknown--",
 	/* 0xF5 245 */ "--Unknown--",
 	/* 0xF6 246 */ "--Unknown--",
@@ -273,33 +276,33 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x03   3 */ Opcode_Grp0_Unknown_0x03,
 	/* 0x04   4 */ Opcode_Grp0_Unknown_4,
 	/* 0x05   5 */ Opcode_Grp0_Unknown_5,
-	/* 0x06   6 */ NULL,
-	/* 0x07   7 */ NULL,
+	/* 0x06   6 */ Opcode_Grp0_SetMousePosition,
+	/* 0x07   7 */ Opcode_Grp0_SetLoadWaitTimeout,
 	/* 0x08   8 */ Opcode_Grp0_Unknown_8,
-	/* 0x09   9 */ Opcode_Grp0_Unknown_9,
+	/* 0x09   9 */ Opcode_Grp0_SetDrawPriority,
 	/* 0x0A  10 */ Opcode_Grp0_Unknown_10,
 	/* 0x0B  11 */ Opcode_Grp0_Unknown_11,
-	/* 0x0C  12 */ Opcode_Grp0_SetOpacity,
+	/* 0x0C  12 */ Opcode_Grp0_ShowWindows,
 	/* 0x0D  13 */ Opcode_Grp0_SetAntialiasingLevel,
 	/* 0x0E  14 */ Opcode_Grp0_Unknown_0x0E,
 	/* 0x0F  15 */ Opcode_Grp0_Unknown_15,
-	/* 0x10  16 */ Opcode_Grp0_Unknown_0x10,
-	/* 0x11  17 */ Opcode_Grp0_Unknown_17,
-	/* 0x12  18 */ Opcode_Grp0_Unknown_18,
-	/* 0x13  19 */ Opcode_Grp0_Unknown_0x13,
+	/* 0x10  16 */ Opcode_Grp0_LoadBitmap,
+	/* 0x11  17 */ Opcode_Grp0_CreateBitmap,
+	/* 0x12  18 */ Opcode_Grp0_DestroyBitmap,
+	/* 0x13  19 */ Opcode_Grp0_FillBitmap,
 	/* 0x14  20 */ Opcode_Grp0_Unknown_20,
 	/* 0x15  21 */ Opcode_Grp0_Unknown_21,
-	/* 0x16  22 */ Opcode_Grp0_Unknown_22,
+	/* 0x16  22 */ Opcode_Grp0_GetBitmapInfo,
 	/* 0x17  23 */ NULL,
-	/* 0x18  24 */ Opcode_Grp0_Unknown_24,
+	/* 0x18  24 */ Opcode_Grp0_BlitBitmap,
 	/* 0x19  25 */ Opcode_Grp0_Unknown_25,
 	/* 0x1A  26 */ Opcode_Grp0_Unknown_26,
 	/* 0x1B  27 */ Opcode_Grp0_Unknown_27,
 	/* 0x1C  28 */ Opcode_Grp0_Unknown_28,
 	/* 0x1D  29 */ Opcode_Grp0_Unknown_29,
 	/* 0x1E  30 */ Opcode_Grp0_Unknown_30,
-	/* 0x1F  31 */ Opcode_Grp0_Unknown_31,
-	/* 0x20  32 */ Opcode_Grp0_Unknown_32,
+	/* 0x1F  31 */ Opcode_Grp0_CopyBitmap,
+	/* 0x20  32 */ Opcode_Grp0_AnimateObject,
 	/* 0x21  33 */ Opcode_Grp0_Unknown_33,
 	/* 0x22  34 */ Opcode_Grp0_Unknown_34,
 	/* 0x23  35 */ Opcode_Grp0_Unknown_35,
@@ -316,14 +319,14 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x2E  46 */ NULL,
 	/* 0x2F  47 */ NULL,
 	/* 0x30  48 */ Opcode_Grp0_Unknown_48,
-	/* 0x31  49 */ Opcode_Grp0_Unknown_49,
-	/* 0x32  50 */ Opcode_Grp0_Unknown_50,
+	/* 0x31  49 */ Opcode_Grp0_SetObjectEnabled,
+	/* 0x32  50 */ Opcode_Grp0_SetObjectEffectLevel,
 	/* 0x33  51 */ Opcode_Grp0_Unknown_51,
-	/* 0x34  52 */ Opcode_Grp0_Unknown_52,
+	/* 0x34  52 */ Opcode_Grp0_SetObjectTransparency,
 	/* 0x35  53 */ Opcode_Grp0_Unknown_53,
 	/* 0x36  54 */ NULL,
-	/* 0x37  55 */ Opcode_Grp0_Unknown_55,
-	/* 0x38  56 */ Opcode_Grp0_Unknown_56,
+	/* 0x37  55 */ Opcode_Grp0_SetObjectPosition,
+	/* 0x38  56 */ Opcode_Grp0_SetObjectParameter,
 	/* 0x39  57 */ NULL,
 	/* 0x3A  58 */ NULL,
 	/* 0x3B  59 */ NULL,
@@ -347,14 +350,14 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x4D  77 */ Opcode_Grp0_Unknown_77,
 	/* 0x4E  78 */ NULL,
 	/* 0x4F  79 */ NULL,
-	/* 0x50  80 */ Opcode_Grp0_Unknown_80,
-	/* 0x51  81 */ Opcode_Grp0_Unknown_81,
+	/* 0x50  80 */ Opcode_Grp0_CreateSpriteObject,
+	/* 0x51  81 */ Opcode_Grp0_DestroyObject,
 	/* 0x52  82 */ NULL,
 	/* 0x53  83 */ Opcode_Grp0_Unknown_83,
-	/* 0x54  84 */ Opcode_Grp0_Unknown_84,
+	/* 0x54  84 */ Opcode_Grp0_SetSpriteVisible,
 	/* 0x55  85 */ Opcode_Grp0_Unknown_85,
 	/* 0x56  86 */ Opcode_Grp0_Unknown_86,
-	/* 0x57  87 */ Opcode_Grp0_Unknown_87,
+	/* 0x57  87 */ Opcode_Grp0_SetSpriteBitmap,
 	/* 0x58  88 */ Opcode_Grp0_Unknown_88,
 	/* 0x59  89 */ Opcode_Grp0_Unknown_89,
 	/* 0x5A  90 */ Opcode_Grp0_Unknown_90,
@@ -367,8 +370,8 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x61  97 */ Opcode_Grp0_DestroyFilterObject,
 	/* 0x62  98 */ NULL,
 	/* 0x63  99 */ NULL,
-	/* 0x64 100 */ Opcode_Grp0_Unknown_100,
-	/* 0x65 101 */ Opcode_Grp0_Unknown_101,
+	/* 0x64 100 */ Opcode_Grp0_ShowFilterObject,
+	/* 0x65 101 */ Opcode_Grp0_SetFilterColour,
 	/* 0x66 102 */ Opcode_Grp0_Unknown_102,
 	/* 0x67 103 */ NULL,
 	/* 0x68 104 */ NULL,
@@ -419,10 +422,10 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x95 149 */ Opcode_Grp0_SetSplits2,
 	/* 0x96 150 */ Opcode_Grp0_SetSplits,
 	/* 0x97 151 */ Opcode_Grp0_SetUnknownGrp0Val1and2,
-	/* 0x98 152 */ Opcode_Grp0_Unknown_152,
-	/* 0x99 153 */ Opcode_Grp0_Unknown_153,
-	/* 0x9A 154 */ Opcode_Grp0_Unknown_154,
-	/* 0x9B 155 */ Opcode_Grp0_Unknown_155,
+	/* 0x98 152 */ Opcode_Grp0_SetAnimationFrames,
+	/* 0x99 153 */ Opcode_Grp0_SetAnimationInterval,
+	/* 0x9A 154 */ Opcode_Grp0_SetAnimationPlacement,
+	/* 0x9B 155 */ Opcode_Grp0_SetMessageTiming,
 	/* 0x9C 156 */ Opcode_Grp0_Unknown_156,
 	/* 0x9D 157 */ Opcode_Grp0_Unknown_157,
 	/* 0x9E 158 */ Opcode_Grp0_Unknown_158,
@@ -458,7 +461,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xBC 188 */ Opcode_Grp0_Unknown_188,
 	/* 0xBD 189 */ Opcode_Grp0_Unknown_189,
 	/* 0xBE 190 */ Opcode_Grp0_Unknown_190,
-	/* 0xBF 191 */ Opcode_Grp0_Unknown_191,
+	/* 0xBF 191 */ Opcode_Grp0_TakeIconEvent,
 	/* 0xC0 192 */ NULL,
 	/* 0xC1 193 */ NULL,
 	/* 0xC2 194 */ NULL,
@@ -488,19 +491,19 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xDA 218 */ Opcode_Grp0_Unknown_218,
 	/* 0xDB 219 */ Opcode_Grp0_Unknown_219,
 	/* 0xDC 220 */ Opcode_Grp0_Unknown_220,
-	/* 0xDD 221 */ Opcode_Grp0_Unknown_221,
+	/* 0xDD 221 */ Opcode_Grp0_SetWheelToObjects,
 	/* 0xDE 222 */ Opcode_Grp0_Unknown_222,
 	/* 0xDF 223 */ Opcode_Grp0_Unknown_223,
 	/* 0xE0 224 */ Opcode_Grp0_CreateGroupObject,
-	/* 0xE1 225 */ Opcode_Grp0_Unknown_225,
+	/* 0xE1 225 */ Opcode_Grp0_DestroyGroup,
 	/* 0xE2 226 */ NULL,
 	/* 0xE3 227 */ NULL,
-	/* 0xE4 228 */ Opcode_Grp0_Unknown_228,
+	/* 0xE4 228 */ Opcode_Grp0_ShowGroupObject,
 	/* 0xE5 229 */ Opcode_Grp0_Unknown_229,
 	/* 0xE6 230 */ NULL,
 	/* 0xE7 231 */ NULL,
 	/* 0xE8 232 */ Opcode_Grp0_AddObjectToGroup,
-	/* 0xE9 233 */ Opcode_Grp0_Unknown_233,
+	/* 0xE9 233 */ Opcode_Grp0_RemoveObjectFromGroup,
 	/* 0xEA 234 */ NULL,
 	/* 0xEB 235 */ NULL,
 	/* 0xEC 236 */ NULL,
@@ -510,7 +513,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xF0 240 */ Opcode_Grp0_Unknown_240,
 	/* 0xF1 241 */ Opcode_Grp0_Unknown_241,
 	/* 0xF2 242 */ Opcode_Grp0_Unknown_242,
-	/* 0xF3 243 */ Opcode_Grp0_Unknown_243,
+	/* 0xF3 243 */ Opcode_Grp0_SetMasterVolume,
 	/* 0xF4 244 */ NULL,
 	/* 0xF5 245 */ NULL,
 	/* 0xF6 246 */ NULL,
@@ -536,6 +539,14 @@ uint32_t Opcode_Grp0_StopRendering(Thread_t* thread)
 {
 	uint32_t value1 = Thread_PopStack(thread);
 	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	return 0;
+}
+
+uint32_t Opcode_Grp0_SetMousePosition(Thread_t* thread)
+{
+	int y = (int)Thread_PopStack(thread);
+	int x = (int)Thread_PopStack(thread);
+	Engine_SetMousePosition(x, y);
 	return 0;
 }
 
@@ -571,9 +582,26 @@ uint32_t Opcode_Grp0_Unknown_8(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_9(Thread_t* thread)
+/*
+ * Grp0 0x09 (0x00479720) sets the priority the screen draws at. The value is
+ * range-checked first (0x00497D40) and 0x10000 or more is fatal, naming the
+ * priority; it is then kept shifted up sixteen places (0x00430E00) and the
+ * scene is marked as needing to be put in order again (0x00430DF0).
+ */
+uint32_t Opcode_Grp0_SetDrawPriority(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t priority = Thread_PopStack(thread);
+	if(priority >= SPRITE_MAX_PRIORITY)
+	{
+		printf("[Thread %d]: %sError: an invalid priority [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], priority);
+		return 0xFFFFFFFF;
+	}
+	gRootList.priority = priority << 16;
+	gObjectDamage++;
+	printf("[Thread %d]: %sDrawing at priority %d\n",
+	       thread->threadId, TLevel[thread->level], priority);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_10(Thread_t* thread)
@@ -586,11 +614,32 @@ uint32_t Opcode_Grp0_Unknown_11(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_SetOpacity(Thread_t* thread)
+// Grp0 0x0C (0x004797A0 -> 0x00462AA0 -> 0x00440650) is what makes windows appear.
+// It writes the two globals every window's own draw reads: 0x00565B44, which
+// 0x0042B1D0 tests before it draws anything at all, and 0x00565B48, a transparency
+// folded into every window's blend on top of the window's own. The display root's
+// constructor calls the same function with both zero, so until this opcode runs no
+// window is drawn - which is why nothing was on the screen while it was a dummy.
+//
+// The script pushes the flag and then the transparency, so they come off the stack
+// the other way round. The transparency is the one that is range-checked, by the
+// same 0x00497F40 the effect level uses; anything above 0x100 is fatal there. It
+// pushes nothing back.
+uint32_t Opcode_Grp0_ShowWindows(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t transparency = Thread_PopStack(thread);
+	uint32_t visible = Thread_PopStack(thread);
+
+	if(transparency > OBJECT_EFFECT_LEVEL_MAX)
+	{
+		printf("[Thread %d]: %sError: an invalid effect level / transparency / opacity"
+		       " / addition level [ %u ] was specified\n",
+		       thread->threadId, TLevel[thread->level], transparency);
+		return 0xFFFFFFFF;
+	}
+
+	gWindowsVisible = visible;
+	gWindowTransparency = transparency;
 	return 0;
 }
 
@@ -627,43 +676,114 @@ uint32_t Opcode_Grp0_Unknown_15(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_0x10(Thread_t* thread)
-{	
+/*
+ * Grp0 0x10 (0x00479960) reads a bitmap into a slot. It pops the file name, then the
+ * archive name, then the slot. The original has two ways to do it: when the archive
+ * name is a path (it contains a '/') or the wait window Grp0 0x07 opened has run out,
+ * it hands the work to a loader thread and returns 2; otherwise it loads there and
+ * then through 0x00401E00 and returns 0. Every failure is fatal and names the file,
+ * with one message per reason (0x004E5638 and its neighbours).
+ *
+ * OpenBGI's loader is synchronous, so it always takes the immediate path. The wait
+ * window is still what decides that in the original, so it is still consulted and
+ * still reported; it just cannot fail us into a background load we do not have.
+ */
+uint32_t Opcode_Grp0_LoadBitmap(Thread_t* thread)
+{
 	uint8_t* filename = Thread_PopAndResolveAddress(thread);
 	uint8_t* archive = Thread_PopAndResolveAddress(thread);
 	uint32_t bitmapSlot = Thread_PopStack(thread);
-	printf("[Thread %d]: %sLoad bitmap? [%s : %s] (%d)\n", thread->threadId, TLevel[thread->level], filename, archive, bitmapSlot);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
 
 	Engine_t* engine = thread->engine;
-	Renderer_LoadBitmap(engine->renderer, bitmapSlot, filename, archive);
-	return 2;
-}
-
-uint32_t Opcode_Grp0_Unknown_17(Thread_t* thread)
-{
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint32_t value3 = Thread_PopStack(thread);
-	uint32_t value4 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t result = Renderer_LoadBitmap(engine->renderer, (int)bitmapSlot, (const char*)filename, (const char*)archive);
+	if(result != 0)
+	{
+		const char* reason = "the file could not be read";
+		switch(result)
+		{
+			case 0x80000002: reason = "it is not Windows bitmap data"; break;
+			case 0x80000003: reason = "its plane count is not supported"; break;
+			case 0x80000004: reason = "its bit count is not supported"; break;
+			case 0x80000005: reason = "it is compressed in a way that cannot be handled"; break;
+			case 0x80000006: reason = "its size is invalid"; break;
+			case 0x80000008: reason = "there was not enough memory"; break;
+			default: break;
+		}
+		printf("[Thread %d]: %sError: the bitmap [%s : %s] could not be loaded: %s\n",
+		       thread->threadId, TLevel[thread->level], filename, archive, reason);
+		return 0xFFFFFFFF;
+	}
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_18(Thread_t* thread)
+/*
+ * Grp0 0x11 (0x00479B30) makes a bitmap. The script pushes the number, the width,
+ * the height and the pixel mode, so the mode pops first; the number is range-checked
+ * before anything else (0x00497CF0). When the slot cannot be made the original stops
+ * with "an invalid pixel mode [ %d ] was specified" (0x004E84E0), naming the mode.
+ */
+uint32_t Opcode_Grp0_CreateBitmap(Thread_t* thread)
 {
-	// Maybe unload assets?
-	uint32_t grpAssetId = Thread_PopStack(thread);
-	Thread_PushStack(thread, 0x00000001);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	int mode   = (int)Thread_PopStack(thread);
+	int height = (int)Thread_PopStack(thread);
+	int width  = (int)Thread_PopStack(thread);
+	int id     = (int)Thread_PopStack(thread);
+
+	if(id < 0 || id >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: an invalid bitmap number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], id);
+		return 0xFFFFFFFF;
+	}
+
+	Engine_t* engine = thread->engine;
+	if(Renderer_CreateBitmap(engine->renderer, id, width, height, mode) == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid pixel mode [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], mode);
+		return 0xFFFFFFFF;
+	}
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_0x13(Thread_t* thread)
+/*
+ * Grp0 0x12 (0x00479BD0) releases a bitmap and pushes whether there was one to
+ * release. The number is not range-checked here; an out-of-range one simply answers
+ * no, as 0x00407CF0 does.
+ */
+uint32_t Opcode_Grp0_DestroyBitmap(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	int id = (int)Thread_PopStack(thread);
+	Engine_t* engine = thread->engine;
+	Thread_PushStack(thread, (uint32_t)Renderer_DestroyBitmap(engine->renderer, id));
+	return 0;
+}
+
+/*
+ * Grp0 0x13 (0x00479C00) writes one colour over a whole bitmap: the script pushes the
+ * number and then the colour, so the colour pops first. Zero clears the bitmap
+ * (0x0040A620) and any other value is written to every pixel (0x0040A710). An empty
+ * slot is fatal with "no bitmap is registered at bitmap entry [ %d ]" (0x004EC4A0).
+ */
+uint32_t Opcode_Grp0_FillBitmap(Thread_t* thread)
+{
+	uint32_t colour = Thread_PopStack(thread);
+	int id = (int)Thread_PopStack(thread);
+
+	if(id < 0 || id >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: an invalid bitmap number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], id);
+		return 0xFFFFFFFF;
+	}
+
+	Engine_t* engine = thread->engine;
+	if(!Renderer_FillBitmap(engine->renderer, id, colour))
+	{
+		printf("[Thread %d]: %sError: no bitmap is registered at bitmap entry [ %d ]\n",
+		       thread->threadId, TLevel[thread->level], id);
+		return 0xFFFFFFFF;
+	}
 	return 0;
 }
 
@@ -677,27 +797,88 @@ uint32_t Opcode_Grp0_Unknown_21(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_22(Thread_t* thread)
+/*
+ * Grp0 0x16 (0x00479D80) writes a bitmap's shape into script memory. The bitmap
+ * number pops first and the address second; 0x00407F20 fills six dwords there - the
+ * pixels, the stride, the width, the height, the pixel mode and the bytes per pixel -
+ * and the handler then zeroes the first so the script never holds a real pointer.
+ * A number that does not resolve leaves the other five as they were, and the opcode
+ * succeeds all the same.
+ */
+uint32_t Opcode_Grp0_GetBitmapInfo(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t* ptr = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	int id = (int)Thread_PopStack(thread);
+	uint32_t* out = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	if(out == NULL)
+		return 1;
 
-	*ptr = 0x03FD2298; ptr++;
-	*ptr = 0x00000190; ptr++;
-	*ptr = 0x00000064; ptr++;
-	*ptr = 0x00000028; ptr++;
-	*ptr = 0x00000002; ptr++;
-	*ptr = 0x00000004; ptr++;
-	*ptr = 0x00000000; ptr++;
-
-	Thread_PushStack(thread, 1);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	Engine_t* engine = thread->engine;
+	Bitmap_t* bitmap = Renderer_ResolveBitmap(engine->renderer, id);
+	if(bitmap != NULL)
+	{
+		out[1] = (uint32_t)bitmap->stride;
+		out[2] = (uint32_t)bitmap->width;
+		out[3] = (uint32_t)bitmap->height;
+		out[4] = (uint32_t)bitmap->mode;
+		out[5] = (uint32_t)Renderer_ModePixelBytes(bitmap->mode);
+	}
+	out[0] = 0;
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_24(Thread_t* thread)
+/*
+ * Grp0 0x18 (0x00479DF0 -> 0x00402720) draws one bitmap onto another. The script
+ * pushes the destination, the position, the source, the blend mode and the
+ * transparency,
+ * so they pop back to front; the original checks the two bitmap numbers, the mode and
+ * the opacity before it resolves anything (0x00497CF0, 0x00497DD0, 0x00497F40).
+ * A missing destination, a missing source and a pixel-mode pair that cannot work
+ * together are fatal (0x004E8558, 0x004E858C, 0x004E85C0); a blit that clips away to
+ * nothing is not, and the original returns quietly from it.
+ */
+uint32_t Opcode_Grp0_BlitBitmap(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int transparency = (int)Thread_PopStack(thread);
+	int mode        = (int)Thread_PopStack(thread);
+	int source      = (int)Thread_PopStack(thread);
+	int y           = (int)Thread_PopStack(thread);
+	int x           = (int)Thread_PopStack(thread);
+	int destination = (int)Thread_PopStack(thread);
+
+	if(transparency < 0 || transparency > 0x100)
+	{
+		printf("[Thread %d]: %sError: an invalid effect level / transparency / opacity / addition level [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], transparency);
+		return 0xFFFFFFFF;
+	}
+
+	Engine_t* engine = thread->engine;
+	switch(Renderer_BlitBitmap(engine->renderer, destination, x, y, source, mode, transparency))
+	{
+		case 0:
+		case 4: // clipped away to nothing, which the original lets through
+			return 0;
+		case 1:
+			printf("[Thread %d]: %sError: the specified destination bitmap [ %d ] does not exist\n",
+			       thread->threadId, TLevel[thread->level], destination);
+			return 0xFFFFFFFF;
+		case 2:
+			printf("[Thread %d]: %sError: the specified source bitmap [ %d ] does not exist\n",
+			       thread->threadId, TLevel[thread->level], source);
+			return 0xFFFFFFFF;
+		case 3:
+			printf("[Thread %d]: %sError: the pixel modes of destination bitmap [ %d ] and source bitmap [ %d ] are not compatible\n",
+			       thread->threadId, TLevel[thread->level], destination, source);
+			return 0xFFFFFFFF;
+		case 6:
+			printf("[Thread %d]: %sError: blend mode [ 0x%02X ] does not take transparency [ %d ] yet\n",
+			       thread->threadId, TLevel[thread->level], mode, transparency);
+			return 0xFFFFFFFF;
+		default:
+			printf("[Thread %d]: %sError: blend mode [ 0x%02X ] is not written yet\n",
+			       thread->threadId, TLevel[thread->level], mode);
+			return 0xFFFFFFFF;
+	}
 }
 
 uint32_t Opcode_Grp0_Unknown_25(Thread_t* thread)
@@ -730,22 +911,97 @@ uint32_t Opcode_Grp0_Unknown_30(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_31(Thread_t* thread)
+/*
+ * Grp0 0x1F (0x0047A710 -> 0x004033A0) copies a rectangle out of one bitmap into
+ * another. The script pushes the destination, the source, the two offsets and then
+ * the width and the height, so they pop back to front. The worker resolves the
+ * source, refuses a zero width or height, creates the destination at that size in the
+ * source's pixel mode and blits the source in at the negated offsets: the destination
+ * ends up holding the source's (offsetX, offsetY, width, height) rectangle. All three
+ * failures are fatal in the original and each names the numbers that caused it
+ * (0x004E8B44, 0x004E8B74, 0x004E8BA4).
+ */
+uint32_t Opcode_Grp0_CopyBitmap(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int height      = (int)Thread_PopStack(thread);
+	int width       = (int)Thread_PopStack(thread);
+	int offsetY     = (int)Thread_PopStack(thread);
+	int offsetX     = (int)Thread_PopStack(thread);
+	int source      = (int)Thread_PopStack(thread);
+	int destination = (int)Thread_PopStack(thread);
+
+	Engine_t* engine = thread->engine;
+	switch(Renderer_CopyBitmap(engine->renderer, destination, source, offsetX, offsetY, width, height))
+	{
+		case 0:
+			return 0;
+		case 1:
+			printf("[Thread %d]: %sError: the specified destination bitmap [ %d ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], destination);
+			return 0xFFFFFFFF;
+		case 2:
+			printf("[Thread %d]: %sError: the specified source bitmap [ %d ] is invalid\n",
+			       thread->threadId, TLevel[thread->level], source);
+			return 0xFFFFFFFF;
+		default:
+			printf("[Thread %d]: %sError: an invalid copy range [ %d , %d ] was specified\n",
+			       thread->threadId, TLevel[thread->level], width, height);
+			return 0xFFFFFFFF;
+	}
 }
 
-uint32_t Opcode_Grp0_Unknown_32(Thread_t* thread)
+/*
+ * Grp0 0x20 (0x0047A820 -> 0x00491CD0): fade one display object's effect level to
+ * a target over a duration, and hold the thread that asked until it is there.
+ *
+ * The six values pop in this order: the key mask and whether a key may cut the
+ * animation short (0x00431F60's pair, both zero everywhere the boot uses this,
+ * and the mask is what 0x00497D40 range-checks); a value the animation keeps at
+ * +0x38; the duration in milliseconds; the target effect level, which
+ * 0x00497F40 refuses above 0x100; and the object's handle.
+ *
+ * Nothing is pushed here. The animation is joined to the thread (0x004452A0)
+ * and 2 is returned, the result that means the thread is waiting; the animation
+ * pushes its own two values when it finishes, as the original does at
+ * 0x0043215B.
+ */
+uint32_t Opcode_Grp0_AnimateObject(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint32_t value3 = Thread_PopStack(thread);
-	uint32_t value4 = Thread_PopStack(thread);
-	uint32_t value5 = Thread_PopStack(thread);
-	uint32_t value6 = Thread_PopStack(thread);
-	Thread_SchedulePush(thread, 0x00000000);
-	Thread_SchedulePush(thread, 0x00000078);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t keyMask = Thread_PopStack(thread);
+	uint32_t allowKey = Thread_PopStack(thread);
+	uint32_t field38 = Thread_PopStack(thread);
+	uint32_t duration = Thread_PopStack(thread);
+	uint32_t targetEffect = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(targetEffect > 0x100)
+	{
+		/* 0x00497F40. */
+		printf("[Thread %d]: %sError: the effect level 0x%.8X is out of range\n",
+		       thread->threadId, TLevel[thread->level], targetEffect);
+		return 0xFFFFFFFF;
+	}
+	if(allowKey != 0 || keyMask != 0)
+	{
+		/* 0x00431F60 registers the animation with the key and mouse handling at
+		   0x0046D840 / 0x0046D8A0 so a press can cut it short. None of that is
+		   written, and the boot never asks for it. */
+		printf("[Thread %d]: %sError: an animation a key may cut short (0x00431F60, mask 0x%.8X) is not written yet\n",
+		       thread->threadId, TLevel[thread->level], keyMask);
+		return 0xFFFFFFFF;
+	}
+
+	Process_t* process = Process_CreateObjectAnimation(thread, handle, targetEffect, duration);
+	if(process == NULL)
+	{
+		/* 0x00491DBA answers -1 for a handle the display root cannot resolve. */
+		printf("[Thread %d]: %sError: the specified object [ 0x%.8X ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+	Thread_SetProcess(thread, process);
+	printf("[Thread %d]: %sAnimating the effect level of object 0x%.8X to 0x%.2X over %u ms (+0x38 = 0x%.8X)\n",
+	       thread->threadId, TLevel[thread->level], handle, targetEffect, duration, field38);
 	return 2;
 }
 
@@ -799,14 +1055,61 @@ uint32_t Opcode_Grp0_Unknown_48(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_49(Thread_t* thread)
+uint32_t Opcode_Grp0_SetObjectEnabled(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
-}
+	uint32_t enabled = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
 
-uint32_t Opcode_Grp0_Unknown_50(Thread_t* thread)
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	Object_ApplyEnabled(object, (int)enabled);
+	return 0;
+}
+// Grp0 0x32 (0x0047B2E0 -> 0x004620C0 -> 0x00443540) sets a display object's
+// effect level: the virtual at vtable+0x48, which the base writes to +0xAC and
+// passes down every child through the child's own vtable+0x48.
+//
+// The level is checked before the handle is even looked at, in 0x00497F40, and
+// 0x100 is allowed: the message it prints (0x004EC550) is the one shared by this
+// opcode and its three neighbours, naming the effect level, the transparency, the
+// opacity and the addition level together.
+uint32_t Opcode_Grp0_SetObjectEffectLevel(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t level = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(level > OBJECT_EFFECT_LEVEL_MAX)
+	{
+		printf("[Thread %d]: %sError: an invalid effect level / transparency / "
+		       "opacity / addition level [ %u ] was specified\n",
+		       thread->threadId, TLevel[thread->level], level);
+		return 0xFFFFFFFF;
+	}
+
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	const char* unread = Object_ApplyEffectLevel(object, level);
+	if(unread != NULL)
+	{
+		printf("[Thread %d]: %sError: the effect level of this object goes through "
+		       "%s, which has not been read out of the original yet\n",
+		       thread->threadId, TLevel[thread->level], unread);
+		return 0xFFFFFFFF;
+	}
+
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_51(Thread_t* thread)
@@ -814,9 +1117,32 @@ uint32_t Opcode_Grp0_Unknown_51(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_52(Thread_t* thread)
+// Grp0 0x34 (0x0047B380 -> 0x00462100 -> 0x00443690), Grp0 0x32's twin one field
+// along: the same range check and the same message, writing the transparency at
+// +0xB0 through 0x0041B730 instead of the virtual at vtable+0x48.
+uint32_t Opcode_Grp0_SetObjectTransparency(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t transparency = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(transparency > OBJECT_EFFECT_LEVEL_MAX)
+	{
+		printf("[Thread %d]: %sError: an invalid effect level / transparency / "
+		       "opacity / addition level [ %u ] was specified\n",
+		       thread->threadId, TLevel[thread->level], transparency);
+		return 0xFFFFFFFF;
+	}
+
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	Object_ApplyTransparency(object, transparency);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_53(Thread_t* thread)
@@ -824,14 +1150,78 @@ uint32_t Opcode_Grp0_Unknown_53(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_55(Thread_t* thread)
+// Grp0 0x37 (0x0047B470 -> 0x00462130 -> 0x004437B0) moves a display object. It
+// resolves every kind of object, not only sprites, and a handle that names none of
+// them is fatal: "an invalid object handle was specified" (0x004E8BD0). The script
+// pushes the handle, then x, then y, so they come off the stack the other way round.
+// It pushes nothing back.
+uint32_t Opcode_Grp0_SetObjectPosition(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	Object_ApplyPosition(object, x, y);
+	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_56(Thread_t* thread)
+// Grp0 0x38 (0x0047B4C0 -> 0x00462190 -> 0x00443990) sets one parameter of a display
+// object. It pops four values: the last two pushed are the two arguments, then the
+// parameter number, then the object handle. 0x00443990 resolves the handle and calls
+// the object's virtual at vtable+0x5C with (number, value1, value2).
+//
+// Each of the original's three failures is fatal and names itself:
+//   invalid handle              0x004E8BD0
+//   unsupported parameter       0x004E8CF0, "[ 0x%.8X ]"
+//   wrong arguments             0x004E8D30, "[ 0x%.8X ] ... [ %d ( 0x%.8X ) , %d ( 0x%.8X ) ]"
+uint32_t Opcode_Grp0_SetObjectParameter(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value2 = Thread_PopStack(thread);
+	uint32_t value1 = Thread_PopStack(thread);
+	uint32_t number = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	const char* unread = NULL;
+	DisplayObject_t* object = Object_Resolve(handle);
+	uint32_t result = object != NULL
+		? Object_ApplyParameter(object, number, value1, value2, &unread)
+		: OBJECT_SET_BAD_HANDLE;
+
+	switch(result)
+	{
+	case OBJECT_SET_OK:
+		return 0;
+
+	case OBJECT_SET_BAD_HANDLE:
+		printf("[Thread %d]: %sError: an invalid object handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+
+	case OBJECT_SET_BAD_ARGUMENT:
+		printf("[Thread %d]: %sError: the arguments of the parameter [ 0x%.8X ] are wrong [ %d ( 0x%.8X ) , %d ( 0x%.8X ) ]\n",
+		       thread->threadId, TLevel[thread->level], number,
+		       (int)value1, value1, (int)value2, value2);
+		return 0xFFFFFFFF;
+
+	case OBJECT_SET_UNREAD:
+		printf("[Thread %d]: %sError: parameter [ 0x%.8X ] is not implemented (%s)\n",
+		       thread->threadId, TLevel[thread->level], number,
+		       unread != NULL ? unread : "unread");
+		return 0xFFFFFFFF;
+
+	default:
+		printf("[Thread %d]: %sError: an unsupported parameter number [ 0x%.8X ] was set\n",
+		       thread->threadId, TLevel[thread->level], number);
+		return 0xFFFFFFFF;
+	}
 }
 
 uint32_t Opcode_Grp0_Unknown_60(Thread_t* thread)
@@ -920,19 +1310,59 @@ uint32_t Opcode_Grp0_Unknown_77(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_80(Thread_t* thread)
+// Grp0 0x50 (0x0047C260 -> 0x004624D0 -> 0x0043E5F0) makes a sprite object and pushes
+// its handle. Running out of slots is fatal in the original, with its own message:
+// "no more sprite objects can be created" (0x004E9384).
+uint32_t Opcode_Grp0_CreateSpriteObject(Thread_t* thread)
 {
-	// CreateSpriteObject
-	uint32_t handle = thread->engine->spriteObjectHandle;
-	thread->engine->spriteObjectHandle++;
+	uint32_t handle = Object_Create(OBJECT_TAG_SPRITE);
+	if(handle == 0)
+	{
+		printf("[Thread %d]: %sError: no more sprite objects can be created (%d in use)\n", thread->threadId, TLevel[thread->level], SPRITE_SLOT_COUNT);
+		return 0xFFFFFFFF;
+	}
+
 	Thread_PushStack(thread, handle);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
 	return 0;
 }
-
-uint32_t Opcode_Grp0_Unknown_81(Thread_t* thread)
+/*
+ * Grp0 0x51 (0x0047C290) destroys a display object. It pops the handle and then,
+ * in this order:
+ *   - 0x00496490 takes the object out of the registry at 0x005669B8, a list keyed
+ *     by handle whose entries carry something 0x0046D980 shuts down. Nothing in
+ *     this engine puts anything on that list, so there is nothing to take off it;
+ *   - it refuses an object whose +0x130 is set, "the specified sprite has a
+ *     co-operating procedure" (0x004E93C0). Nothing here writes +0x130 either,
+ *     so the object model does not carry it and the refusal cannot fire;
+ *   - it refuses an object that still has an owner, "the specified sprite has an
+ *     owner" (0x004E9400) - a member of a group has to leave it first (0xE9);
+ *   - and 0x004624E0 destroys it, answering 0 for a handle that names nothing.
+ * Nothing is pushed back, and each failure is reported and does not return.
+ */
+uint32_t Opcode_Grp0_DestroyObject(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t handle = Thread_PopStack(thread);
+
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		// 無効なスプライトハンドルが指定されました (0x004E7FBC)
+		printf("[Thread %d]: %sError: an invalid sprite handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+	if(object->owner != NULL)
+	{
+		// 指定されたスプライトにはオーナーが存在します (0x004E9400)
+		printf("[Thread %d]: %sError: the specified sprite has an owner (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+
+	Object_Destroy(handle);
+	printf("[Thread %d]: %sObject 0x%08X destroyed\n",
+	       thread->threadId, TLevel[thread->level], handle);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_83(Thread_t* thread)
@@ -940,11 +1370,26 @@ uint32_t Opcode_Grp0_Unknown_83(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_84(Thread_t* thread)
+// Grp0 0x54 (0x0047C370 -> 0x004626C0 -> 0x0043EF50) shows or hides a sprite. The
+// script pushes the handle and then the flag, so the flag is popped first. A handle
+// that does not resolve is fatal in the original: "an invalid sprite handle was
+// specified" (0x004E7FBC). It pushes nothing back.
+uint32_t Opcode_Grp0_SetSpriteVisible(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
-}
+	uint32_t visible = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
 
+	DisplayObject_t* sprite = Object_ResolveKind(handle, OBJECT_TYPE_SPRITE);
+	if(sprite == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid sprite handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	Object_ApplyVisible(sprite, (int)visible);
+	return 0;
+}
 uint32_t Opcode_Grp0_Unknown_85(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
@@ -963,9 +1408,50 @@ uint32_t Opcode_Grp0_Unknown_86(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_87(Thread_t* thread)
+// Grp0 0x57 (0x0047C560 -> 0x00462690 -> 0x0043ED80) gives a sprite its content: a
+// whole bitmap. The script pushes the handle and then the bitmap number, so the number
+// comes off the stack first, and it is range-checked (0x00497CF0) before the handle is
+// so much as looked at. All three failures are fatal in the original, each with its own
+// message: "an invalid bitmap number [ %d ] was specified" (0x004E97B8), "an invalid
+// sprite handle was specified" (0x004E7FBC) and "the specified bitmap [ %d ] is
+// invalid" (0x004E8DC4). It pushes nothing back.
+uint32_t Opcode_Grp0_SetSpriteBitmap(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Engine_t* engine = thread->engine;
+	uint32_t number = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if((int32_t)number < 0 || (int32_t)number >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: an invalid bitmap number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)number);
+		return 0xFFFFFFFF;
+	}
+
+	DisplayObject_t* sprite = Object_ResolveKind(handle, OBJECT_TYPE_SPRITE);
+	if(sprite == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid sprite handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	const char* unread = NULL;
+	uint32_t result = Object_ApplyContentBitmap(engine->renderer, sprite, (int)number, &unread);
+	if(result == OBJECT_CONTENT_BAD_BITMAP)
+	{
+		printf("[Thread %d]: %sError: the specified bitmap [ %d ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)number);
+		return 0xFFFFFFFF;
+	}
+	if(result == OBJECT_CONTENT_UNREAD)
+	{
+		printf("[Thread %d]: %sError: sprite content this engine has not read yet: %s\n",
+		       thread->threadId, TLevel[thread->level], unread);
+		return 0xFFFFFFFF;
+	}
+
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_88(Thread_t* thread)
@@ -993,37 +1479,115 @@ uint32_t Opcode_Grp0_Unknown_92(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
+/*
+ * Grp0 0x60 (0x0047D470 -> 0x004626E0 -> 0x0043F070). Nothing pops. The object
+ * goes into the first free one of the eight slots at root+0x864 and its handle
+ * is pushed; when all eight are taken the original pushes 0 and then reports it
+ * with the message at 0x004E9750, which is fatal.
+ */
 uint32_t Opcode_Grp0_CreateFilterObject(Thread_t* thread)
 {
-	Thread_PushStack(thread, thread->engine->filterObjectHandle);
-	thread->engine->filterObjectHandle++;
+	uint32_t handle = Object_CreateFilter(thread->engine->renderer);
+	if(handle == 0)
+	{
+		printf("[Thread %d]: %sError: no free filter object slot (all %d are taken)\n",
+		       thread->threadId, TLevel[thread->level], FILTER_SLOT_COUNT);
+		return 0xFFFFFFFF;
+	}
+
+	Thread_PushStack(thread, handle);
+	printf("[Thread %d]: %sCreated the filter object [ 0x%.8X ]\n",
+	       thread->threadId, TLevel[thread->level], handle);
 	return 0;
 }
 
+/*
+ * Grp0 0x61 (0x0047D4A0 -> 0x004626F0 -> 0x0043F170): the object comes out of
+ * the display list, is freed and gives its slot back. The original reports a
+ * handle that names no filter with 0x004E978C, which is fatal.
+ */
 uint32_t Opcode_Grp0_DestroyFilterObject(Thread_t* thread)
 {
-	uint32_t data = Thread_PopStack(thread);
-	thread->engine->filterObjectHandle--;
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(Object_ResolveKind(handle, OBJECT_TYPE_FILTER) == NULL)
+	{
+		printf("[Thread %d]: %sError: the specified object [ 0x%.8X ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+
+	Object_Destroy(handle);
+	printf("[Thread %d]: %sDestroyed the filter object [ 0x%.8X ]\n",
+	       thread->threadId, TLevel[thread->level], handle);
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_100(Thread_t* thread)
+/*
+ * Grp0 0x64 (0x0047D4D0 -> 0x00462720 -> 0x0043F2B0): the filter's visible flag,
+ * with the same would-it-be-drawn bracket the other visibility opcodes have.
+ */
+uint32_t Opcode_Grp0_ShowFilterObject(Thread_t* thread)
 {
-    uint32_t unknown = Thread_PopStack(thread);
-    uint32_t filterObject = Thread_PopStack(thread);
-    printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-    return 0;
+	uint32_t visible = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	DisplayObject_t* filter = Object_ResolveKind(handle, OBJECT_TYPE_FILTER);
+	if(filter == NULL)
+	{
+		printf("[Thread %d]: %sError: the specified object [ 0x%.8X ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+
+	Object_ApplyVisible(filter, (int)visible);
+	printf("[Thread %d]: %sFilter object [ 0x%.8X ] is now %s\n",
+	       thread->threadId, TLevel[thread->level], handle,
+	       visible != 0 ? "visible" : "hidden");
+	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_101(Thread_t* thread)
+/*
+ * Grp0 0x65 (0x0047D510 -> 0x00462700 -> 0x0043F1F0). Four values pop: the draw
+ * layer, which 0x00497D40 refuses at 0x10000 and above; the effect level, which
+ * 0x00497F40 refuses above 0x100; the colour, as 0x00RRGGBB; and the handle.
+ * Both range checks are fatal before the handle is even looked at.
+ */
+uint32_t Opcode_Grp0_SetFilterColour(Thread_t* thread)
 {
-    uint32_t value1 = Thread_PopStack(thread);
-    uint32_t opacity = Thread_PopStack(thread);
-    uint32_t unknown = Thread_PopStack(thread);
-    uint32_t filterObject = Thread_PopStack(thread);
-    printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-    return 0;
+	uint32_t drawLayer = Thread_PopStack(thread);
+	uint32_t effectLevel = Thread_PopStack(thread);
+	uint32_t colour = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(drawLayer >= 0x10000)
+	{
+		/* 0x00497D40. */
+		printf("[Thread %d]: %sError: the draw layer 0x%.8X is out of range\n",
+		       thread->threadId, TLevel[thread->level], drawLayer);
+		return 0xFFFFFFFF;
+	}
+	if(effectLevel > OBJECT_EFFECT_LEVEL_MAX)
+	{
+		/* 0x00497F40. */
+		printf("[Thread %d]: %sError: the effect level 0x%.8X is out of range\n",
+		       thread->threadId, TLevel[thread->level], effectLevel);
+		return 0xFFFFFFFF;
+	}
+
+	DisplayObject_t* filter = Object_ResolveKind(handle, OBJECT_TYPE_FILTER);
+	if(filter == NULL)
+	{
+		printf("[Thread %d]: %sError: the specified object [ 0x%.8X ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+
+	Object_SetFilterColour(filter, colour, effectLevel, drawLayer);
+	printf("[Thread %d]: %sFilter object [ 0x%.8X ] is colour 0x%.6X at effect level"
+	       " 0x%.2X on draw layer 0x%.4X\n",
+	       thread->threadId, TLevel[thread->level], handle, colour, effectLevel, drawLayer);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_102(Thread_t* thread)
@@ -1125,12 +1689,12 @@ uint32_t Opcode_Grp0_DrawBitmapToWindow(Thread_t* thread)
 	uint32_t unknown1 = Thread_PopStack(thread);
 	uint32_t unknown2 = Thread_PopStack(thread);
 	uint32_t screenId = Thread_PopStack(thread);
-	if((screenId & 0x00FFFFFF) > RENDERER_MAX_SCREENS)
+	if((screenId & OBJECT_INDEX_MASK) >= RENDERER_MAX_SCREENS)
 	{
 		printf("[Thread %d]: %sError: attempted to draw to invalid screen 0x%08X\n", thread->threadId, TLevel[thread->level], screenId);
 		return 10;
 	}
-	Renderer_DrawBitmapToScreen(thread->engine->renderer, bitmapId, screenId & 0x000000FF);
+	Renderer_DrawBitmapToScreen(thread->engine->renderer, bitmapId, (int)(screenId & OBJECT_INDEX_MASK));
 	return 0;
 }
 
@@ -1222,24 +1786,64 @@ uint32_t Opcode_Grp0_SetUnknownGrp0Val1and2(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_152(Thread_t* thread)
+// Grp0 0x98 (0x0047E350 -> 0x00463340 -> 0x004333E0) gives the animated cursor its
+// frames: an array of bitmap numbers in the script's own memory and a count. The
+// address is popped first (0x0048E0E0 pops and resolves it), the count second. A
+// number that names no bitmap is fatal, with the number in the message: "the
+// specified bitmap [ %d ] does not exist or is not compatible with the screen"
+// (0x004E9D00).
+uint32_t Opcode_Grp0_SetAnimationFrames(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Engine_t* engine = thread->engine;
+	uint32_t* ids = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	uint32_t count = Thread_PopStack(thread);
+
+	int32_t badId = 0;
+	if(!Renderer_SetAnimationFrames(engine->renderer, (int)count, ids, &badId))
+	{
+		printf("[Thread %d]: %sError: the specified bitmap [ %d ] does not exist or is not compatible with the screen\n",
+		       thread->threadId, TLevel[thread->level], badId);
+		return 0xFFFFFFFF;
+	}
+
+	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_153(Thread_t* thread)
+// Grp0 0x99 (0x0047E3D0 -> 0x00463360 -> 0x00433560) is one store: the interval the
+// animated cursor waits between two frames, at 0x0050765C. It pushes nothing back.
+uint32_t Opcode_Grp0_SetAnimationInterval(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Engine_t* engine = thread->engine;
+	engine->renderer->animationInterval = Thread_PopStack(thread);
+	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_154(Thread_t* thread)
+// Grp0 0x9A (0x0047E3F0 -> 0x00463370 -> 0x00433570) says where the animated cursor
+// is drawn: three stores, in the order the values come off the stack. It pushes
+// nothing back and can fail at nothing.
+uint32_t Opcode_Grp0_SetAnimationPlacement(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Renderer_t* renderer = thread->engine->renderer;
+	renderer->animationPlacement = Thread_PopStack(thread);
+	renderer->animationX = (int32_t)Thread_PopStack(thread);
+	renderer->animationY = (int32_t)Thread_PopStack(thread);
+	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_155(Thread_t* thread)
+/*
+ * Grp0 0x9B (0x0047E430) sets the pair every new message display starts with.
+ * The delay pops first; both are kept until a display asks for them, which is
+ * what CProcDspMsg's constructor does at 0x00432D79.
+ */
+uint32_t Opcode_Grp0_SetMessageTiming(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t delay = Thread_PopStack(thread);
+	uint32_t interval = Thread_PopStack(thread);
+	gMessageInterval = interval;
+	gMessageDelay = delay;
+	printf("[Thread %d]: %sMessages start at interval %d, first after %d\n",
+	       thread->threadId, TLevel[thread->level], interval, delay);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_156(Thread_t* thread)
@@ -1629,12 +2233,28 @@ uint32_t Opcode_Grp0_Unknown_190(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_191(Thread_t* thread)
+/*
+ * Grp0 0xBF (0x0047F180 -> 0x0046CDF0) takes the next event off an icon's queue:
+ * it pops the icon's handle and then the address to write the event's three
+ * words to, and pushes whether there WAS an event - not whether the icon exists.
+ * A handle that is not an icon answers 0 and leaves the address alone;
+ * 0x00448640 writes three zeros when the queue is empty.
+ *
+ * This had been a dummy that answered 1 every time and wrote nothing at all, so
+ * the script read whatever happened to be at that address and acted on it many
+ * thousands of times a run.
+ */
+uint32_t Opcode_Grp0_TakeIconEvent(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	Thread_PushStack(thread, 0x00000001);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t handle = Thread_PopStack(thread);
+	uint32_t* out = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	Icon_t* icon = Icon_Resolve(handle);
+	if(icon == NULL)
+	{
+		Thread_PushStack(thread, 0);
+		return 0;
+	}
+	Thread_PushStack(thread, (uint32_t)Icon_TakeEvent(icon, out));
 	return 0;
 }
 
@@ -1744,9 +2364,19 @@ uint32_t Opcode_Grp0_Unknown_220(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_221(Thread_t* thread)
+uint32_t Opcode_Grp0_SetWheelToObjects(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x00480050: exchange, not assign - the old setting is what it pushes,
+	// so a script can put back what it found.
+	int value = (int)Thread_PopStack(thread);
+	int previous = gWheelToObjects;
+	gWheelToObjects = value;
+	printf("[Thread %d]: %sThe mouse wheel goes to %s (it went to %s)\n",
+	       thread->threadId, TLevel[thread->level],
+	       value ? "the registered objects" : "the keyboard as 0x0E and 0x0F",
+	       previous ? "the registered objects" : "the keyboard as 0x0E and 0x0F");
+	Thread_PushStack(thread, (uint32_t)previous);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_222(Thread_t* thread)
@@ -1759,22 +2389,73 @@ uint32_t Opcode_Grp0_Unknown_223(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
+// Grp0 0xE0 (0x004800E0 -> 0x004636C0 -> 0x00442640) makes a group object and pushes
+// its handle. A group is eight slots deep, its handle carries the tag 0xF1, and
+// running out is fatal with its own message: "no more group objects can be created"
+// (0x004EA470). The stub this replaces pushed the constant 0xF0000000, which is a
+// slot of a different kind of object altogether.
 uint32_t Opcode_Grp0_CreateGroupObject(Thread_t* thread)
 {
-	Thread_PushStack(thread, 0xf0000000);
+	uint32_t handle = Object_Create(OBJECT_TAG_GROUP);
+	if(handle == 0)
+	{
+		printf("[Thread %d]: %sError: no more group objects can be created (%d in use)\n",
+		       thread->threadId, TLevel[thread->level], GROUP_SLOT_COUNT);
+		return 0xFFFFFFFF;
+	}
+
+	Thread_PushStack(thread, handle);
+	return 0;
+}
+/*
+ * Grp0 0xE1 (0x00480110 -> 0x00442730) destroys a group: it pops the handle,
+ * calls the group's own destructor, clears its slot in the group table and
+ * takes one off the count. A handle that is not a group is reported as an
+ * invalid group handle (0x004EA4A8) and does not return.
+ *
+ * Unlike destroying an ordinary object (Grp0 0x51) there is no test for an
+ * owner and none for the group's own members: the group goes whatever it holds.
+ */
+uint32_t Opcode_Grp0_DestroyGroup(Thread_t* thread)
+{
+	uint32_t handle = Thread_PopStack(thread);
+
+	if(Object_ResolveKind(handle, OBJECT_TYPE_GROUP) == NULL)
+	{
+		// 無効なグループハンドルが指定されました (0x004EA4A8)
+		printf("[Thread %d]: %sError: an invalid group handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+
+	Object_Destroy(handle);
+	printf("[Thread %d]: %sGroup 0x%08X destroyed\n",
+	       thread->threadId, TLevel[thread->level], handle);
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_225(Thread_t* thread)
+// Grp0 0xE4 (0x00480140 -> 0x004636E0 -> 0x00442780) shows or hides a group, and
+// with it everything the group holds: the visible flag walks down every child
+// (0x0041AED0), which is how Fureraba's message window is put on screen at all.
+// A handle that is not a group is fatal, with its own message (0x004EA4A8).
+uint32_t Opcode_Grp0_ShowGroupObject(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Grp0_Unknown_228(Thread_t* thread)
-{
-	uint32_t value1 = Thread_PopStack(thread);
+	uint32_t visible = Thread_PopStack(thread);
 	uint32_t groupHandle = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+
+	DisplayObject_t* group = Object_ResolveKind(groupHandle, OBJECT_TYPE_GROUP);
+	if(group == NULL)
+	{
+		// 無効なグループハンドルが指定されました
+		printf("[Thread %d]: %sError: an invalid group handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], groupHandle);
+		return 0xFFFFFFFF;
+	}
+
+	Object_ApplyVisible(group, (int)visible);
+	printf("[Thread %d]: %sGroup 0x%08X is now %s\n",
+	       thread->threadId, TLevel[thread->level], groupHandle,
+	       visible ? "visible" : "invisible");
 	return 0;
 }
 
@@ -1788,22 +2469,88 @@ uint32_t Opcode_Grp0_Unknown_229(Thread_t* thread)
 	return 0;
 }
 
+// Grp0 0xE8 (0x004801F0 -> 0x00463710 -> 0x00442860 -> 0x0041AC10) puts an object
+// into a group at an offset inside it. The four values come off the stack in the
+// order the opcode pops them - y, x, the object, the group - and every one of the
+// four failures below is fatal in the original, each with its own message.
 uint32_t Opcode_Grp0_AddObjectToGroup(Thread_t* thread)
 {
-	// 無効なグループハンドルが指定されました - Invalid group handle specified
-	// 指定されたオブジェクトにはオーナーが存在します - The specified object has an owner
-	// 無効なオブジェクトハンドルが指定されました - Invalid object handle specified (== 1)
-	// 自分自身をグループに登録することはできません - You cannot register yourself to a group. (!= 3)
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
+	int32_t  y = (int32_t)Thread_PopStack(thread);
+	int32_t  x = (int32_t)Thread_PopStack(thread);
 	uint32_t objectHandle = Thread_PopStack(thread);
 	uint32_t groupHandle = Thread_PopStack(thread);
-	return 0;
+
+	switch(Object_AddToGroup(groupHandle, objectHandle, x, y))
+	{
+	case OBJECT_GROUP_OK:
+		printf("[Thread %d]: %sObject 0x%08X joined group 0x%08X at %d, %d\n",
+		       thread->threadId, TLevel[thread->level], objectHandle, groupHandle, x, y);
+		return 0;
+
+	case OBJECT_GROUP_BAD_GROUP:
+		// 無効なグループハンドルが指定されました (0x004EA4A8)
+		printf("[Thread %d]: %sError: an invalid group handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], groupHandle);
+		return 0xFFFFFFFF;
+
+	case OBJECT_GROUP_BAD_OBJECT:
+		// 無効なオブジェクトハンドルが指定されました (0x004E8BD0)
+		printf("[Thread %d]: %sError: an invalid object handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], objectHandle);
+		return 0xFFFFFFFF;
+
+	case OBJECT_GROUP_SELF:
+		// 自分自身をグループに登録することはできません (0x004EA4D0)
+		printf("[Thread %d]: %sError: you cannot register yourself to a group (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], groupHandle);
+		return 0xFFFFFFFF;
+
+	default:
+		// 指定されたオブジェクトにはオーナーが存在します (0x004EA334)
+		printf("[Thread %d]: %sError: the specified object has an owner (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], objectHandle);
+		return 0xFFFFFFFF;
+	}
 }
 
-uint32_t Opcode_Grp0_Unknown_233(Thread_t* thread)
+/*
+ * Grp0 0xE9 (0x00480280 -> 0x00463780 -> 0x004428D0) takes an object back out of
+ * a group: the object's handle is popped first and the group's under it, which
+ * is the same order Grp0 0xE8 puts it in with. Nothing is pushed back; each of
+ * the three failures is reported by the original with its own string and does
+ * not return.
+ */
+uint32_t Opcode_Grp0_RemoveObjectFromGroup(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t objectHandle = Thread_PopStack(thread);
+	uint32_t groupHandle = Thread_PopStack(thread);
+
+	switch(Object_RemoveFromGroup(groupHandle, objectHandle))
+	{
+	case OBJECT_GROUP_OK:
+		printf("[Thread %d]: %sObject 0x%08X left group 0x%08X\n",
+		       thread->threadId, TLevel[thread->level], objectHandle, groupHandle);
+		return 0;
+
+	case OBJECT_GROUP_BAD_GROUP:
+		// 無効なグループハンドルが指定されました (0x004EA4A8)
+		printf("[Thread %d]: %sError: an invalid group handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], groupHandle);
+		return 0xFFFFFFFF;
+
+	case OBJECT_GROUP_BAD_OBJECT:
+		// 無効なオブジェクトハンドルが指定されました (0x004E8BD0)
+		printf("[Thread %d]: %sError: an invalid object handle was specified (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], objectHandle);
+		return 0xFFFFFFFF;
+
+	default:
+		// 指定されたオブジェクトはグループに登録されていません (0x004EA500)
+		printf("[Thread %d]: %sError: the specified object is not registered with "
+		       "the group (0x%08X)\n",
+		       thread->threadId, TLevel[thread->level], objectHandle);
+		return 0xFFFFFFFF;
+	}
 }
 
 uint32_t Opcode_Grp0_Unknown_240(Thread_t* thread)
@@ -1821,9 +2568,11 @@ uint32_t Opcode_Grp0_Unknown_242(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_243(Thread_t* thread)
+uint32_t Opcode_Grp0_SetMasterVolume(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t volume = Thread_PopStack(thread);
+	Engine_SetMasterVolume(volume);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_248(Thread_t* thread)
@@ -1849,4 +2598,13 @@ uint32_t Opcode_Grp0_Unknown_252(Thread_t* thread)
 uint32_t Opcode_Grp0_Unknown_253(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
+}
+
+// Grp0 0x07 (0x004796E0) sets how long the loader may keep waiting for something that
+// is not ready yet. It pops one value and pushes nothing.
+uint32_t Opcode_Grp0_SetLoadWaitTimeout(Thread_t* thread)
+{
+	uint32_t timeout = Thread_PopStack(thread);
+	Engine_SetLoadWaitTimeout(timeout);
+	return 0;
 }

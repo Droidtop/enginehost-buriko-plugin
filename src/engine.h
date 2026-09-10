@@ -16,13 +16,13 @@ struct Engine
 	Program_t* programs;
 	Memory_t* memory;
     uint8_t* auxMemory[48];
+    // Beside each aux area, the size it was asked for. The original has no use
+    // for it, but nothing else here can tell whether an address is inside one.
+    uint32_t auxMemorySize[48];
     uint32_t globalBufferSize;
     uint8_t* globalMem;
     int isRunning;
 
-    uint32_t windowObjectHandle;
-    uint32_t filterObjectHandle;
-    uint32_t spriteObjectHandle;
     uint32_t knobObjectHandle;
 
     uint32_t nextThreadRequest;
@@ -37,19 +37,105 @@ uint32_t Engine_LoadProgram(Engine_t* engine, const char* archive, const char* f
 Thread_t* Engine_CreateThread(Engine_t* engine, uint32_t stackSize, uint32_t codeSize, uint32_t memorySize);
 uint8_t* Engine_ReadFile(Engine_t* engine, const char* archive, const char* filename, size_t* outSize);
 uint32_t Engine_ReadFileToMemory(Engine_t* engine, const char* archive, const char* filename, uint8_t* buffer);
+// A bound on how long Engine_Execute runs, in ticks; 0 is no bound. The engine
+// has no such thing - it is the desktop runner's --ticks.
+extern int gTickLimit;
+
+// A watch on one engine-wide memory word, in the script's own tagged address
+// form (tag 0 is global memory, tag 0x40 and up is aux memory). The value is
+// compared after every interpreter step and every change is reported with the
+// thread and the program offset that made it, which is how a word nothing
+// writes by a literal address is traced back to its writer. Thread-local areas
+// (tags 0x10 and 0x11) are refused rather than watched, because they are a
+// different word per thread and one watch cannot mean all of them.
+#define ENGINE_MAX_WATCHES 8
+int  Engine_AddWatch(uint32_t address, uint32_t width);
+void Engine_CheckWatches(Engine_t* engine, Thread_t* thread, uint32_t address);
 void Engine_Execute(Engine_t* engine);
 void Engine_ExecuteThread(Engine_t* engine, uint32_t threadId, int ticks);
 Thread_t* Engine_GetThreadById(Engine_t* engine, uint32_t threadId);
+// The same, but blind to threads that have ended: what 0x00444C70 answers.
+Thread_t* Engine_GetLiveThreadById(Engine_t* engine, uint32_t threadId);
 void Engine_Free(Engine_t* engine);
 void Engine_Init(Engine_t* engine);
 
 extern uint32_t gUnknownVal001;
 void SetGlobalUnknownVal001(uint32_t value);
 
+extern uint32_t gIdleWaitTime;
+void Engine_SetIdleWaitTime(uint32_t value);
+
+extern uint32_t gDisplayModeWidth[8];
+extern uint32_t gDisplayModeHeight[8];
+uint32_t Engine_SetDisplayModeSize(uint32_t index, uint32_t width, uint32_t height);
+
+extern uint32_t gDisplaySizeIndex;
+extern uint32_t gDisplayPixelMode;
+extern uint32_t gDisplayModeThirdArgument;
+void Engine_SetDisplayMode(Engine_t* engine, uint32_t sizeIndex, uint32_t pixelMode, uint32_t third);
+// The size of the slot the game is running in, which is the size everything is
+// composed into.
+uint32_t Engine_ScreenWidth(void);
+uint32_t Engine_ScreenHeight(void);
+
+extern uint32_t gDisplayFlagUnknown98;
+uint32_t Engine_SetDisplayFlagUnknown98(uint32_t value);
+
+extern int gMousePosX;
+extern int gMousePosY;
+extern int gMousePosPending;
+void Engine_SetMousePosition(int x, int y);
+
+extern uint32_t gGrp1FlagUnknown13;
+void Engine_SetGrp1FlagUnknown13(uint32_t value);
+
+typedef struct FontSubstitution
+{
+	char* name;
+	char* replacement;
+	int charset;
+	struct FontSubstitution* next;
+} FontSubstitution_t;
+
+typedef struct FontName
+{
+	uint32_t id;
+	char* name;
+	struct FontName* next;
+} FontName_t;
+
+extern FontSubstitution_t* gFontSubstitutions;
+extern char* gFontSubstitutionDefault;
+void Engine_SetFontSubstitution(const char* name, const char* replacement);
+const char* Engine_GetFontSubstitution(const char* name);
+uint32_t Engine_EnumerateFontFamilies(char* buffer);
+extern uint32_t gFunctionParameters[4];
+uint32_t Engine_SetFunctionParameter(uint32_t function, int32_t value);
+void Engine_SetFontCharset(const char* name, int charset);
+extern FontName_t* gFontNames;
+uint32_t Engine_InternFontName(const char* name);
+// The name a font number was interned under, or NULL (0x00468D30).
+const char* Engine_FontNameById(uint32_t id);
+
+typedef struct FontAdjust
+{
+	char* name;
+	uint32_t scaleX;
+	uint32_t scaleY;
+	int32_t originX;
+	int32_t originY;
+	struct FontAdjust* next;
+} FontAdjust_t;
+
+extern FontAdjust_t* gFontAdjusts;
+// 0 on success, 0x80000005 for a rejected scale, 0x80000006 for a rejected origin.
+uint32_t Engine_SetFontAdjust(const char* name, uint32_t scaleX, uint32_t scaleY, int32_t originX, int32_t originY);
+
 int Engine_InitGlobalMemory(Engine_t* engine, uint32_t level);
 
 uint32_t Engine_AllocAuxMemory(Engine_t* engine, uint32_t size);
 uint8_t* Engine_GetAuxMemory(Engine_t* engine, uint8_t slot);
+uint32_t Engine_FreeAuxMemory(Engine_t* engine, uint32_t address);
 
 extern uint32_t gFrameTimeMs;
 extern uint32_t gFrameTimer;
@@ -60,9 +146,90 @@ extern int gAntiAliasing2;
 extern int gAntiAliasing3;
 void Engine_SetAntialiasingLevel(int level);
 
+extern char gWindowTitle[256];
+void Engine_SetWindowTitle(const char* title);
+
 extern int gCursorShape;
+
+// 0x00565B90 and 0x00565B94, what a new message display starts with: the
+// interval it keeps as it stands, and the delay it counts from the current
+// tick for its first deadline. Grp0 0x9B sets both.
+extern uint32_t gMessageInterval;
+extern uint32_t gMessageDelay;
+
+// 0x00507204. Set, the mouse wheel goes to the objects registered as wheel
+// targets; clear, the window turns it into key 0x0E (down) and 0x0F (up).
+// The original's startup sets it at 0x0048CC30, before a line of script runs.
+extern int gWheelToObjects;
+
+uint32_t Engine_CreateRecordTable(uint32_t recordSize, uint32_t* idOut);
+
+/*
+ * The bounded record lists (0x005667D8, ids from 0x005667C8). A list holds
+ * fixed-size records, newest first, and never more than its capacity: adding
+ * one past that frees the tail. Sys0 0x98 makes one, 0x99 destroys it, 0x9A
+ * counts it, 0x9C adds to it, 0x9D reads an index and 0x9E drops a run.
+ * Results are the original's: 0 done, 1 no such list, 2 refused.
+ */
+typedef struct RingItem RingItem_t;
+struct RingItem
+{
+	uint8_t*    record;
+	RingItem_t* next;
+};
+
+typedef struct Ring Ring_t;
+struct Ring
+{
+	uint32_t    id;
+	uint32_t    capacity;
+	uint32_t    recordSize;
+	RingItem_t* items;
+	Ring_t*     next;
+};
+
+uint32_t Engine_CreateRing(uint32_t capacity, uint32_t recordSize, uint32_t* idOut);
+uint32_t Engine_DestroyRing(uint32_t id);
+uint32_t Engine_RingCount(uint32_t id, uint32_t* countOut);
+uint32_t Engine_RingAdd(uint32_t id, const uint8_t* record);
+uint32_t Engine_RingRead(uint32_t id, uint32_t index, uint8_t* out);
+uint32_t Engine_RingDrop(uint32_t id, uint32_t index, uint32_t count);
+uint32_t Engine_DestroyRecordTable(uint32_t id);
+uint32_t Engine_SetRecord(uint32_t id, const char* key, const uint8_t* value);
+uint32_t Engine_DeleteRecord(uint32_t id, const char* key);
+uint32_t Engine_ReadRecordByKey(uint32_t id, const char* key, uint8_t* out);
+uint32_t Engine_ReadRecordByIndex(uint32_t id, uint32_t index, uint8_t* out);
+
+extern int gWindowVisible;
+void Engine_SetWindowVisible(uint32_t visible);
+
+extern int gAudioResumeOnActivate;
+uint32_t Engine_SetAudioResumeOnActivate(uint32_t value);
+
+extern int gCursorAutoHideTimeout;
+extern int gCursorAutoHideActive;
+extern int gCursorShown;
+extern uint32_t gCursorAutoHideDeadline;
+extern int gCursorLastX;
+extern int gCursorLastY;
+void Engine_SetCursorAutoHideTimeout(uint32_t timeout);
+
+extern int gControlMode;
+uint32_t Engine_SetControlMode(uint32_t mode);
+
+extern int gScreenMappingMode;
+uint32_t Engine_SetScreenMappingMode(uint32_t mode);
 extern int gFlagUnknown10;
 void Engine_SetFlagUnknown10(int value);
+
+// 0x00565AC4, the base of the playback clock (Sys0 0x06).
+extern uint32_t gClockBase;
+void Engine_SetClockBase(uint32_t base);
+
+extern int gMasterVolume;
+extern int gMasterVolumeAttenuation;
+extern int gMasterVolumeMuted;
+uint32_t Engine_SetMasterVolume(uint32_t volume);
 
 typedef struct SearchPathNode SearchPathNode_t;
 struct SearchPathNode
@@ -75,6 +242,32 @@ void Engine_AddSearchPath(char* path);
 
 extern int gEnableSearchPaths;
 void Engine_SetEnableSearchPaths(int value);
+
+int Engine_FileExists(const char* archive, const char* filename);
+
+extern char gUserDirectory[512];
+int Engine_SetUserDirectory(const char* path);
+
+#define USER_INSTRUCTION_COUNT 0xF0
+typedef struct UserInstruction UserInstruction_t;
+struct UserInstruction
+{
+    char*    program;
+    uint8_t* code;
+    size_t   codeSize;
+};
+extern UserInstruction_t gUserInstructions[USER_INSTRUCTION_COUNT];
+int Engine_DefineUserInstruction(Engine_t* engine, uint32_t number, const char* archive, const char* program);
+int Engine_UndefineUserInstruction(uint32_t number);
+void Engine_FreeUserInstructions(void);
+
+extern uint32_t gLoadWaitTimeout;
+extern uint32_t gLoadWaitDeadline;
+void Engine_SetLoadWaitTimeout(uint32_t timeout);
+
+#define ENGINE_GAME_ID_SIZE 16
+extern char gGameId[ENGINE_GAME_ID_SIZE];
+void Engine_SetGameId(const char* id);
 
 extern int gFlagUnknown2;
 extern int gFlagUnknown3;

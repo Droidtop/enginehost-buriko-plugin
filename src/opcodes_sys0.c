@@ -1,10 +1,20 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <time.h>
 #include "engine.h"
+#include "arc.h"
+#include "region.h"
+#include "process.h"
 #include "opcodes.h"
 #include "opcodes_sys0.h"
+#include "object.h"
+#include "os.h"
 #include "thread.h"
 
 char* OpcodesSys0Mnemonics[256] = {
@@ -14,26 +24,26 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x03   3 */ "--Unknown--",
 	/* 0x04   4 */ "GetSysTime",
 	/* 0x05   5 */ "--Unknown--",
-	/* 0x06   6 */ "--Unknown--",
+	/* 0x06   6 */ "SetClockBase",
 	/* 0x07   7 */ "--Unknown--",
 	/* 0x08   8 */ "Unknown_8",
 	/* 0x09   9 */ "--Unknown--",
 	/* 0x0A  10 */ "Unknown_10",
 	/* 0x0B  11 */ "Unknown_11",
-	/* 0x0C  12 */ "Unknown_12",
-	/* 0x0D  13 */ "Unknown_13",
+	/* 0x0C  12 */ "GetLocalTime",
+	/* 0x0D  13 */ "GetPhysicalMemory",
 	/* 0x0E  14 */ "Unknown_14",
 	/* 0x0F  15 */ "IsWindowActive",
 	/* 0x10  16 */ "Unknown_16",
-	/* 0x11  17 */ "Unknown_17",
+	/* 0x11  17 */ "IsKeyDown",
 	/* 0x12  18 */ "Unknown_18",
 	/* 0x13  19 */ "Unknown_19",
 	/* 0x14  20 */ "Unknown_20",
 	/* 0x15  21 */ "Unknown_21",
 	/* 0x16  22 */ "Unknown_22",
 	/* 0x17  23 */ "Unknown_23",
-	/* 0x18  24 */ "Unknown_24",
-	/* 0x19  25 */ "Unknown_25",
+	/* 0x18  24 */ "AddRegion",
+	/* 0x19  25 */ "RemoveRegion",
 	/* 0x1A  26 */ "Unknown_26",
 	/* 0x1B  27 */ "Unknown_0x1B",
 	/* 0x1C  28 */ "Unknown_28",
@@ -41,11 +51,11 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x1E  30 */ "Unknown_30",
 	/* 0x1F  31 */ "Unknown_31",
 	/* 0x20  32 */ "AllocAuxMem",
-	/* 0x21  33 */ "Unknown_33",
+	/* 0x21  33 */ "FreeAuxMem",
 	/* 0x22  34 */ "--Unknown--",
 	/* 0x23  35 */ "--Unknown--",
 	/* 0x24  36 */ "Unknown_36",
-	/* 0x25  37 */ "Unknown_37",
+	/* 0x25  37 */ "ListFiles",
 	/* 0x26  38 */ "--Unknown--",
 	/* 0x27  39 */ "--Unknown--",
 	/* 0x28  40 */ "CreateDirectory",
@@ -61,11 +71,11 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x32  50 */ "Unknown_50",
 	/* 0x33  51 */ "DeleteFile",
 	/* 0x34  52 */ "FindFile",
-	/* 0x35  53 */ "Unknown_53",
+	/* 0x35  53 */ "GetFileSize",
 	/* 0x36  54 */ "EnableSearchPaths",
 	/* 0x37  55 */ "AddSearchPath",
-	/* 0x38  56 */ "Unknown_56",
-	/* 0x39  57 */ "--Unknown--",
+	/* 0x38  56 */ "CreateComplexArchive",
+	/* 0x39  57 */ "SetUserDirectory",
 	/* 0x3A  58 */ "Unknown_58",
 	/* 0x3B  59 */ "Unknown_59",
 	/* 0x3C  60 */ "Unknown_60",
@@ -79,18 +89,18 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x44  68 */ "CreateThread",
 	/* 0x45  69 */ "Unknown_69",
 	/* 0x46  70 */ "GetThreadID",
-	/* 0x47  71 */ "Unknown_71",
-	/* 0x48  72 */ "Unknown_72",
-	/* 0x49  73 */ "Unknown_73",
-	/* 0x4A  74 */ "Unknown_74",
-	/* 0x4B  75 */ "Unknown_75",
+	/* 0x47  71 */ "ThreadExists",
+	/* 0x48  72 */ "PostMessage",
+	/* 0x49  73 */ "TakeMessage",
+	/* 0x4A  74 */ "PostMessages",
+	/* 0x4B  75 */ "TakeMessages",
 	/* 0x4C  76 */ "Unknown_76",
 	/* 0x4D  77 */ "--Unknown--",
 	/* 0x4E  78 */ "--Unknown--",
 	/* 0x4F  79 */ "--Unknown--",
-	/* 0x50  80 */ "Unknown_80",
+	/* 0x50  80 */ "SetObjectsHeldBack",
 	/* 0x51  81 */ "--Unknown--",
-	/* 0x52  82 */ "--Unknown--",
+	/* 0x52  82 */ "SetIdleWaitTime",
 	/* 0x53  83 */ "--Unknown--",
 	/* 0x54  84 */ "Unknown_84",
 	/* 0x55  85 */ "--Unknown--",
@@ -100,21 +110,21 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x59  89 */ "Unknown_89",
 	/* 0x5A  90 */ "Unknown_90",
 	/* 0x5B  91 */ "--Unknown--",
-	/* 0x5C  92 */ "Unknown_92",
+	/* 0x5C  92 */ "WaitTiming",
 	/* 0x5D  93 */ "Unknown_93",
 	/* 0x5E  94 */ "SwitchToThread",
 	/* 0x5F  95 */ "Yield",
 	/* 0x60  96 */ "SetDisplayMode",
 	/* 0x61  97 */ "Unknown_97",
 	/* 0x62  98 */ "SetKeySlots",
-	/* 0x63  99 */ "Unknown_99",
-	/* 0x64 100 */ "Unknown_100",
+	/* 0x63  99 */ "SetScreenMappingModeFlag",
+	/* 0x64 100 */ "SetWindowVisible",
 	/* 0x65 101 */ "Unknown_101",
-	/* 0x66 102 */ "SetCursorShape",
-	/* 0x67 103 */ "Unknown_103",
+	/* 0x66 102 */ "SetWindowTitle",
+	/* 0x67 103 */ "SetCursorShape",
 	/* 0x68 104 */ "SetGlobalUnknownVal001",
 	/* 0x69 105 */ "Unknown_105",
-	/* 0x6A 106 */ "Unknown_106",
+	/* 0x6A 106 */ "YieldAndEndPass",
 	/* 0x6B 107 */ "Unknown_107",
 	/* 0x6C 108 */ "Unknown_108",
 	/* 0x6D 109 */ "Unknown_109",
@@ -160,13 +170,13 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x95 149 */ "Unknown_149",
 	/* 0x96 150 */ "Unknown_150",
 	/* 0x97 151 */ "Unknown_151",
-	/* 0x98 152 */ "Unknown_152",
-	/* 0x99 153 */ "Unknown_153",
-	/* 0x9A 154 */ "Unknown_154",
+	/* 0x98 152 */ "CreateRecordList",
+	/* 0x99 153 */ "DestroyRecordList",
+	/* 0x9A 154 */ "RecordListCount",
 	/* 0x9B 155 */ "--Unknown--",
-	/* 0x9C 156 */ "Unknown_156",
-	/* 0x9D 157 */ "Unknown_157",
-	/* 0x9E 158 */ "--Unknown--",
+	/* 0x9C 156 */ "AddToRecordList",
+	/* 0x9D 157 */ "ReadRecordList",
+	/* 0x9E 158 */ "DropFromRecordList",
 	/* 0x9F 159 */ "--Unknown--",
 	/* 0xA0 160 */ "PopGlobalList",
 	/* 0xA1 161 */ "PushGlobalList",
@@ -216,11 +226,11 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0xCD 205 */ "--Unknown--",
 	/* 0xCE 206 */ "--Unknown--",
 	/* 0xCF 207 */ "--Unknown--",
-	/* 0xD0 208 */ "Unknown_208",
-	/* 0xD1 209 */ "Unknown_209",
-	/* 0xD2 210 */ "Unknown_210",
-	/* 0xD3 211 */ "Unknown_211",
-	/* 0xD4 212 */ "Unknown_212",
+	/* 0xD0 208 */ "CreateRecordTable",
+	/* 0xD1 209 */ "DestroyRecordTable",
+	/* 0xD2 210 */ "SetRecord",
+	/* 0xD3 211 */ "DeleteRecord",
+	/* 0xD4 212 */ "ReadRecord",
 	/* 0xD5 213 */ "--Unknown--",
 	/* 0xD6 214 */ "--Unknown--",
 	/* 0xD7 215 */ "--Unknown--",
@@ -240,7 +250,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0xE5 229 */ "--Unknown--",
 	/* 0xE6 230 */ "--Unknown--",
 	/* 0xE7 231 */ "--Unknown--",
-	/* 0xE8 232 */ "Unknown_232",
+	/* 0xE8 232 */ "GetGameId",
 	/* 0xE9 233 */ "--Unknown--",
 	/* 0xEA 234 */ "--Unknown--",
 	/* 0xEB 235 */ "--Unknown--",
@@ -273,26 +283,26 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x03   3 */ NULL,
 	/* 0x04   4 */ Opcode_Sys0_GetSysTime,
 	/* 0x05   5 */ NULL,
-	/* 0x06   6 */ NULL,
+	/* 0x06   6 */ Opcode_Sys0_SetClockBase,
 	/* 0x07   7 */ NULL,
 	/* 0x08   8 */ Opcode_Sys0_Unknown_8,
 	/* 0x09   9 */ NULL,
 	/* 0x0A  10 */ Opcode_Sys0_Unknown_10,
 	/* 0x0B  11 */ Opcode_Sys0_Unknown_11,
-	/* 0x0C  12 */ Opcode_Sys0_Unknown_12,
-	/* 0x0D  13 */ Opcode_Sys0_Unknown_13,
+	/* 0x0C  12 */ Opcode_Sys0_GetLocalTime,
+	/* 0x0D  13 */ Opcode_Sys0_GetPhysicalMemory,
 	/* 0x0E  14 */ Opcode_Sys0_Unknown_14,
 	/* 0x0F  15 */ Opcode_Sys0_IsWindowActive,
 	/* 0x10  16 */ Opcode_Sys0_Unknown_16,
-	/* 0x11  17 */ Opcode_Sys0_Unknown_17,
+	/* 0x11  17 */ Opcode_Sys0_IsKeyDown,
 	/* 0x12  18 */ Opcode_Sys0_Unknown_18,
 	/* 0x13  19 */ Opcode_Sys0_Unknown_19,
 	/* 0x14  20 */ Opcode_Sys0_Unknown_20,
 	/* 0x15  21 */ Opcode_Sys0_Unknown_21,
 	/* 0x16  22 */ Opcode_Sys0_Unknown_22,
 	/* 0x17  23 */ Opcode_Sys0_Unknown_23,
-	/* 0x18  24 */ Opcode_Sys0_Unknown_24,
-	/* 0x19  25 */ Opcode_Sys0_Unknown_25,
+	/* 0x18  24 */ Opcode_Sys0_AddRegion,
+	/* 0x19  25 */ Opcode_Sys0_RemoveRegion,
 	/* 0x1A  26 */ Opcode_Sys0_Unknown_26,
 	/* 0x1B  27 */ Opcode_Sys0_Unknown_0x1B,
 	/* 0x1C  28 */ Opcode_Sys0_Unknown_28,
@@ -300,11 +310,11 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x1E  30 */ Opcode_Sys0_Unknown_30,
 	/* 0x1F  31 */ Opcode_Sys0_Unknown_31,
 	/* 0x20  32 */ Opcode_Sys0_AllocAuxMem,
-	/* 0x21  33 */ Opcode_Sys0_Unknown_33,
+	/* 0x21  33 */ Opcode_Sys0_FreeAuxMem,
 	/* 0x22  34 */ NULL,
 	/* 0x23  35 */ NULL,
 	/* 0x24  36 */ Opcode_Sys0_Unknown_36,
-	/* 0x25  37 */ Opcode_Sys0_Unknown_37,
+	/* 0x25  37 */ Opcode_Sys0_ListFiles,
 	/* 0x26  38 */ NULL,
 	/* 0x27  39 */ NULL,
 	/* 0x28  40 */ Opcode_Sys0_CreateDirectory,
@@ -320,11 +330,11 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x32  50 */ Opcode_Sys0_Unknown_50,
 	/* 0x33  51 */ Opcode_Sys0_DeleteFile,
 	/* 0x34  52 */ Opcode_Sys0_FindFile,
-	/* 0x35  53 */ Opcode_Sys0_Unknown_53,
+	/* 0x35  53 */ Opcode_Sys0_GetFileSize,
 	/* 0x36  54 */ Opcode_Sys0_EnableSearchPaths,
 	/* 0x37  55 */ Opcode_Sys0_AddSearchPath,
-	/* 0x38  56 */ Opcode_Sys0_Unknown_56,
-	/* 0x39  57 */ NULL,
+	/* 0x38  56 */ Opcode_Sys0_CreateComplexArchive,
+	/* 0x39  57 */ Opcode_Sys0_SetUserDirectory,
 	/* 0x3A  58 */ Opcode_Sys0_Unknown_58,
 	/* 0x3B  59 */ Opcode_Sys0_Unknown_59,
 	/* 0x3C  60 */ Opcode_Sys0_Unknown_60,
@@ -338,18 +348,18 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x44  68 */ Opcode_Sys0_CreateThread,
 	/* 0x45  69 */ Opcode_Sys0_Unknown_69,
 	/* 0x46  70 */ Opcode_Sys0_GetThreadID,
-	/* 0x47  71 */ Opcode_Sys0_Unknown_71,
-	/* 0x48  72 */ Opcode_Sys0_Unknown_72,
-	/* 0x49  73 */ Opcode_Sys0_Unknown_73,
-	/* 0x4A  74 */ Opcode_Sys0_Unknown_74,
-	/* 0x4B  75 */ Opcode_Sys0_Unknown_75,
+	/* 0x47  71 */ Opcode_Sys0_ThreadExists,
+	/* 0x48  72 */ Opcode_Sys0_PostMessage,
+	/* 0x49  73 */ Opcode_Sys0_TakeMessage,
+	/* 0x4A  74 */ Opcode_Sys0_PostMessages,
+	/* 0x4B  75 */ Opcode_Sys0_TakeMessages,
 	/* 0x4C  76 */ Opcode_Sys0_Unknown_76,
 	/* 0x4D  77 */ NULL,
 	/* 0x4E  78 */ NULL,
 	/* 0x4F  79 */ NULL,
-	/* 0x50  80 */ Opcode_Sys0_Unknown_80,
+	/* 0x50  80 */ Opcode_Sys0_SetObjectsHeldBack,
 	/* 0x51  81 */ NULL,
-	/* 0x52  82 */ NULL,
+	/* 0x52  82 */ Opcode_Sys0_SetIdleWaitTime,
 	/* 0x53  83 */ NULL,
 	/* 0x54  84 */ Opcode_Sys0_Unknown_84,
 	/* 0x55  85 */ NULL,
@@ -359,21 +369,21 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x59  89 */ Opcode_Sys0_Unknown_89,
 	/* 0x5A  90 */ Opcode_Sys0_Unknown_90,
 	/* 0x5B  91 */ NULL,
-	/* 0x5C  92 */ Opcode_Sys0_Unknown_92,
+	/* 0x5C  92 */ Opcode_Sys0_WaitTiming,
 	/* 0x5D  93 */ Opcode_Sys0_Unknown_93,
 	/* 0x5E  94 */ Opcode_Sys0_SwitchToThread,
 	/* 0x5F  95 */ Opcode_Sys0_Yield,
 	/* 0x60  96 */ Opcode_Sys0_SetDisplayMode,
 	/* 0x61  97 */ Opcode_Sys0_Unknown_97,
 	/* 0x62  98 */ Opcode_Sys0_SetKeySlots,
-	/* 0x63  99 */ Opcode_Sys0_Unknown_99,
-	/* 0x64 100 */ Opcode_Sys0_Unknown_100,
+	/* 0x63  99 */ Opcode_Sys0_SetScreenMappingModeFlag,
+	/* 0x64 100 */ Opcode_Sys0_SetWindowVisible,
 	/* 0x65 101 */ Opcode_Sys0_Unknown_101,
-	/* 0x66 102 */ Opcode_Sys0_SetCursorShape,
-	/* 0x67 103 */ Opcode_Sys0_Unknown_103,
+	/* 0x66 102 */ Opcode_Sys0_SetWindowTitle,
+	/* 0x67 103 */ Opcode_Sys0_SetCursorShape,
 	/* 0x68 104 */ Opcode_Sys0_SetGlobalUnknownVal001,
 	/* 0x69 105 */ Opcode_Sys0_Unknown_105,
-	/* 0x6A 106 */ Opcode_Sys0_Unknown_106,
+	/* 0x6A 106 */ Opcode_Sys0_YieldAndEndPass,
 	/* 0x6B 107 */ Opcode_Sys0_Unknown_107,
 	/* 0x6C 108 */ Opcode_Sys0_Unknown_108,
 	/* 0x6D 109 */ Opcode_Sys0_Unknown_109,
@@ -419,13 +429,13 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x95 149 */ Opcode_Sys0_Unknown_149,
 	/* 0x96 150 */ Opcode_Sys0_Unknown_150,
 	/* 0x97 151 */ Opcode_Sys0_Unknown_151,
-	/* 0x98 152 */ Opcode_Sys0_Unknown_152,
-	/* 0x99 153 */ Opcode_Sys0_Unknown_153,
-	/* 0x9A 154 */ Opcode_Sys0_Unknown_154,
+	/* 0x98 152 */ Opcode_Sys0_CreateRecordList,
+	/* 0x99 153 */ Opcode_Sys0_DestroyRecordList,
+	/* 0x9A 154 */ Opcode_Sys0_RecordListCount,
 	/* 0x9B 155 */ NULL,
-	/* 0x9C 156 */ Opcode_Sys0_Unknown_156,
-	/* 0x9D 157 */ Opcode_Sys0_Unknown_157,
-	/* 0x9E 158 */ NULL,
+	/* 0x9C 156 */ Opcode_Sys0_AddToRecordList,
+	/* 0x9D 157 */ Opcode_Sys0_ReadRecordList,
+	/* 0x9E 158 */ Opcode_Sys0_DropFromRecordList,
 	/* 0x9F 159 */ NULL,
 	/* 0xA0 160 */ Opcode_Sys0_PopGlobalList,
 	/* 0xA1 161 */ Opcode_Sys0_PushGlobalList,
@@ -475,11 +485,11 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0xCD 205 */ NULL,
 	/* 0xCE 206 */ NULL,
 	/* 0xCF 207 */ NULL,
-	/* 0xD0 208 */ Opcode_Sys0_Unknown_208,
-	/* 0xD1 209 */ Opcode_Sys0_Unknown_209,
-	/* 0xD2 210 */ Opcode_Sys0_Unknown_210,
-	/* 0xD3 211 */ Opcode_Sys0_Unknown_211,
-	/* 0xD4 212 */ Opcode_Sys0_Unknown_212,
+	/* 0xD0 208 */ Opcode_Sys0_CreateRecordTable,
+	/* 0xD1 209 */ Opcode_Sys0_DestroyRecordTable,
+	/* 0xD2 210 */ Opcode_Sys0_SetRecord,
+	/* 0xD3 211 */ Opcode_Sys0_DeleteRecord,
+	/* 0xD4 212 */ Opcode_Sys0_ReadRecord,
 	/* 0xD5 213 */ NULL,
 	/* 0xD6 214 */ NULL,
 	/* 0xD7 215 */ NULL,
@@ -499,7 +509,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0xE5 229 */ NULL,
 	/* 0xE6 230 */ NULL,
 	/* 0xE7 231 */ NULL,
-	/* 0xE8 232 */ Opcode_Sys0_Unknown_232,
+	/* 0xE8 232 */ Opcode_Sys0_GetGameId,
 	/* 0xE9 233 */ NULL,
 	/* 0xEA 234 */ NULL,
 	/* 0xEB 235 */ NULL,
@@ -543,12 +553,11 @@ uint32_t Opcode_Sys0_Unknown_2(Thread_t* thread)
 }
 
 
+// Sys0 0x04 (0x00487F30) pushes the tick count from 0x004988B0, the clock
+// every deadline in the engine is measured against.
 uint32_t Opcode_Sys0_GetSysTime(Thread_t* thread)
 {
-	// Dummy data
-	uint32_t data = 0xDEADBEEF;
-
-	Thread_PushStack(thread, data);
+	Thread_PushStack(thread, OS_GetTicks());
 	return 0;
 }
 
@@ -567,14 +576,49 @@ uint32_t Opcode_Sys0_Unknown_11(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_12(Thread_t* thread)
+// Sys0 0x0C (fureraba.exe 0x00488080) pops one script address, resolves it with the
+// engine's own address resolver at 0x0048DF60 and hands the host pointer straight to
+// GetLocalTime. So the script buffer receives a SYSTEMTIME: eight 16-bit fields in
+// the order year, month, day of week, day, hour, minute, second, millisecond. The
+// original writes local time, not UTC.
+uint32_t Opcode_Sys0_GetLocalTime(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint16_t* out = (uint16_t*)Thread_PopAndResolveAddress(thread);
+	if(out == NULL)
+		return 1;
+
+	struct timespec now;
+	clock_gettime(CLOCK_REALTIME, &now);
+
+	struct tm local;
+	localtime_r(&now.tv_sec, &local);
+
+	out[0] = (uint16_t)(local.tm_year + 1900);
+	out[1] = (uint16_t)(local.tm_mon + 1);
+	out[2] = (uint16_t)local.tm_wday;
+	out[3] = (uint16_t)local.tm_mday;
+	out[4] = (uint16_t)local.tm_hour;
+	out[5] = (uint16_t)local.tm_min;
+	out[6] = (uint16_t)local.tm_sec;
+	out[7] = (uint16_t)(now.tv_nsec / 1000000);
+
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_13(Thread_t* thread)
+// Sys0 0x0D (fureraba.exe 0x004880A0) fills a MEMORYSTATUS with GlobalMemoryStatus
+// and pushes two of its fields: dwTotalPhys first, then dwAvailPhys, so the script
+// pops the available figure first. Both are clamped to 0x7FFFFFFF when they do not
+// fit in a signed 32-bit value, which is how the original copes with machines that
+// have 2 GB or more.
+uint32_t Opcode_Sys0_GetPhysicalMemory(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint64_t total = 0;
+	uint64_t available = 0;
+	OS_GetPhysicalMemory(&total, &available);
+
+	Thread_PushStack(thread, total >= 0x80000000ULL ? 0x7FFFFFFF : (uint32_t)total);
+	Thread_PushStack(thread, available >= 0x80000000ULL ? 0x7FFFFFFF : (uint32_t)available);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_14(Thread_t* thread)
@@ -594,9 +638,19 @@ uint32_t Opcode_Sys0_Unknown_16(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_17(Thread_t* thread)
+/*
+ * Sys0 0x11 (0x00488190) pops a Windows virtual-key code and pushes whether it
+ * is held down: the original takes bit 15 of GetAsyncKeyState, the "down right
+ * now" bit, and drops bit 0, the "pressed since last asked" bit.
+ */
+uint32_t Opcode_Sys0_IsKeyDown(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t vk = Thread_PopStack(thread);
+	int down = OS_IsKeyDown(vk);
+	printf("[Thread %d]: %sVirtual key 0x%.2X is %s\n",
+	       thread->threadId, TLevel[thread->level], vk, down ? "down" : "up");
+	Thread_PushStack(thread, down ? 1 : 0);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_18(Thread_t* thread)
@@ -631,16 +685,44 @@ uint32_t Opcode_Sys0_Unknown_23(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_24(Thread_t* thread)
+// Sys0 0x18 (0x00488290): the whole plane goes into the first list and an empty
+// rectangle into the second, both under this number's key, with no owner.
+uint32_t Opcode_Sys0_AddRegion(Thread_t* thread)
 {
-	uint32_t data = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t number = Thread_PopStack(thread);
+	uint32_t key = REGION_KEY(number);
+
+	printf("[Thread %d]: %sAdd the region %d (key 0x%.8X)\n", thread->threadId, TLevel[thread->level], number, key);
+
+	// The rectangle at 0x00506A4C, the whole plane.
+	Region_Add(0, key, (int32_t)0x80000000, (int32_t)0x80000000, (int32_t)0x7FFFFFFF, (int32_t)0x7FFFFFFF, 0);
+	Region_Add(1, key, 0, 0, 0, 0, 0);
+
+	const char* unread = Region_Recompute(key);
+	if(unread != NULL)
+	{
+		printf("[Thread %d]: %sError: this needs %s, which is not read yet\n", thread->threadId, TLevel[thread->level], unread);
+		return 0xFFFFFFFF;
+	}
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_25(Thread_t* thread)
+// Sys0 0x19 (0x004882D0): the same number out of both lists again.
+uint32_t Opcode_Sys0_RemoveRegion(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t number = Thread_PopStack(thread);
+	uint32_t key = REGION_KEY(number);
+
+	const char* unread = Region_Recompute(key);
+	if(unread != NULL)
+	{
+		printf("[Thread %d]: %sError: this needs %s, which is not read yet\n", thread->threadId, TLevel[thread->level], unread);
+		return 0xFFFFFFFF;
+	}
+
+	int removed = Region_RemoveByKey(0, key) + Region_RemoveByKey(1, key);
+	printf("[Thread %d]: %sRemove the region %d (key 0x%.8X): %d of 2\n", thread->threadId, TLevel[thread->level], number, key, removed);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_26(Thread_t* thread)
@@ -694,9 +776,17 @@ uint32_t Opcode_Sys0_AllocAuxMem(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_33(Thread_t* thread)
+uint32_t Opcode_Sys0_FreeAuxMem(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t address = Thread_PopStack(thread);
+	uint32_t result = Engine_FreeAuxMemory(thread->engine, address);
+	if(result == 0)
+	{
+		printf("[Thread %d]: %sError: 0x%.8X is not the start of an allocated memory area\n", thread->threadId, TLevel[thread->level], address);
+		return 0xFFFFFFFF;
+	}
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_36(Thread_t* thread)
@@ -704,9 +794,142 @@ uint32_t Opcode_Sys0_Unknown_36(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_37(Thread_t* thread)
+/*
+ * The matching FindFirstFileA does: '*' for any run and '?' for any one character,
+ * without regard to case.
+ */
+static int Sys0_WildcardMatch(const char* pattern, const char* name)
 {
-	return 0xFFFFFFFF;
+	const char* star = NULL;
+	const char* retry = name;
+	while(*name != '\0')
+	{
+		if(*pattern == '?' ||
+		   (*pattern != '\0' && *pattern != '*' &&
+		    tolower((unsigned char)*pattern) == tolower((unsigned char)*name)))
+		{
+			pattern++;
+			name++;
+		}
+		else if(*pattern == '*')
+		{
+			star = pattern++;
+			retry = name;
+		}
+		else if(star != NULL)
+		{
+			pattern = star + 1;
+			name = ++retry;
+		}
+		else
+		{
+			return 0;
+		}
+	}
+	while(*pattern == '*')
+		pattern++;
+	return *pattern == '\0';
+}
+
+/*
+ * Sys0 0x25 (0x00488610 -> 0x00466D30) lists the files matching a pattern. The script
+ * pushes the buffer, its size, the pattern, a recurse flag and the maximum number of
+ * names, so they pop back to front. Directories are skipped, each name is copied bare
+ * and NUL-terminated one after another, and a name that does not fit ends the walk
+ * with a count of zero and no byte total written. With no buffer the opcode pushes
+ * the number of bytes the names would have taken; with one it pushes how many there
+ * were.
+ */
+uint32_t Opcode_Sys0_ListFiles(Thread_t* thread)
+{
+	int maximum = (int)Thread_PopStack(thread);
+	int recurse = (int)Thread_PopStack(thread);
+	const char* pattern = (const char*)Thread_PopAndResolveAddress(thread);
+	int size = (int)Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+
+	if(pattern == NULL)
+		return 0xFFFFFFFF;
+	if(recurse != 0)
+	{
+		printf("[Thread %d]: %sError: the recursive file listing (0x00466E7B) is not written yet\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	// The pattern is a Windows path; split it into a directory and a mask.
+	char path[512];
+	if(snprintf(path, sizeof(path), "%s", pattern) >= (int)sizeof(path))
+		return 0xFFFFFFFF;
+	for(char* c = path; *c != '\0'; c++)
+	{
+		if(*c == '\\')
+			*c = '/';
+	}
+	char* mask = strrchr(path, '/');
+	const char* directory = ".";
+	if(mask != NULL)
+	{
+		*mask++ = '\0';
+		directory = path[0] == '\0' ? "/" : path;
+	}
+	else
+	{
+		mask = path;
+	}
+
+	printf("[Thread %d]: %sListing \"%s\" in \"%s\"\n",
+	       thread->threadId, TLevel[thread->level], mask, directory);
+
+	int count = 0;
+	int written = 0;
+	int overflowed = 0;
+	DIR* dir = opendir(directory);
+	if(dir != NULL)
+	{
+		struct dirent* entry;
+		while((entry = readdir(dir)) != NULL)
+		{
+			if(maximum != 0 && count >= maximum)
+				break;
+			if(!Sys0_WildcardMatch(mask, entry->d_name))
+				continue;
+
+			char full[1024];
+			if(snprintf(full, sizeof(full), "%s/%s", directory, entry->d_name) >= (int)sizeof(full))
+				continue;
+			struct stat info;
+			if(stat(full, &info) != 0 || S_ISDIR(info.st_mode))
+				continue;
+
+			int length = (int)strlen(entry->d_name) + 1;
+			if(out != NULL)
+			{
+				if(length > size - written)
+				{
+					overflowed = 1;
+					break;
+				}
+				memcpy(out + written, entry->d_name, (size_t)length);
+			}
+			written += length;
+			count++;
+		}
+		closedir(dir);
+	}
+
+	if(overflowed)
+	{
+		printf("[Thread %d]: %sThe listing buffer (%d bytes) was too small\n",
+		       thread->threadId, TLevel[thread->level], size);
+		Thread_PushStack(thread, 0);
+		return 0;
+	}
+
+	printf("[Thread %d]: %sListed %d file%s (%d bytes)\n",
+	       thread->threadId, TLevel[thread->level], count, count == 1 ? "" : "s", written);
+	Thread_PushStack(thread, (uint32_t)(out != NULL ? count : written));
+	return 0;
 }
 
 
@@ -791,26 +1014,39 @@ uint32_t Opcode_Sys0_DeleteFile(Thread_t* thread)
 
 uint32_t Opcode_Sys0_FindFile(Thread_t* thread)
 {
-	uint8_t* ptr1 = Thread_PopAndResolveAddress(thread);
-	uint8_t* ptr2 = Thread_PopAndResolveAddress(thread);
-	printf("[Thread %d]: %sFinding file (\"%s\", \"%s\")\n", thread->threadId, TLevel[thread->level], ptr1, ptr2);
-	if(strcmp(ptr1, "fordebuggers.dbg") == 0)
-		Thread_PushStack(thread, 0);
-	else if(strcmp(ptr1, "debug.inf") == 0)
-		Thread_PushStack(thread, 1);
-	else if(strcmp(ptr1, "font") == 0)
-		Thread_PushStack(thread, 1);
-	else if(strcmp(ptr1, "UserData\\NurseryRhyme") >= 0)
-		Thread_PushStack(thread, 0);
-	else
-		Thread_PushStack(thread, 1);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	const char* filename = (const char*)Thread_PopAndResolveAddress(thread);
+	const char* archive = (const char*)Thread_PopAndResolveAddress(thread);
+	printf("[Thread %d]: %sFinding file (\"%s\", \"%s\")\n", thread->threadId, TLevel[thread->level], filename, archive);
+	int found = Engine_FileExists(archive, filename);
+	printf("[Thread %d]: %s%s\n", thread->threadId, TLevel[thread->level], found ? "Found it" : "Not there");
+	Thread_PushStack(thread, found);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_53(Thread_t* thread)
+// Sys0 0x35 (0x00488A80 -> 0x00466460) pushes back the size of a file, or 0 when it
+// is not there. Both arguments are addresses in the script's own memory, popped and
+// resolved (0x0048E0E0): the name first, then the archive, whose pushed value may be
+// 0 to mean no archive at all. The original reads the file into a 0x4000000-byte
+// buffer and frees it again without looking at the bytes; it tries the archive
+// registry at 0x00517F18 and then the one at 0x00517C08, which is the same order this
+// engine's own lookup takes.
+uint32_t Opcode_Sys0_GetFileSize(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Engine_t* engine = thread->engine;
+	const char* filename = (const char*)Thread_PopAndResolveAddress(thread);
+	const char* archive  = (const char*)Thread_PopAndResolveAddress(thread);
+
+	size_t size = 0;
+	uint8_t* file = Engine_ReadFile(engine, archive, filename, &size);
+	if(file == NULL)
+	{
+		Thread_PushStack(thread, 0);
+		return 0;
+	}
+
+	free(file);
+	Thread_PushStack(thread, (uint32_t)size);
+	return 0;
 }
 
 
@@ -828,9 +1064,49 @@ uint32_t Opcode_Sys0_AddSearchPath(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_56(Thread_t* thread)
+uint32_t Opcode_Sys0_CreateComplexArchive(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x00488B00: the array of member names first, then the group's own name.
+	uint32_t listAddress = Thread_PopStack(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t* list = (uint32_t*)Thread_ResolveAddr(thread, listAddress);
+	if(list == NULL || name == NULL)
+		return 0xFFFFFFFF;
+
+	// The array ends at the first null entry, as 0x00488B1F counts it.
+	int count = 0;
+	while(list[count] != 0)
+		count++;
+
+	const char** members = (const char**)malloc(sizeof(char*) * (size_t)(count > 0 ? count : 1));
+	if(members == NULL)
+		return 0xFFFFFFFF;
+	int silenced = thread->silenceBasicOpcodeLog;
+	thread->silenceBasicOpcodeLog = 1;
+	int inBasic = thread->inBasicOpcode;
+	thread->inBasicOpcode = 1;
+	for(int i = 0; i < count; i++)
+		members[i] = (const char*)Thread_ResolveAddr(thread, list[i]);
+	thread->silenceBasicOpcodeLog = silenced;
+	thread->inBasicOpcode = inBasic;
+
+	printf("[Thread %d]: %sComplex archive \"%s\" of %d archive%s\n",
+	       thread->threadId, TLevel[thread->level], name, count, count == 1 ? "" : "s");
+	for(int i = 0; i < count; i++)
+	{
+		printf("[Thread %d]: %s  %s\n", thread->threadId, TLevel[thread->level],
+		       members[i] == NULL ? "(unresolved)" : members[i]);
+	}
+
+	uint32_t result = (uint32_t)Arc_CreateComplex(name, members, count);
+	free(members);
+	if(result == 0)
+	{
+		printf("[Thread %d]: %sAn archive named \"%s\" is already registered\n",
+		       thread->threadId, TLevel[thread->level], name);
+	}
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_58(Thread_t* thread)
@@ -882,8 +1158,10 @@ uint32_t Opcode_Sys0_LoadProgram(Thread_t* thread)
 	uint8_t* code = Engine_ReadFile(gEngine, archive, filename, &fileSize);
 	if(code == NULL)
 		return 1;
-	uint32_t location = Thread_LoadCode(thread, code, filename);
+	uint32_t location = Thread_LoadCode(thread, code, fileSize, filename);
 	free(code);
+	if(location == THREAD_LOAD_FAILED)
+		return 1;
 
 	Thread_PushStack(thread, location);
 
@@ -923,32 +1201,124 @@ uint32_t Opcode_Sys0_GetThreadID(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_71(Thread_t* thread)
+/*
+ * Sys0 0x47 (0x00488F20) pops a thread handle, looks it up in the thread tree
+ * from the root down (0x00444B40 to the root, 0x00444C70 the search) and pushes
+ * whether it is there. A handle that is not there is not an error here: the
+ * question the opcode asks is exactly that.
+ */
+uint32_t Opcode_Sys0_ThreadExists(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Sys0_Unknown_72(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Sys0_Unknown_73(Thread_t* thread)
-{
-	uint8_t* ptr = Thread_PopAndResolveAddress(thread);
-	// Writes a uint32 to ptr from an unknown list in the thread, possibly a message queue being popped
-	Thread_PushStack(thread, 0);
+	uint32_t handle = Thread_PopStack(thread);
+	Thread_t* target = Engine_GetLiveThreadById(thread->engine, handle);
+	Thread_PushStack(thread, target != NULL ? 1 : 0);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_74(Thread_t* thread)
+/*
+ * Sys0 0x48 (0x00488F60) posts one value to another thread's queue: the handle
+ * is pushed first and the value on top of it, and nothing is pushed back. Here
+ * an unknown handle IS an error - the original reports
+ * "an invalid thread handle was specified" (0x004EB9CC) through the fatal
+ * reporter at 0x00464870, which ends in int3 and does not return - so the
+ * engine stops the thread rather than dropping the message silently.
+ */
+uint32_t Opcode_Sys0_PostMessage(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Thread_t* target = Engine_GetLiveThreadById(thread->engine, handle);
+	if(target == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid thread handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+
+	Thread_PostMessage(target, value);
+	printf("[Thread %d]: %sPosted 1 message to thread %d\n",
+	       thread->threadId, TLevel[thread->level], handle);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_75(Thread_t* thread)
+/*
+ * Sys0 0x49 (0x00488FB0) takes one message for the running thread. It pushes
+ * whether there was one, and writes to the address only when there was.
+ */
+uint32_t Opcode_Sys0_TakeMessage(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	uint32_t value = 0;
+	int taken = Thread_TakeMessage(thread, &value);
+	if(taken && out != NULL)
+		Thread_WriteIntToMemory(thread, out, BGI_SIZE_DWORD, value);
+	Thread_PushStack(thread, (uint32_t)taken);
+	return 0;
+}
+
+/*
+ * Sys0 0x4A (0x00488FE0) posts a run of values to another thread's queue. The
+ * array of values pops first, then how many of them, then the thread's handle.
+ * An unknown handle and a count below 1 are both fatal, as in the original.
+ */
+uint32_t Opcode_Sys0_PostMessages(Thread_t* thread)
+{
+	uint32_t* values = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	int count = (int)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+
+	Thread_t* target = Engine_GetLiveThreadById(thread->engine, handle);
+	if(target == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid thread handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+	if(count < 1)
+	{
+		printf("[Thread %d]: %sError: an invalid thread message count [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], count);
+		return 0xFFFFFFFF;
+	}
+	if(values == NULL)
+		return 0xFFFFFFFF;
+
+	for(int i = 0; i < count; i++)
+		Thread_PostMessage(target, values[i]);
+	printf("[Thread %d]: %sPosted %d message%s to thread %d\n",
+	       thread->threadId, TLevel[thread->level], count, count == 1 ? "" : "s", handle);
+	return 0;
+}
+
+/*
+ * Sys0 0x4B (0x00489090) takes a run of messages into an array and pushes how
+ * many there were. The loop tests the previous take before taking again, so an
+ * empty queue ends the run; nothing is written for the take that failed.
+ */
+uint32_t Opcode_Sys0_TakeMessages(Thread_t* thread)
+{
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	int count = (int)Thread_PopStack(thread);
+	if(count < 1)
+	{
+		printf("[Thread %d]: %sError: an invalid thread message count [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], count);
+		return 0xFFFFFFFF;
+	}
+
+	int taken = 0;
+	int more = 1;
+	for(int i = 0; i < count && more; i++)
+	{
+		uint32_t value = 0;
+		more = Thread_TakeMessage(thread, &value);
+		if(more && out != NULL)
+			Thread_WriteIntToMemory(thread, out + (size_t)i * 4, BGI_SIZE_DWORD, value);
+		taken += more;
+	}
+	Thread_PushStack(thread, (uint32_t)taken);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_76(Thread_t* thread)
@@ -956,9 +1326,24 @@ uint32_t Opcode_Sys0_Unknown_76(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_80(Thread_t* thread)
+/*
+ * Sys0 0x50 (0x004891B0) pops one value into the global at 0x00507688 and does
+ * nothing else at all.
+ *
+ * What reads it is 0x00431AA0, which answers yes for an object when the global
+ * is set AND the object's +0x10 - the flag this engine calls propagateHidden -
+ * is clear; eleven places in the display code call it and take a shorter path
+ * when it answers yes, so the global holds objects back unless they are marked
+ * to survive it. Those eleven are not read yet, so nothing in this engine
+ * consults gObjectsHeldBack; the value is kept because the opcode's whole job
+ * is to keep it, and the day one of those paths is written it is already here.
+ */
+uint32_t Opcode_Sys0_SetObjectsHeldBack(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	gObjectsHeldBack = Thread_PopStack(thread);
+	printf("[Thread %d]: %sObjects are %sheld back\n", thread->threadId,
+	       TLevel[thread->level], gObjectsHeldBack ? "" : "not ");
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_84(Thread_t* thread)
@@ -992,14 +1377,24 @@ uint32_t Opcode_Sys0_Unknown_90(Thread_t* thread)
 	return 2;
 }
 
-uint32_t Opcode_Sys0_Unknown_92(Thread_t* thread)
+/*
+ * Sys0 0x5C (0x00489370) makes the thread wait. The key mask pops first, then
+ * whether a key may cut the wait short, then the delay; the process is joined
+ * to the thread (0x004452A0) and the handler returns 2, which is the result
+ * that means the thread is waiting. Nothing is pushed here: the process pushes
+ * its own result when it finishes, 1 if a key cut it short and 0 otherwise.
+ */
+uint32_t Opcode_Sys0_WaitTiming(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint32_t value3 = Thread_PopStack(thread);
-	//Thread_PushStack(thread, 0); // This push happens *after* execution! Find out where it happens!
-	Thread_SchedulePush(thread, 0);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t keyMask = Thread_PopStack(thread);
+	uint32_t allowKey = Thread_PopStack(thread);
+	uint32_t delay = Thread_PopStack(thread);
+
+	Process_t* process = Process_CreateWaitTiming(thread, delay, allowKey, keyMask);
+	if(process == NULL)
+		return 0xFFFFFFFF;
+	Thread_SetProcess(thread, process);
+	printf("[Thread %d]: %sWaiting %d ms\n", thread->threadId, TLevel[thread->level], delay);
 	return 2;
 }
 
@@ -1021,12 +1416,29 @@ uint32_t Opcode_Sys0_Yield(Thread_t* thread)
 }
 
 
+// Sys0 0x60 (0x00489460). The script pushes the size index, then the pixel mode,
+// then a third value, so they come off the stack the other way round. Both of the
+// original's range checks are fatal and name themselves; it pushes nothing back.
 uint32_t Opcode_Sys0_SetDisplayMode(Thread_t* thread)
 {
-	uint32_t fullscreen = Thread_PopStack(thread);
-	uint32_t contextParam = Thread_PopStack(thread);
-	uint32_t modeIndex = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t third = Thread_PopStack(thread);
+	uint32_t pixelMode = Thread_PopStack(thread);
+	uint32_t sizeIndex = Thread_PopStack(thread);
+
+	if(pixelMode >= 2)
+	{
+		printf("[Thread %d]: %sError: an invalid pixel mode was set (%u)\n",
+		       thread->threadId, TLevel[thread->level], pixelMode);
+		return 0xFFFFFFFF;
+	}
+	if(sizeIndex >= 8)
+	{
+		printf("[Thread %d]: %sError: an invalid screen size was set (%u)\n",
+		       thread->threadId, TLevel[thread->level], sizeIndex);
+		return 0xFFFFFFFF;
+	}
+
+	Engine_SetDisplayMode(thread->engine, sizeIndex, pixelMode, third);
 	return 0;
 }
 
@@ -1043,14 +1455,21 @@ uint32_t Opcode_Sys0_SetKeySlots(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_99(Thread_t* thread)
+// The boolean form of Sys1 0x63: a true value selects mapping mode 0 and a false
+// value selects mode 1. The original (0x00489520) discards the setter result and
+// pushes nothing back.
+uint32_t Opcode_Sys0_SetScreenMappingModeFlag(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value = Thread_PopStack(thread);
+	Engine_SetScreenMappingMode(value != 0 ? 0 : 1);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_100(Thread_t* thread)
+uint32_t Opcode_Sys0_SetWindowVisible(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t visible = Thread_PopStack(thread);
+	Engine_SetWindowVisible(visible);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_101(Thread_t* thread)
@@ -1059,18 +1478,32 @@ uint32_t Opcode_Sys0_Unknown_101(Thread_t* thread)
 }
 
 
+uint32_t Opcode_Sys0_SetWindowTitle(Thread_t* thread)
+{
+	const char* title = (const char*)Thread_PopAndResolveAddress(thread);
+	Engine_SetWindowTitle(title);
+	return 0;
+}
+
 uint32_t Opcode_Sys0_SetCursorShape(Thread_t* thread)
 {
 	uint32_t shapeType = Thread_PopStack(thread);
+	if(shapeType > 4)
+	{
+		printf("[Thread %d]: %sError: %d is not a valid cursor shape\n", thread->threadId, TLevel[thread->level], shapeType);
+		return 0xFFFFFFFF;
+	}
 	gCursorShape = shapeType;
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_103(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
 
+uint32_t Opcode_Sys0_SetIdleWaitTime(Thread_t* thread)
+{
+	uint32_t value = Thread_PopStack(thread);
+	Engine_SetIdleWaitTime(value);
+	return 0;
+}
 
 uint32_t Opcode_Sys0_SetGlobalUnknownVal001(Thread_t* thread)
 {
@@ -1084,9 +1517,25 @@ uint32_t Opcode_Sys0_Unknown_105(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_106(Thread_t* thread)
+// Sys0 0x6A (fureraba.exe 0x00489650) is "mov eax, 6; ret": no operands, no work,
+// only a control code for the scheduler at 0x0048CF00.
+//
+// That scheduler runs each thread in turn and switches on the code a handler
+// returns: 0 and 1 move to the next thread, 2 stays on this one, 3 switches to the
+// thread named by 0x00566894, 4 stays after a call with 0x80000000, and 5 and 6 move
+// on like 1 but also raise a flag. Code 6 raises the one at [ebp-0x118], which makes
+// every remaining thread be skipped at 0x0048CFD5, so nothing else runs in this pass;
+// the pass then reports 1 to the frame loop at 0x0048CD5F, which notes that it ran
+// and goes on to the frame's own work. Code 5 raises the other flag and the pass
+// reports 2, which the frame loop records at [ebp-0x634] as well.
+//
+// So this is the yield that also ends the pass, against Sys0 0x5F (0x00489450, "mov
+// eax, 1") which is the plain one. OpenBGI runs one thread's slice at a time and has
+// no pass to end, so both stop the slice and return 1; the difference will only start
+// to matter once more than one thread is scheduled.
+uint32_t Opcode_Sys0_YieldAndEndPass(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	return 1;
 }
 
 uint32_t Opcode_Sys0_Unknown_107(Thread_t* thread)
@@ -1128,6 +1577,23 @@ uint32_t Opcode_Sys0_SetFlagUnknown10(Thread_t* thread)
 {
 	uint32_t value = Thread_PopStack(thread);
 	Engine_SetFlagUnknown10(value);
+	return 0;
+}
+
+// 0x00487F80: pop one value and hand it to 0x00401600, which stores it at
+// 0x00565AC4 and, only when it is not zero, derives a 64-bit period from it
+// (value * 96 / 100 through the runtime's own 64-bit divide) into 0x00565AC8 and
+// clears the five words after it and the pair at 0x0050A858. Those are the state
+// of the clock the four-arm query at 0x00401670 reads back; nothing in this
+// engine has that clock yet, so a non-zero base is refused by name rather than
+// stored as a number nothing would honour.
+//
+// scrdrv's boot calls it with 0 as the very last thing it does before it returns,
+// which is the original's own way of leaving the clock stopped.
+uint32_t Opcode_Sys0_SetClockBase(Thread_t* thread)
+{
+	uint32_t base = Thread_PopStack(thread);
+	Engine_SetClockBase(base);
 	return 0;
 }
 
@@ -1253,56 +1719,95 @@ uint32_t Opcode_Sys0_Unknown_151(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_152(Thread_t* thread)
+uint32_t Opcode_Sys0_CreateRecordList(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A160: record size, then capacity, then where to put the id.
+	uint32_t recordSize = Thread_PopStack(thread);
+	uint32_t capacity = Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	uint32_t id = 0;
+	uint32_t result = Engine_CreateRing(capacity, recordSize, &id);
+	if(result == 0 && out != NULL)
+		Thread_WriteIntToMemory(thread, out, BGI_SIZE_DWORD, id);
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_153(Thread_t* thread)
+uint32_t Opcode_Sys0_DestroyRecordList(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A1A0.
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, Engine_DestroyRing(id));
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_154(Thread_t* thread)
+uint32_t Opcode_Sys0_RecordListCount(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A1D0: the id, then where to put the count.
+	uint32_t id = Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	uint32_t count = 0;
+	uint32_t result = Engine_RingCount(id, &count);
+	if(result == 0 && out != NULL)
+		Thread_WriteIntToMemory(thread, out, BGI_SIZE_DWORD, count);
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_156(Thread_t* thread)
+uint32_t Opcode_Sys0_AddToRecordList(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A210: the record, then the id.
+	uint8_t* record = Thread_PopAndResolveAddress(thread);
+	uint32_t id = Thread_PopStack(thread);
+	if(record == NULL)
+		return 0xFFFFFFFF;
+	Thread_PushStack(thread, Engine_RingAdd(id, record));
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_157(Thread_t* thread)
+uint32_t Opcode_Sys0_DropFromRecordList(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A290: how many, then from where, then the id.
+	uint32_t count = Thread_PopStack(thread);
+	uint32_t index = Thread_PopStack(thread);
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, Engine_RingDrop(id, index, count));
+	return 0;
 }
 
+uint32_t Opcode_Sys0_ReadRecordList(Thread_t* thread)
+{
+	// 0x0048A250: the index, then the id, then where to put the record.
+	uint32_t index = Thread_PopStack(thread);
+	uint32_t id = Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, Engine_RingRead(id, index, out));
+	return 0;
+}
+
+/*
+ * Sys0 0xA0 (0x0048A2D0 -> 0x00496710) takes the next event off the engine's own
+ * global queue - the head at 0x005669C8 with its tail pointer at 0x00503DEC,
+ * appended to by 0x004966D0 from thirty-seven places: the window procedure, the
+ * display objects, the interpreter's own failure paths. It writes the event's
+ * three words to the address it is given and pushes whether there was one, and
+ * when the queue is empty it writes NOTHING and pushes 0.
+ *
+ * It used to write three words of its own over the caller's buffer on every
+ * single call - 3 and 1, or one of two other triples chosen by the thread's tick
+ * count. Those tick numbers were a recording of one particular run, so the two
+ * special cases had long stopped happening and every call handed the script an
+ * event that never occurred.
+ */
 uint32_t Opcode_Sys0_PopGlobalList(Thread_t* thread)
 {
-	uint32_t* ptr = (uint32_t*)Thread_PopAndResolveAddress(thread);
-	uint32_t res = Engine_PopGlobalList(ptr);
-
-	if(thread->ticks == 27982)
+	uint32_t* out = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	if(out == NULL)
 	{
-		*ptr = 0x00000002; ptr++;
-		*ptr = 0x00000000; ptr++;
-		*ptr = 0x00000000; ptr++;
+		Thread_PushStack(thread, 0);
+		return 0;
 	}
-	else if(thread->ticks == 28053)
-	{
-		*ptr = 0x00000000; ptr++;
-		*ptr = 0x00004000; ptr++;
-		*ptr = 0x00000000; ptr++;
-	}
-	else
-	{
-		*ptr = 0x00000003; ptr++;
-		*ptr = 0x00000001; ptr++;
-		*ptr = 0x00000000; ptr++;
-	}
-
-	Thread_PushStack(thread, res);
+	Thread_PushStack(thread, (uint32_t)Engine_PopGlobalList(out));
 	return 0;
 }
 
@@ -1374,33 +1879,57 @@ uint32_t Opcode_Sys0_Unknown_197(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_208(Thread_t* thread)
+uint32_t Opcode_Sys0_CreateRecordTable(Thread_t* thread)
 {
-	uint32_t data = Thread_PopStack(thread);
-	uint8_t* ptr = Thread_PopAndResolveAddress(thread);
-	Thread_PushStack(thread, 0);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t recordSize = Thread_PopStack(thread);
+	uint8_t* idOut = Thread_PopAndResolveAddress(thread);
+	uint32_t id = 0;
+	uint32_t result = Engine_CreateRecordTable(recordSize, &id);
+	if(result == 0)
+		memcpy(idOut, &id, sizeof(id));
+	Thread_PushStack(thread, result);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_209(Thread_t* thread)
+uint32_t Opcode_Sys0_DestroyRecordTable(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, Engine_DestroyRecordTable(id));
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_210(Thread_t* thread)
+uint32_t Opcode_Sys0_SetRecord(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	const uint8_t* value = Thread_PopAndResolveAddress(thread);
+	const char* key = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, Engine_SetRecord(id, key, value));
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_211(Thread_t* thread)
+uint32_t Opcode_Sys0_DeleteRecord(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A910: the key, then the id.
+	const char* key = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, Engine_DeleteRecord(id, key));
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_212(Thread_t* thread)
+uint32_t Opcode_Sys0_ReadRecord(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A940: an index, then a key, then the id, then where to put the
+	// record. 0x004963B0 chooses the form on the key alone: a key that resolved
+	// to nothing means the index names the record instead.
+	uint32_t index = Thread_PopStack(thread);
+	const char* key = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t id = Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+
+	uint32_t result = key != NULL ? Engine_ReadRecordByKey(id, key, out)
+	                              : Engine_ReadRecordByIndex(id, index, out);
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_216(Thread_t* thread)
@@ -1443,9 +1972,12 @@ uint32_t Opcode_Sys0_Unknown_227(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_232(Thread_t* thread)
+uint32_t Opcode_Sys0_GetGameId(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint8_t* destination = Thread_PopAndResolveAddress(thread);
+	memcpy(destination, gGameId, ENGINE_GAME_ID_SIZE);
+	printf("[Thread %d]: %sGame id is \"%.*s\"\n", thread->threadId, TLevel[thread->level], ENGINE_GAME_ID_SIZE, gGameId);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_236(Thread_t* thread)
@@ -1545,4 +2077,11 @@ uint32_t Opcode_Sys0_IsLauncher(Thread_t* thread)
 uint32_t Opcode_Sys0_Unknown_254(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
+}
+
+uint32_t Opcode_Sys0_SetUserDirectory(Thread_t* thread)
+{
+	const char* path = (const char*)Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, Engine_SetUserDirectory(path));
+	return 0;
 }
