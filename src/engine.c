@@ -1803,6 +1803,20 @@ void Engine_SetFlagUnknown10(int value)
 	printf("[Engine]: Set FlagUnknown10 to %d\n", value);
 }
 
+// 0x00401600. The base is stored whatever it is; the period and the five words
+// after it are the clock's own running state, which this engine does not keep, so
+// a base that would start the clock says so instead of being half-honoured.
+uint32_t gClockBase = 0;
+void Engine_SetClockBase(uint32_t base)
+{
+	gClockBase = base;
+	printf("[Engine]: The playback clock's base is %u\n", base);
+	if(base != 0)
+		printf("[Engine]: Warning: a clock base that is not zero derives the period"
+		       " at 0x00565AC8 and the state the query at 0x00401670 reads, which is"
+		       " not written yet\n");
+}
+
 int gEnableSearchPaths = 0;
 void Engine_SetEnableSearchPaths(int value)
 {

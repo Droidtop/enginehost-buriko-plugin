@@ -24,7 +24,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x03   3 */ "--Unknown--",
 	/* 0x04   4 */ "GetSysTime",
 	/* 0x05   5 */ "--Unknown--",
-	/* 0x06   6 */ "--Unknown--",
+	/* 0x06   6 */ "SetClockBase",
 	/* 0x07   7 */ "--Unknown--",
 	/* 0x08   8 */ "Unknown_8",
 	/* 0x09   9 */ "--Unknown--",
@@ -283,7 +283,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x03   3 */ NULL,
 	/* 0x04   4 */ Opcode_Sys0_GetSysTime,
 	/* 0x05   5 */ NULL,
-	/* 0x06   6 */ NULL,
+	/* 0x06   6 */ Opcode_Sys0_SetClockBase,
 	/* 0x07   7 */ NULL,
 	/* 0x08   8 */ Opcode_Sys0_Unknown_8,
 	/* 0x09   9 */ NULL,
@@ -1577,6 +1577,23 @@ uint32_t Opcode_Sys0_SetFlagUnknown10(Thread_t* thread)
 {
 	uint32_t value = Thread_PopStack(thread);
 	Engine_SetFlagUnknown10(value);
+	return 0;
+}
+
+// 0x00487F80: pop one value and hand it to 0x00401600, which stores it at
+// 0x00565AC4 and, only when it is not zero, derives a 64-bit period from it
+// (value * 96 / 100 through the runtime's own 64-bit divide) into 0x00565AC8 and
+// clears the five words after it and the pair at 0x0050A858. Those are the state
+// of the clock the four-arm query at 0x00401670 reads back; nothing in this
+// engine has that clock yet, so a non-zero base is refused by name rather than
+// stored as a number nothing would honour.
+//
+// scrdrv's boot calls it with 0 as the very last thing it does before it returns,
+// which is the original's own way of leaving the clock stopped.
+uint32_t Opcode_Sys0_SetClockBase(Thread_t* thread)
+{
+	uint32_t base = Thread_PopStack(thread);
+	Engine_SetClockBase(base);
 	return 0;
 }
 

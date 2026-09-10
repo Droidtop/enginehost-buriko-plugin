@@ -97,6 +97,7 @@ uint32_t Opcode_Sys0_Unknown_111(Thread_t* thread);
 uint32_t Opcode_Sys0_InitGlobalMem(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_113(Thread_t* thread);
 uint32_t Opcode_Sys0_SetFlagUnknown10(Thread_t* thread);
+uint32_t Opcode_Sys0_SetClockBase(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_120(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_121(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_122(Thread_t* thread);

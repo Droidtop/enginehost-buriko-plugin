@@ -222,6 +222,10 @@ uint32_t Engine_SetScreenMappingMode(uint32_t mode);
 extern int gFlagUnknown10;
 void Engine_SetFlagUnknown10(int value);
 
+// 0x00565AC4, the base of the playback clock (Sys0 0x06).
+extern uint32_t gClockBase;
+void Engine_SetClockBase(uint32_t base);
+
 extern int gMasterVolume;
 extern int gMasterVolumeAttenuation;
 extern int gMasterVolumeMuted;
