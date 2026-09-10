@@ -356,6 +356,12 @@ uint32_t Object_ApplyContentBitmap(Renderer_t* renderer, DisplayObject_t* sprite
 // A sprite is sized by the content it is given; a window by its pixels.
 int Object_SetSurfaceSize(Renderer_t* renderer, DisplayObject_t* object, int width, int height);
 uint32_t Object_DrawKey(const DisplayObject_t* object);
+
+// --draws: report every object the walk visits and what it did with it. A frame
+// that comes out black is then read off the walk itself - which objects were in
+// the list, which the drawability test refused and why, which had no pixels -
+// instead of being reasoned about from the opcodes that led to it.
+extern int gLogDraws;
 // 0x00565B44 and 0x00565B48, which 0x00440650 writes together: whether windows are
 // drawn at all, and a transparency laid over every one of them. The display root's
 // own constructor calls it with both zero, so windows start invisible.

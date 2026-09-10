@@ -12,6 +12,7 @@
 #include "os.h"
 #include "gameid.h"
 #include "renderer.h"
+#include "object.h"
 
 void PrintVersion()
 {
@@ -37,7 +38,9 @@ int main(int argc, char** argv)
 	// after n ticks, which is how a boot that no longer stops on anything is
 	// looked at at all, and --watch <addr>[:width] reports every change of one
 	// engine-wide memory word with the thread and program offset that made it.
-	// All three are read out of the arguments first so that the two positional
+	// --draws reports the draw walk object by object, which is how a frame that
+	// comes out black is read rather than reasoned about.
+	// They are all read out of the arguments first so that the two positional
 	// ones keep their places.
 	const char* shot = NULL;
 	int argumentCount = 0;
@@ -48,6 +51,8 @@ int main(int argc, char** argv)
 			shot = argv[++i];
 		else if(strcmp(argv[i], "--ticks") == 0 && i + 1 < argc)
 			gTickLimit = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--draws") == 0)
+			gLogDraws = 1;
 		else if(strcmp(argv[i], "--watch") == 0 && i + 1 < argc)
 		{
 			// --watch <address>[:<width>], the address in the script's own tagged

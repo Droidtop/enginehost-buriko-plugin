@@ -1112,6 +1112,8 @@ static uint32_t Object_DrawTransparency(const DisplayObject_t* object)
 // 0x00507688, written by Sys0 0x50 and read by 0x00431AA0. See the opcode.
 uint32_t gObjectsHeldBack = 0;
 
+int gLogDraws = 0;
+
 uint32_t gWindowsVisible = 0;
 uint32_t gWindowTransparency = 0;
 
@@ -1140,7 +1142,15 @@ static void Object_Draw(Renderer_t* renderer, DisplayObject_t* object,
 			}
 			Bitmap_t* source = Renderer_ResolveBitmap(renderer, object->bitmapId);
 			if(source == NULL)
+			{
+				if(gLogDraws)
+					printf("[Draws]:     nothing: the sprite's bitmap [ 0x%X ] is"
+					       " not a live bitmap\n", object->bitmapId);
 				return;
+			}
+			if(gLogDraws)
+				printf("[Draws]:     the sprite's bitmap [ 0x%X ] is %dx%d mode %d\n",
+				       object->bitmapId, source->width, source->height, source->mode);
 			// The slot may have been refilled behind the sprite's back since it was
 			// handed over, and then it is not this sprite's image any more.
 			if(Renderer_BitmapSerial(renderer, object->bitmapId) != object->bitmapSerial)
@@ -1192,10 +1202,21 @@ static void Object_Draw(Renderer_t* renderer, DisplayObject_t* object,
 		{
 			// 0x0042B1D0.
 			if(gWindowsVisible == 0)
+			{
+				if(gLogDraws)
+					printf("[Draws]:     nothing: windows are turned off\n");
 				return;
+			}
 			Bitmap_t view;
 			if(!Renderer_WindowBitmap(renderer, object->handle, &view))
+			{
+				if(gLogDraws)
+					printf("[Draws]:     nothing: the window has no pixels\n");
 				return;
+			}
+			if(gLogDraws)
+				printf("[Draws]:     the window's pixels are %dx%d mode %d\n",
+				       view.width, view.height, view.mode);
 			if(!Renderer_ClipBitmap(&view, rect))
 				return;
 			// The window's own transparency and the global one, folded together the
@@ -1219,23 +1240,53 @@ static void Object_Draw(Renderer_t* renderer, DisplayObject_t* object,
 static int Object_DrawTo(Renderer_t* renderer, DisplayObject_t* object,
                          Bitmap_t* target, const Rect_t* targetBounds, const Rect_t* clip)
 {
+	if(gLogDraws)
+	{
+		Rect_t where;
+		Object_ScreenBounds(object, &where);
+		printf("[Draws]:   [ 0x%08X ] type %u layer 0x%04X: visible %d enabled %d"
+		       " hidden %d transparency 0x%X opacity 0x%X blend 0x%02X"
+		       " -> draw transparency 0x%X; surface %dx%d at (%d,%d)-(%d,%d)\n",
+		       object->handle, object->type, object->layer, object->visible,
+		       object->enabled, object->hidden, object->transparency,
+		       object->opacity, object->unknownA8, Object_DrawTransparency(object),
+		       object->surfaceWidth, object->surfaceHeight,
+		       where.left, where.top, where.right, where.bottom);
+	}
+
 	if(!Object_IsDrawable(object))
+	{
+		if(gLogDraws)
+			printf("[Draws]:     nothing: the object would not be drawn at all\n");
 		return 1;
+	}
 
 	Rect_t bounds;
 	Object_ScreenBounds(object, &bounds);
 	if(!Renderer_RectIntersect(&bounds, targetBounds))
+	{
+		if(gLogDraws)
+			printf("[Draws]:     nothing: none of it is inside the target\n");
 		return 0;
+	}
 
 	int covered = Renderer_RectContains(clip, &bounds);
 	if(!Renderer_RectIntersect(&bounds, clip))
+	{
+		if(gLogDraws)
+			printf("[Draws]:     nothing: none of it is inside the part being redrawn\n");
 		return covered;
+	}
 
 	// The destination is the target narrowed to what is being drawn, in screen
 	// coordinates; the object then works in its own, so the rectangle goes with it.
 	Bitmap_t view = *target;
 	if(!Renderer_ClipBitmap(&view, &bounds))
+	{
+		if(gLogDraws)
+			printf("[Draws]:     nothing: the target has no pixels there\n");
 		return covered;
+	}
 
 	int32_t x = 0, y = 0;
 	if(object->type != OBJECT_TYPE_SCREEN)
@@ -1251,6 +1302,16 @@ void Object_DrawListOf(ObjectList_t* list, Renderer_t* renderer, Bitmap_t* targe
 {
 	Rect_t bounds = { 0, 0, target->width - 1, target->height - 1 };
 
+	if(gLogDraws)
+	{
+		size_t count = 0;
+		for(const ObjectNode_t* node = list->head; node != NULL; node = node->next)
+			count++;
+		printf("[Draws]: a list of %zu object(s) onto %dx%d, draw priority 0x%08X,"
+		       " part (%d,%d)-(%d,%d)\n", count, target->width, target->height,
+		       list->priority, clip->left, clip->top, clip->right, clip->bottom);
+	}
+
 	for(ObjectNode_t* node = list->head; node != NULL; node = node->next)
 	{
 		// The draw priority (Grp0 0x09, which reaches the list's own +0x48 through
@@ -1259,7 +1320,13 @@ void Object_DrawListOf(ObjectList_t* list, Renderer_t* renderer, Bitmap_t* targe
 		// nothing builds yet - list+0x24, the flag that would enable it, is never
 		// set, and 0x00431530 returns on that flag before it looks at anything.
 		if(list->priority > node->key && node->object->type != 0)
+		{
+			if(gLogDraws)
+				printf("[Draws]:   [ 0x%08X ] held back: key 0x%08X is below the"
+				       " list's draw priority 0x%08X\n",
+				       node->object->handle, node->key, list->priority);
 			continue;
+		}
 
 		Object_DrawTo(renderer, node->object, target, &bounds, clip);
 	}
