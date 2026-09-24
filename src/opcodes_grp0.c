@@ -146,9 +146,9 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x81 129 */ "DestroyWindowObject",
 	/* 0x82 130 */ "--Unknown--",
 	/* 0x83 131 */ "Unknown_131",
-	/* 0x84 132 */ "Unknown_132",
-	/* 0x85 133 */ "Unknown_133",
-	/* 0x86 134 */ "DrawBitmapToWindow",
+	/* 0x84 132 */ "ShowWindow",
+	/* 0x85 133 */ "SetWindowPlacement",
+	/* 0x86 134 */ "SetWindowBackground",
 	/* 0x87 135 */ "SetWindowValue3BC",
 	/* 0x88 136 */ "SetWindowClientArea",
 	/* 0x89 137 */ "Unknown_137",
@@ -405,9 +405,9 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x81 129 */ Opcode_Grp0_DestroyWindowObject,
 	/* 0x82 130 */ NULL,
 	/* 0x83 131 */ Opcode_Grp0_Unknown_131,
-	/* 0x84 132 */ Opcode_Grp0_Unknown_132,
-	/* 0x85 133 */ Opcode_Grp0_Unknown_133,
-	/* 0x86 134 */ Opcode_Grp0_DrawBitmapToWindow,
+	/* 0x84 132 */ Opcode_Grp0_ShowWindow,
+	/* 0x85 133 */ Opcode_Grp0_SetWindowPlacement,
+	/* 0x86 134 */ Opcode_Grp0_SetWindowBackground,
 	/* 0x87 135 */ Opcode_Grp0_SetWindowValue3BC,
 	/* 0x88 136 */ Opcode_Grp0_SetWindowClientArea,
 	/* 0x89 137 */ Opcode_Grp0_Unknown_137,
@@ -1922,16 +1922,41 @@ uint32_t Opcode_Grp0_Unknown_122(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
+/*
+ * Grp0 0x80 (0x0047DC40 -> 0x00462AC0 -> 0x00440690): pops the height and the width
+ * and pushes the new window's handle. 0x00440690 refuses a seventeenth window (9,
+ * fatal, 0x004E99EC) and builds a CDspObjWindow (0x0042AF00) sized by 0x0042B280: a
+ * width below 32 or a height below 20 is a count of 32-pixel cells and is multiplied
+ * by 32; then the width must be 1 to 1920 and the height 1 to 32768, or the window is
+ * thrown away and the answer is 10, the fatal "invalid window size [ w , h ]"
+ * (0x004E9A28). A sized window has its pixels, a cleared background and frame, the
+ * client area set to the whole of it with the text cursor at its corner (0x00409190,
+ * 0x0042C690), and is filed in the display list (0x004307D0).
+ */
 uint32_t Opcode_Grp0_CreateWindowObject(Thread_t* thread)
 {
 	uint32_t height = Thread_PopStack(thread);
 	uint32_t width = Thread_PopStack(thread);
-	if(height == 19 && width == 25)
+	uint32_t w = width < 0x20 ? width << 5 : width;
+	uint32_t h = height < 0x14 ? height << 5 : height;
+	if(w - 1 > 0x77F || h - 1 > 0x7FFF)
 	{
-		height = 600;
-		width = 800;
+		printf("[Thread %d]: %sError: an invalid window size [ %d , %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)width, (int32_t)height);
+		return 0xFFFFFFFC;
 	}
-	uint32_t handle = Renderer_CreateScreen(thread->engine->renderer, width, height);
+	uint32_t handle = Renderer_CreateScreen(thread->engine->renderer, (int)w, (int)h);
+	if(handle == 0)
+	{
+		printf("[Thread %d]: %sError: no more windows can be made\n", thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFC;
+	}
+	DisplayObject_t* window = Object_Resolve(handle);
+	window->clientRect[0] = 0;
+	window->clientRect[1] = 0;
+	window->clientRect[2] = (int32_t)w - 1;
+	window->clientRect[3] = (int32_t)h - 1;
+	Window_ResetTextCursor(window);
 	Thread_PushStack(thread, handle);
 	return 0;
 }
@@ -1948,40 +1973,73 @@ uint32_t Opcode_Grp0_Unknown_131(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_132(Thread_t* thread)
+/*
+ * Grp0 0x84 (0x0047DE10 -> 0x00462E20 -> 0x00440B70): pops the visible flag and a
+ * window; vtable+0x04 with the flag, and damage when the window would be drawn before
+ * or after (vtable+0x08 / +0x0C, which is Object_ApplyVisible's bracket). A handle that
+ * is not a window is fatal (0x004E9AC8).
+ */
+uint32_t Opcode_Grp0_ShowWindow(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-	return 0;
-}
-
-uint32_t Opcode_Grp0_Unknown_133(Thread_t* thread)
-{
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint32_t value3 = Thread_PopStack(thread);
-	uint32_t value4 = Thread_PopStack(thread);
-	uint32_t y = Thread_PopStack(thread);
-	uint32_t x = Thread_PopStack(thread);
-	uint32_t screenId = Thread_PopStack(thread);
-	Renderer_SetScreenParams(thread->engine->renderer, screenId, x, y);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-	return 0;
-}
-
-uint32_t Opcode_Grp0_DrawBitmapToWindow(Thread_t* thread)
-{
-	uint32_t bitmapId = Thread_PopStack(thread);
-	uint32_t unknown1 = Thread_PopStack(thread);
-	uint32_t unknown2 = Thread_PopStack(thread);
-	uint32_t screenId = Thread_PopStack(thread);
-	if((screenId & OBJECT_INDEX_MASK) >= RENDERER_MAX_SCREENS)
+	uint32_t visible = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
 	{
-		printf("[Thread %d]: %sError: attempted to draw to invalid screen 0x%08X\n", thread->threadId, TLevel[thread->level], screenId);
-		return 10;
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
 	}
-	Renderer_DrawBitmapToScreen(thread->engine->renderer, bitmapId, (int)(screenId & OBJECT_INDEX_MASK));
+	int before = Object_IsDrawable(window);
+	Object_SetVisible(window, (int)visible);
+	if(before || Object_IsDrawable(window))
+		gObjectDamage++;
+	return 0;
+}
+
+/*
+ * Grp0 0x85 (0x0047DE50 -> 0x00462C70 -> 0x00440910 -> 0x0042B440): a window's place
+ * and look at once. Popped: the draw layer (0x00497D40, below 0x10000), a level that is
+ * range-checked (0x00497F40) and then not used, the effect level (0x00497F40), the
+ * blend mode (0x00497DD0), y, x and the window. Then vtable+0x2C with x and y, the
+ * blend mode (0x0041B6D0), vtable+0x48 with the effect level and vtable+0x54 with the
+ * layer (the window's vtable 0x004E5024 has the base's 0x0041B280, 0x0041B6F0 and
+ * 0x0041B980 there), bracketed by the drawable test and damage and followed by the
+ * list re-sort (0x004308B0). A handle that is not a window is fatal (0x004E9AC8).
+ */
+uint32_t Opcode_Grp0_SetWindowPlacement(Thread_t* thread)
+{
+	uint32_t layer = Thread_PopStack(thread);
+	uint32_t unused = Thread_PopStack(thread);
+	uint32_t level = Thread_PopStack(thread);
+	uint32_t blend = Thread_PopStack(thread);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	if(layer >= 0x10000 || unused > 0x100 || level > 0x100)
+	{
+		printf("[Thread %d]: %sError: Grp0 0x85 out of range: layer %d, levels %d %d\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)layer, (int32_t)unused, (int32_t)level);
+		return 0xFFFFFFFC;
+	}
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	if(Object_IsDrawable(window))
+		gObjectDamage++;
+	Object_Move(window, x, y);
+	window->unknownA8 = blend;
+	const char* unread = Object_ApplyEffectLevel(window, level);
+	if(unread != NULL)
+		printf("[Thread %d]: %sWarning: the window's effect level needs %s\n", thread->threadId, TLevel[thread->level], unread);
+	window->layer = layer;
+	if(Object_IsDrawable(window))
+		gObjectDamage++;
+	Object_ListResort(window);
 	return 0;
 }
 
@@ -2998,5 +3056,37 @@ uint32_t Opcode_Grp0_SetObjectOrigin(Thread_t* thread)
 		return 0xFFFFFFFC;
 	}
 	Object_SetOrigin(object, x, y);
+	return 0;
+}
+
+/*
+ * Grp0 0x86 (0x0047DF00 -> 0x00462B10 -> 0x00440860 -> 0x0042B380): pops a bitmap, two
+ * values that only the error messages use, and a window, and makes the bitmap the
+ * window's background (-1 for none). The drawable test and damage bracket it. Every
+ * failure is fatal in the handler: the window has no pixels (1, 0x004E9B1C), the
+ * bitmap does not exist (2, 0x004E9B58 with the two values), or the handle is not a
+ * window (0xFF, 0x004E9AC8).
+ */
+uint32_t Opcode_Grp0_SetWindowBackground(Thread_t* thread)
+{
+	int32_t bitmap = (int32_t)Thread_PopStack(thread);
+	uint32_t a = Thread_PopStack(thread);
+	uint32_t b = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	uint32_t r = Window_SetBackground(thread->engine->renderer, window, bitmap);
+	if(r != 0)
+	{
+		printf("[Thread %d]: %sError: the window background failed (%u): bitmap %d (%d, %d)\n",
+		       thread->threadId, TLevel[thread->level], r, bitmap, (int32_t)b, (int32_t)a);
+		return 0xFFFFFFFC;
+	}
+	gObjectDamage++;
 	return 0;
 }

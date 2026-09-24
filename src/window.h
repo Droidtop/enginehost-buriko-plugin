@@ -42,4 +42,9 @@ int  Window_SetClientArea(Renderer_t* renderer, DisplayObject_t* window, int32_t
 // 0x0042C690.
 void Window_ResetTextCursor(DisplayObject_t* window);
 
+// 0x0042B380 (Grp0 0x86): the window's background image, the bitmap copied onto a
+// surface of the window's own at its corner; -1 for none. 0, or 1 (the window has no
+// pixels) or 2 (no such bitmap).
+uint32_t Window_SetBackground(Renderer_t* renderer, DisplayObject_t* window, int32_t bitmap);
+
 #endif // __WINDOW_H__

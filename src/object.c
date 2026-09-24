@@ -340,6 +340,7 @@ void Object_Destroy(uint32_t handle)
 		return;
 
 	Object_ListRemove(kind->slots[index]);
+	free(kind->slots[index]->backgroundPixels);
 	free(kind->slots[index]);
 	kind->slots[index] = NULL;
 	if(*kind->count > 0)

@@ -96,9 +96,8 @@ uint32_t Opcode_Grp0_Unknown_122(Thread_t* thread);
 uint32_t Opcode_Grp0_CreateWindowObject(Thread_t* thread);
 uint32_t Opcode_Grp0_DestroyWindowObject(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_131(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_132(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_133(Thread_t* thread);
-uint32_t Opcode_Grp0_DrawBitmapToWindow(Thread_t* thread);
+uint32_t Opcode_Grp0_ShowWindow(Thread_t* thread);
+uint32_t Opcode_Grp0_SetWindowPlacement(Thread_t* thread);
 uint32_t Opcode_Grp0_SetWindowValue3BC(Thread_t* thread);
 uint32_t Opcode_Grp0_SetWindowClientArea(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_137(Thread_t* thread);
@@ -175,4 +174,5 @@ extern char* OpcodesGrp0Mnemonics[256];
 
 uint32_t Opcode_Grp0_SetBitmapMode(Thread_t* thread);
 uint32_t Opcode_Grp0_SetObjectOrigin(Thread_t* thread);
+uint32_t Opcode_Grp0_SetWindowBackground(Thread_t* thread);
 #endif

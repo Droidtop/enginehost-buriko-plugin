@@ -88,12 +88,21 @@ void Window_Redraw(Renderer_t* renderer, DisplayObject_t* window, const Rect_t* 
 			case WINDOW_LAYER_BACKGROUND:
 			{
 				// 0x0042CD75. The window's background image lives at +0x164,
-				// guarded by +0x15C, and 0x0042B380 is what puts one there -
-				// nothing in this engine does yet. With none, the original
-				// clears the area (0x0042CDDD into 0x0040A620), which is what
-				// makes the window's pixels start from nothing every redraw.
+				// guarded by +0x15C, and Grp0 0x86 (0x0042B380) is what puts one
+				// there: that part of it is copied (mode 0x80) into the same
+				// part of the window. With none, the area is cleared (0x0042CDDD
+				// into 0x0040A620).
 				Bitmap_t view = pixels;
-				if(Renderer_ClipBitmap(&view, &area))
+				if(!Renderer_ClipBitmap(&view, &area))
+					break;
+				if(window->backgroundSet && window->backgroundPixels != NULL)
+				{
+					Bitmap_t background = pixels;
+					background.bitmap = window->backgroundPixels;
+					if(Renderer_ClipBitmap(&background, &area))
+						Renderer_BlitView(&view, &background, BITMAP_BLEND_COPY, 0);
+				}
+				else
 					Renderer_ClearBitmap(&view);
 				break;
 			}
@@ -165,4 +174,37 @@ void Window_ResetTextCursor(DisplayObject_t* window)
 		window->textCursorX = window->clientRect[2];
 		window->textCursorY = window->clientRect[1];
 	}
+}
+
+uint32_t Window_SetBackground(Renderer_t* renderer, DisplayObject_t* window, int32_t bitmap)
+{
+	// 0x0042B380. A window with no pixels yet (+0x13C) answers 1.
+	Bitmap_t pixels;
+	if(window == NULL || !Renderer_WindowBitmap(renderer, window->handle, &pixels))
+		return 1;
+	size_t size = (size_t)pixels.stride * (size_t)pixels.height;
+	if(window->backgroundPixels == NULL)
+	{
+		window->backgroundPixels = (uint8_t*)calloc(1, size);
+		if(window->backgroundPixels == NULL)
+			return 1;
+	}
+	Bitmap_t background = pixels;
+	background.bitmap = window->backgroundPixels;
+	if(bitmap != -1)
+	{
+		// A bitmap that does not exist answers 2 and changes nothing (0x0042B3E6).
+		Bitmap_t* image = Renderer_ResolveBitmap(renderer, bitmap);
+		if(image == NULL)
+			return 2;
+		// Cleared, then the image copied onto it at its corner (0x0040A530, 0x80).
+		Renderer_ClearBitmap(&background);
+		Renderer_BlitAt(&background, 0, 0, image, BITMAP_BLEND_COPY, 0);
+	}
+	else
+		Renderer_ClearBitmap(&background);
+	// 0x0042B490: +0x15C, then the whole window redrawn (0x0042CAE0).
+	window->backgroundSet = bitmap != -1;
+	Window_RedrawAll(renderer, window);
+	return 0;
 }

@@ -144,42 +144,6 @@ void Renderer_DestroyScreen(Renderer_t* renderer, uint32_t handle)
 	Object_Destroy(handle);
 }
 
-void Renderer_DrawBitmapToScreen(Renderer_t* renderer, uint32_t bitmapId, int screenId)
-{
-	printf("[Renderer]: Start draw\n");
-	Screen_t* screen = renderer->screens[screenId];
-	Bitmap_t* bitmap = renderer->bitmaps[bitmapId];
-	if(!screen)
-	{
-		printf("[Renderer]: Warning: Attempting to draw to invalid screen object (%d)\n", screenId);
-		return;
-	}
-	if(!bitmap)
-	{
-		printf("[Renderer]: Warning: Attempting to draw invalid bitmap (%d)\n", bitmapId);
-		return;
-	}
-	if(Renderer_ModePixelBytes(bitmap->mode) != 4)
-	{
-		printf("[Renderer]: Warning: bitmap %d is pixel mode %d, which the screen blit does not take yet\n", bitmapId, bitmap->mode);
-		return;
-	}
-	for(int y = 0; y < bitmap->height; y++)
-	{
-		if(y >= screen->height)
-			break;
-		for(int x = 0; x < bitmap->width; x++)
-		{
-			if(x >= screen->width)
-				break;
-			memcpy(&screen->bitmap[(y * screen->width * 4) + (x * 4)],
-			       &bitmap->bitmap[(y * bitmap->stride) + (x * 4)],
-			       4);
-		}
-	}
-	printf("[Renderer]: End draw\n");
-}
-
 Bitmap_t* Renderer_ParsePng(uint8_t* file, size_t fileSize)
 {
     spng_ctx *ctx = spng_ctx_new(0);

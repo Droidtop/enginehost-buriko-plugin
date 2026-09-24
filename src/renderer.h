@@ -228,7 +228,6 @@ Screen_t* Renderer_ResolveScreen(Renderer_t* renderer, uint32_t handle);
 // (0x0042CB10) alike. 0 when that window has none.
 int Renderer_WindowBitmap(Renderer_t* renderer, uint32_t handle, Bitmap_t* out);
 void Renderer_DestroyScreen(Renderer_t* renderer, uint32_t handle);
-void Renderer_DrawBitmapToScreen(Renderer_t* renderer, uint32_t bitmapId, int screenId);
 void Renderer_DrawScreen(Renderer_t* renderer);
 void Renderer_SetScreenParams(Renderer_t* renderer, uint32_t handle, int x, int y);
 void Renderer_Free(Renderer_t* renderer);

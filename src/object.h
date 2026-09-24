@@ -125,6 +125,10 @@ struct DisplayObject
 	// A window's text layout: the client area (+0x1A0: left, top, right, bottom),
 	// the direction (+0x370: 0 across, 1 down) and the text cursor (+0x368, +0x36C).
 	int32_t   clientRect[4];
+	// A window's background image (+0x160: its own surface, the descriptor at
+	// +0x164) and whether it has one (+0x15C). The surface is the window's size.
+	uint8_t*  backgroundPixels;
+	uint32_t  backgroundSet;
 	uint32_t  textDirection;
 	int32_t   textCursorX;
 	int32_t   textCursorY;
