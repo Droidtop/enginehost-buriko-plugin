@@ -94,7 +94,11 @@ int OS_Init(Engine_t* engine)
         SDL_WINDOWPOS_CENTERED,     // Initial y position
         800,                        // Width in pixels
         600,                        // Height in pixels
+#ifdef __ANDROID__
+        SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN_DESKTOP
+#else
         SDL_WINDOW_SHOWN            // Flags (make it visible)
+#endif
     );
 
     if(window == NULL)

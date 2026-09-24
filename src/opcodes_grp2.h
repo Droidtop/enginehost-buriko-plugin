@@ -29,4 +29,5 @@ extern OpcodePtr_t OpcodesGrp2[256];
 extern char* OpcodesGrp2Mnemonics[256];
 
 uint32_t Opcode_Grp2_ClearPreloadCache(Thread_t* thread);
+uint32_t Opcode_Grp2_PlayMovie(Thread_t* thread);
 #endif

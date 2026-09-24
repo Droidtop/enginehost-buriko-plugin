@@ -10,6 +10,7 @@
 #include "engine.h"
 #include "gdb.h"
 #include "audio.h"
+#include "movie.h"
 #include "nametable.h"
 #include "icon.h"
 #include "object.h"
@@ -767,10 +768,17 @@ void Engine_SetDisplayMode(Engine_t* engine, uint32_t sizeIndex, uint32_t pixelM
 	gDisplaySizeIndex = sizeIndex;
 	gDisplayPixelMode = pixelMode;
 	gDisplayModeThirdArgument = third;
+	// A desktop window takes the mode's size, as 0x00461290 sizes the original's.
+	// Android's window is the whole display and cannot be resized: telling SDL it
+	// is 1280x720 only makes its renderer draw into a 1280x720 corner of the real
+	// surface (seen on the rig, dq-buriko-03). There the frame is scaled to the
+	// display by the renderer's logical size instead (OS_Present).
+#ifndef __ANDROID__
 	if(engine != NULL && engine->window != NULL)
 		SDL_SetWindowSize(engine->window,
 		                  (int)gDisplayModeWidth[sizeIndex],
 		                  (int)gDisplayModeHeight[sizeIndex]);
+#endif
 	printf("[Engine]: Display mode is size %u (%ux%u), pixel mode %u\n",
 	       sizeIndex, gDisplayModeWidth[sizeIndex], gDisplayModeHeight[sizeIndex], pixelMode);
 }
@@ -2305,6 +2313,7 @@ void Engine_Free(Engine_t* engine)
 
 	Renderer_Free(engine->renderer);
 	GDB_FreeAll();
+	Movie_Stop();
 	Audio_Free();
 
 	Engine_FreeUserInstructions();
@@ -2350,4 +2359,67 @@ void Engine_SetLoadWaitTimeout(uint32_t timeout)
 		printf("[Engine]: Load wait window disabled\n");
 	else
 		printf("[Engine]: Load wait window set to %u ms\n", timeout);
+}
+
+/*
+ * A file the game directory holds loose, as the loaders try before any
+ * archive: the directory at 0x00517F18 and the name joined by 0x00464B70 ("%s%s",
+ * 0x004E5EA8) and opened as a file. Names use backslashes and Windows matches
+ * them without regard to case, so each part is looked up that way.
+ */
+uint8_t* Engine_ReadLooseFile(const char* name, size_t* size)
+{
+	char path[1024];
+	char part[256];
+	strcpy(path, ".");
+	const char* p = name;
+	while(*p != '\0')
+	{
+		size_t n = 0;
+		while(*p == '\\' || *p == '/')
+			p++;
+		while(*p != '\0' && *p != '\\' && *p != '/' && n + 1 < sizeof(part))
+			part[n++] = *p++;
+		part[n] = '\0';
+		if(n == 0)
+			break;
+		DIR* dir = opendir(path);
+		if(dir == NULL)
+			return NULL;
+		struct dirent* entry;
+		int found = 0;
+		while((entry = readdir(dir)) != NULL)
+		{
+			if(strcasecmp(entry->d_name, part) == 0)
+			{
+				size_t len = strlen(path);
+				if(len + 1 + strlen(entry->d_name) + 1 > sizeof(path))
+					break;
+				path[len] = '/';
+				strcpy(path + len + 1, entry->d_name);
+				found = 1;
+				break;
+			}
+		}
+		closedir(dir);
+		if(!found)
+			return NULL;
+	}
+	struct stat info;
+	if(stat(path, &info) != 0 || !S_ISREG(info.st_mode))
+		return NULL;
+	FILE* f = fopen(path, "rb");
+	if(f == NULL)
+		return NULL;
+	uint8_t* data = (uint8_t*)malloc(info.st_size > 0 ? (size_t)info.st_size : 1);
+	if(data == NULL || fread(data, 1, (size_t)info.st_size, f) != (size_t)info.st_size)
+	{
+		free(data);
+		fclose(f);
+		return NULL;
+	}
+	fclose(f);
+	*size = (size_t)info.st_size;
+	printf("[Engine]: Read \"%s\" (%zu bytes)\n", path, *size);
+	return data;
 }

@@ -4,6 +4,7 @@
 #include "engine.h"
 #include "opcodes.h"
 #include "opcodes_grp2.h"
+#include "movie.h"
 #include "renderer.h"
 #include "thread.h"
 
@@ -248,7 +249,7 @@ char* OpcodesGrp2Mnemonics[256] = {
     /* 0xED 237 */ "--Unknown--",
     /* 0xEE 238 */ "--Unknown--",
     /* 0xEF 239 */ "--Unknown--",
-    /* 0xF0 240 */ "--Unknown--",
+    /* 0xF0 240 */ "PlayMovie",
     /* 0xF1 241 */ "--Unknown--",
     /* 0xF2 242 */ "--Unknown--",
     /* 0xF3 243 */ "--Unknown--",
@@ -507,7 +508,7 @@ OpcodePtr_t OpcodesGrp2[256] = {
     /* 0xED 237 */ NULL,
     /* 0xEE 238 */ NULL,
     /* 0xEF 239 */ NULL,
-    /* 0xF0 240 */ NULL,
+    /* 0xF0 240 */ Opcode_Grp2_PlayMovie,
     /* 0xF1 241 */ NULL,
     /* 0xF2 242 */ NULL,
     /* 0xF3 243 */ NULL,
@@ -657,5 +658,39 @@ uint32_t Opcode_Grp2_Unknown_156(Thread_t* thread)
 uint32_t Opcode_Grp2_ClearPreloadCache(Thread_t* thread)
 {
 	(void)thread;
+	return 0;
+}
+
+/*
+ * Grp2 0xF0 (0x00486D00): play a movie from the game's folder or an archive.
+ * Popped: two values that must both be above 0 for anything to happen, two that are
+ * not used, the member's name and the archive's (0 for none). 0x0048F400 tries the
+ * loose file first and the archive when the graph cannot find it (0x80040216 ->
+ * 0x00467D30). Pushes the stop position in milliseconds, or 0.
+ */
+uint32_t Opcode_Grp2_PlayMovie(Thread_t* thread)
+{
+	int32_t a = (int32_t)Thread_PopStack(thread);
+	int32_t b = (int32_t)Thread_PopStack(thread);
+	Thread_PopStack(thread);
+	Thread_PopStack(thread);
+	uint32_t nameAddress = Thread_PopStack(thread);
+	uint32_t archiveAddress = Thread_PopStack(thread);
+	const char* name = nameAddress ? (const char*)Thread_ResolveAddr(thread, nameAddress) : NULL;
+	const char* archive = archiveAddress ? (const char*)Thread_ResolveAddr(thread, archiveAddress) : NULL;
+	uint32_t result = 0;
+	if(b > 0 && a > 0 && name != NULL)
+	{
+		size_t size = 0;
+		uint8_t* data = Engine_ReadLooseFile(name, &size);
+		if(data == NULL && archive != NULL)
+			data = Engine_ReadFile(thread->engine, archive, name, &size);
+		if(data == NULL)
+			printf("[Thread %d]: %sError: the movie [ %s : %s ] was not found\n", thread->threadId, TLevel[thread->level],
+			       archive ? archive : "", name);
+		else
+			result = Movie_Play(data, size);
+	}
+	Thread_PushStack(thread, result);
 	return 0;
 }

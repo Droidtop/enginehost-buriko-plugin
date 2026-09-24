@@ -2,9 +2,6 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
-#include <dirent.h>
-#include <sys/stat.h>
 #include "engine.h"
 #include "opcodes.h"
 #include "opcodes_snd0.h"
@@ -635,68 +632,6 @@ static const char* Snd0_PopString(Thread_t* thread, int* ok)
 	return s;
 }
 
-/*
- * A file the game directory holds loose, as the loaders try before any
- * archive: the directory at 0x00517F18 and the name joined by 0x00464B70 ("%s%s",
- * 0x004E5EA8) and opened as a file. Names use backslashes and Windows matches
- * them without regard to case, so each part is looked up that way.
- */
-static uint8_t* Snd0_ReadLoose(const char* name, size_t* size)
-{
-	char path[1024];
-	char part[256];
-	strcpy(path, ".");
-	const char* p = name;
-	while(*p != '\0')
-	{
-		size_t n = 0;
-		while(*p == '\\' || *p == '/')
-			p++;
-		while(*p != '\0' && *p != '\\' && *p != '/' && n + 1 < sizeof(part))
-			part[n++] = *p++;
-		part[n] = '\0';
-		if(n == 0)
-			break;
-		DIR* dir = opendir(path);
-		if(dir == NULL)
-			return NULL;
-		struct dirent* entry;
-		int found = 0;
-		while((entry = readdir(dir)) != NULL)
-		{
-			if(strcasecmp(entry->d_name, part) == 0)
-			{
-				size_t len = strlen(path);
-				if(len + 1 + strlen(entry->d_name) + 1 > sizeof(path))
-					break;
-				path[len] = '/';
-				strcpy(path + len + 1, entry->d_name);
-				found = 1;
-				break;
-			}
-		}
-		closedir(dir);
-		if(!found)
-			return NULL;
-	}
-	struct stat info;
-	if(stat(path, &info) != 0 || !S_ISREG(info.st_mode))
-		return NULL;
-	FILE* f = fopen(path, "rb");
-	if(f == NULL)
-		return NULL;
-	uint8_t* data = (uint8_t*)malloc(info.st_size > 0 ? (size_t)info.st_size : 1);
-	if(data == NULL || fread(data, 1, (size_t)info.st_size, f) != (size_t)info.st_size)
-	{
-		free(data);
-		fclose(f);
-		return NULL;
-	}
-	fclose(f);
-	*size = (size_t)info.st_size;
-	printf("[Snd0]: Read \"%s\" (%zu bytes)\n", path, *size);
-	return data;
-}
 
 /*
  * The candidate directories 0x00493E40 and 0x00494100 try in turn while the
@@ -728,7 +663,7 @@ static int Snd0_Candidate(int index, char* out, size_t outSize, const char* name
 static uint32_t Snd0_LoadMusicLoose(uint32_t ch, const char* path, uint32_t volume, uint32_t pan)
 {
 	size_t size = 0;
-	uint8_t* data = Snd0_ReadLoose(path, &size);
+	uint8_t* data = Engine_ReadLooseFile(path, &size);
 	if(data == NULL)
 		return AUDIO_NO_FILE;
 	return Audio_MusicLoad(ch, data, size, volume, pan, 0);
@@ -752,13 +687,13 @@ static uint32_t Snd0_LoadMusicPairLoose(uint32_t ch, const char* pathA, const ch
 {
 	size_t aSize = 0, bSize = 0;
 	int same = strcmp(pathA, pathB) == 0;
-	uint8_t* a = Snd0_ReadLoose(pathA, &aSize);
+	uint8_t* a = Engine_ReadLooseFile(pathA, &aSize);
 	if(a == NULL)
 		return AUDIO_NO_FILE;
 	uint8_t* b = NULL;
 	if(!same)
 	{
-		b = Snd0_ReadLoose(pathB, &bSize);
+		b = Engine_ReadLooseFile(pathB, &bSize);
 		if(b == NULL)
 		{
 			free(a);

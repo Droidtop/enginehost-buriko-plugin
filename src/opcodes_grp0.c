@@ -7,6 +7,7 @@
 #include "opcodes_grp0.h"
 #include "icon.h"
 #include "object.h"
+#include "movie.h"
 #include "screen.h"
 #include "thread.h"
 #include "process.h"
@@ -252,9 +253,9 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xED 237 */ "--Unknown--",
 	/* 0xEE 238 */ "--Unknown--",
 	/* 0xEF 239 */ "--Unknown--",
-	/* 0xF0 240 */ "Unknown_240",
-	/* 0xF1 241 */ "Unknown_241",
-	/* 0xF2 242 */ "Unknown_242",
+	/* 0xF0 240 */ "PlayMovie",
+	/* 0xF1 241 */ "StopMovie",
+	/* 0xF2 242 */ "IsMoviePlaying",
 	/* 0xF3 243 */ "SetMovieVolume",
 	/* 0xF4 244 */ "--Unknown--",
 	/* 0xF5 245 */ "--Unknown--",
@@ -511,9 +512,9 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xED 237 */ NULL,
 	/* 0xEE 238 */ NULL,
 	/* 0xEF 239 */ NULL,
-	/* 0xF0 240 */ Opcode_Grp0_Unknown_240,
-	/* 0xF1 241 */ Opcode_Grp0_Unknown_241,
-	/* 0xF2 242 */ Opcode_Grp0_Unknown_242,
+	/* 0xF0 240 */ Opcode_Grp0_PlayMovie,
+	/* 0xF1 241 */ Opcode_Grp0_StopMovie,
+	/* 0xF2 242 */ Opcode_Grp0_IsMoviePlaying,
 	/* 0xF3 243 */ Opcode_Grp0_SetMovieVolume,
 	/* 0xF4 244 */ NULL,
 	/* 0xF5 245 */ NULL,
@@ -2797,25 +2798,62 @@ uint32_t Opcode_Grp0_RemoveObjectFromGroup(Thread_t* thread)
 	}
 }
 
-uint32_t Opcode_Grp0_Unknown_240(Thread_t* thread)
+/*
+ * Grp0 0xF0 (0x004802E0): play a movie that is a loose file. Popped: two values
+ * that must both be above 0 for anything to happen, two more that are not used,
+ * and the file's name. When the file is not there the original shows "the movie
+ * file [ %s ] does not exist" (0x004EA570) through 0x00465BA0 and asks again until
+ * it is (0x00466740); here that is reported and the movie is not played. Pushes
+ * the movie's stop position in milliseconds, or 0 (0x0048F400).
+ */
+uint32_t Opcode_Grp0_PlayMovie(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int32_t a = (int32_t)Thread_PopStack(thread);
+	int32_t b = (int32_t)Thread_PopStack(thread);
+	Thread_PopStack(thread);
+	Thread_PopStack(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t result = 0;
+	if(b > 0 && a > 0 && name != NULL)
+	{
+		size_t size = 0;
+		uint8_t* data = Engine_ReadLooseFile(name, &size);
+		if(data == NULL)
+			printf("[Thread %d]: %sError: the movie file [ %s ] does not exist\n", thread->threadId, TLevel[thread->level], name);
+		else
+			result = Movie_Play(data, size);
+	}
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_241(Thread_t* thread)
+/*
+ * Grp0 0xF1 (0x004803E0): stop the movie (0x0048F270) and ask for the whole screen
+ * to be drawn again (0x00461BF0 with 1, 0). Nothing is popped or pushed.
+ */
+uint32_t Opcode_Grp0_StopMovie(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	(void)thread;
+	Movie_Stop();
+	gObjectDamage++;
+	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_242(Thread_t* thread)
+/*
+ * Grp0 0xF2 (0x00480400 -> 0x0048F820): pushes 1 while a movie plays and its
+ * position is before its stop position, else 0.
+ */
+uint32_t Opcode_Grp0_IsMoviePlaying(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Thread_PushStack(thread, (uint32_t)Movie_Status());
+	return 0;
 }
 
 uint32_t Opcode_Grp0_SetMovieVolume(Thread_t* thread)
 {
 	uint32_t volume = Thread_PopStack(thread);
-	Engine_SetMovieVolume(volume);
+	if(Engine_SetMovieVolume(volume))
+		Movie_SetAttenuation(gMovieVolumeAttenuation);
 	return 0;
 }
 

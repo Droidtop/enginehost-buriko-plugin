@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "renderer.h"
+#include "movie.h"
 #include "os.h"
 #include "engine.h"
 #include "object.h"
@@ -1350,6 +1351,9 @@ void Renderer_DrawScreen(Renderer_t* renderer)
 
 	Rect_t whole = { 0, 0, back->width - 1, back->height - 1 };
 	Object_DrawList(renderer, back, &whole);
+	// A playing movie's frame goes over the composed screen, as the original's own
+	// video renderer (0x0045B810) draws onto the device.
+	Movie_Update(back);
 
 	if(renderer->engine->window == NULL)
 		return;

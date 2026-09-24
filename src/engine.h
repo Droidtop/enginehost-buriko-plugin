@@ -46,6 +46,9 @@ extern Engine_t* gEngine;
 
 uint32_t Engine_LoadProgram(Engine_t* engine, const char* archive, const char* filename, uint32_t stackSize, uint32_t codeSize, uint32_t memorySize);
 Thread_t* Engine_CreateThread(Engine_t* engine, uint32_t stackSize, uint32_t codeSize, uint32_t memorySize);
+// A file the game's folder holds loose, matched part by part without regard to case
+// as Windows matches it; NULL when it is not there.
+uint8_t* Engine_ReadLooseFile(const char* name, size_t* size);
 uint8_t* Engine_ReadFile(Engine_t* engine, const char* archive, const char* filename, size_t* outSize);
 uint32_t Engine_ReadFileToMemory(Engine_t* engine, const char* archive, const char* filename, uint8_t* buffer);
 // A bound on how long Engine_Execute runs, in ticks; 0 is no bound. The engine
