@@ -108,6 +108,10 @@ int OS_Init(Engine_t* engine)
     }
     engine->window = window;
     gAppActive = (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    // The pads, as 0x00460860 enumerates the joysticks at start-up; devices that come
+    // later arrive as SDL_CONTROLLERDEVICEADDED. Without the subsystem there are none.
+    if(SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0)
+        printf("[OS]: No game controller support: %s\n", SDL_GetError());
     OS_BuildKeyTable();
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
     gRenderer = SDL_CreateRenderer(window, -1, 0);
@@ -126,6 +130,81 @@ uint32_t OS_FrameInterval()
 	if(SDL_GetCurrentDisplayMode(0, &mode) == 0 && mode.refresh_rate > 0)
 		return 1000 / (uint32_t)mode.refresh_rate;
 	return 1000 / 60;
+}
+
+/*
+ * Game controllers, as the original's DirectInput poll (0x00460C00) reports joysticks.
+ * It reads each device's buffered data and posts system messages that the scripts
+ * take with Sys0 0xA0, the third word being the device's own number:
+ *   0x100  button:  (pressed ? 0x80 : 0) | index           (0x00460DD7)
+ *   0x101  axes:    pair << 24 | (y & 0xFFF) << 12 | (x & 0xFFF), pair 0 the X/Y
+ *                   axes, pair 1 Z/RZ, each on -0x400..0x400 (DIPROP_RANGE set
+ *                   at 0x004609A0), sent once per poll in which one of the pair
+ *                   moved (0x00460BD0)
+ *   0x102  POV:     index << 16 | the angle in eighths (hundredths of a degree /
+ *                   4500), 0xFFFF centred (0x00460CDD)
+ * Each button, the POV's four directions and full deflection of the X/Y axes can
+ * also pulse a virtual key from the table at 0x00565F08; only Sys1 0x1B fills it, the
+ * game never calls that, and the table starts empty, so no key is pulsed here either.
+ *
+ * DirectInput's numbering is the device's own. The layout used for an SDL game
+ * controller is the one Windows reports for the common XInput pad: buttons A, B, X,
+ * Y, LB, RB, Back, Start, left stick, right stick as 0 to 9; the D-pad as POV 0;
+ * the left stick as X/Y and the right stick as Z/RZ.
+ */
+#define OS_MAX_PADS 4
+static SDL_GameController* gPads[OS_MAX_PADS];
+static SDL_JoystickID gPadIds[OS_MAX_PADS];
+static int32_t gPadAxis[OS_MAX_PADS][4];     // X, Y, Z, RZ on -0x400..0x400
+static uint32_t gPadPov[OS_MAX_PADS];
+
+static int OS_PadSlot(SDL_JoystickID id)
+{
+	for(int i = 0; i < OS_MAX_PADS; i++)
+		if(gPads[i] != NULL && gPadIds[i] == id)
+			return i;
+	return -1;
+}
+
+static void OS_PadAdded(int deviceIndex)
+{
+	if(!SDL_IsGameController(deviceIndex))
+		return;
+	for(int i = 0; i < OS_MAX_PADS; i++)
+	{
+		if(gPads[i] == NULL)
+		{
+			gPads[i] = SDL_GameControllerOpen(deviceIndex);
+			if(gPads[i] != NULL)
+			{
+				gPadIds[i] = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(gPads[i]));
+				gPadPov[i] = 0xFFFF;
+				printf("[OS]: Game controller %d: %s\n", i, SDL_GameControllerName(gPads[i]));
+			}
+			return;
+		}
+	}
+}
+
+static void OS_PadPov(int slot)
+{
+	SDL_GameController* pad = gPads[slot];
+	int up = SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_UP);
+	int down = SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_DOWN);
+	int left = SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_LEFT);
+	int right = SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
+	int dx = right - left, dy = down - up;
+	uint32_t eighth = 0xFFFF;
+	if(dx != 0 || dy != 0)
+	{
+		static const uint32_t table[3][3] = { { 7, 0, 1 }, { 6, 0xFFFF, 2 }, { 5, 4, 3 } };
+		eighth = table[dy + 1][dx + 1];
+	}
+	if(eighth != gPadPov[slot])
+	{
+		gPadPov[slot] = eighth;
+		Engine_PushGlobalList(0x102, eighth, (uint32_t)slot);
+	}
 }
 
 int OS_Poll()
@@ -182,6 +261,76 @@ int OS_Poll()
         		int down = event.type == SDL_MOUSEBUTTONDOWN;
         		OS_SetVkHeld(vks[button], down);
         		Input_MouseButton(button, down, event.button.x, event.button.y);
+        	}
+        }
+        else if(event.type == SDL_CONTROLLERDEVICEADDED)
+        {
+        	OS_PadAdded(event.cdevice.which);
+        }
+        else if(event.type == SDL_CONTROLLERDEVICEREMOVED)
+        {
+        	int slot = OS_PadSlot(event.cdevice.which);
+        	if(slot >= 0)
+        	{
+        		SDL_GameControllerClose(gPads[slot]);
+        		gPads[slot] = NULL;
+        	}
+        }
+        else if(event.type == SDL_CONTROLLERBUTTONDOWN || event.type == SDL_CONTROLLERBUTTONUP)
+        {
+        	int slot = OS_PadSlot(event.cbutton.which);
+        	if(slot >= 0)
+        	{
+        		int down = event.type == SDL_CONTROLLERBUTTONDOWN;
+        		int index = -1;
+        		switch(event.cbutton.button)
+        		{
+        			case SDL_CONTROLLER_BUTTON_A:             index = 0; break;
+        			case SDL_CONTROLLER_BUTTON_B:             index = 1; break;
+        			case SDL_CONTROLLER_BUTTON_X:             index = 2; break;
+        			case SDL_CONTROLLER_BUTTON_Y:             index = 3; break;
+        			case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  index = 4; break;
+        			case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: index = 5; break;
+        			case SDL_CONTROLLER_BUTTON_BACK:          index = 6; break;
+        			case SDL_CONTROLLER_BUTTON_START:         index = 7; break;
+        			case SDL_CONTROLLER_BUTTON_LEFTSTICK:     index = 8; break;
+        			case SDL_CONTROLLER_BUTTON_RIGHTSTICK:    index = 9; break;
+        			case SDL_CONTROLLER_BUTTON_DPAD_UP:
+        			case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+        			case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+        			case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+        				OS_PadPov(slot);
+        				break;
+        		}
+        		if(index >= 0)
+        			Engine_PushGlobalList(0x100, (down ? 0x80u : 0u) | (uint32_t)index, (uint32_t)slot);
+        	}
+        }
+        else if(event.type == SDL_CONTROLLERAXISMOTION)
+        {
+        	int slot = OS_PadSlot(event.caxis.which);
+        	int axis = -1;
+        	switch(event.caxis.axis)
+        	{
+        		case SDL_CONTROLLER_AXIS_LEFTX:  axis = 0; break;
+        		case SDL_CONTROLLER_AXIS_LEFTY:  axis = 1; break;
+        		case SDL_CONTROLLER_AXIS_RIGHTX: axis = 2; break;
+        		case SDL_CONTROLLER_AXIS_RIGHTY: axis = 3; break;
+        	}
+        	if(slot >= 0 && axis >= 0)
+        	{
+        		// SDL's -32768..32767 onto DirectInput's range of -0x400..0x400.
+        		int32_t value = (int32_t)event.caxis.value * 0x400 / 32767;
+        		if(value < -0x400)
+        			value = -0x400;
+        		if(value != gPadAxis[slot][axis])
+        		{
+        			gPadAxis[slot][axis] = value;
+        			int pair = axis / 2;
+        			uint32_t x = (uint32_t)gPadAxis[slot][pair * 2] & 0xFFF;
+        			uint32_t y = (uint32_t)gPadAxis[slot][pair * 2 + 1] & 0xFFF;
+        			Engine_PushGlobalList(0x101, ((uint32_t)pair << 24) | (y << 12) | x, (uint32_t)slot);
+        		}
         	}
         }
         else if(event.type == SDL_MOUSEWHEEL)
