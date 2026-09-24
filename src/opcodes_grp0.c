@@ -12,15 +12,15 @@
 #include "process.h"
 
 char* OpcodesGrp0Mnemonics[256] = {
-	/* 0x00   0 */ "Unknown_0",
+	/* 0x00   0 */ "RequestRedraw",
 	/* 0x01   1 */ "StopRendering",
 	/* 0x02   2 */ "SetFramerate",
-	/* 0x03   3 */ "Unknown_0x03",
+	/* 0x03   3 */ "SetFileCacheSize",
 	/* 0x04   4 */ "Unknown_4",
 	/* 0x05   5 */ "CaptureScreen",
 	/* 0x06   6 */ "SetMousePosition",
 	/* 0x07   7 */ "SetLoadWaitTimeout",
-	/* 0x08   8 */ "Unknown_8",
+	/* 0x08   8 */ "SetDisplayValue5076AC",
 	/* 0x09   9 */ "SetDrawPriority",
 	/* 0x0A  10 */ "Unknown_10",
 	/* 0x0B  11 */ "Unknown_11",
@@ -271,15 +271,15 @@ char* OpcodesGrp0Mnemonics[256] = {
 };
 
 OpcodePtr_t OpcodesGrp0[256] = {
-	/* 0x00   0 */ Opcode_Grp0_Unknown_0,
+	/* 0x00   0 */ Opcode_Grp0_RequestRedraw,
 	/* 0x01   1 */ Opcode_Grp0_StopRendering,
 	/* 0x02   2 */ Opcode_Grp0_SetFramerate,
-	/* 0x03   3 */ Opcode_Grp0_Unknown_0x03,
+	/* 0x03   3 */ Opcode_Grp0_SetFileCacheSize,
 	/* 0x04   4 */ Opcode_Grp0_Unknown_4,
 	/* 0x05   5 */ Opcode_Grp0_CaptureScreen,
 	/* 0x06   6 */ Opcode_Grp0_SetMousePosition,
 	/* 0x07   7 */ Opcode_Grp0_SetLoadWaitTimeout,
-	/* 0x08   8 */ Opcode_Grp0_Unknown_8,
+	/* 0x08   8 */ Opcode_Grp0_SetDisplayValue5076AC,
 	/* 0x09   9 */ Opcode_Grp0_SetDrawPriority,
 	/* 0x0A  10 */ Opcode_Grp0_Unknown_10,
 	/* 0x0B  11 */ Opcode_Grp0_Unknown_11,
@@ -529,10 +529,18 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xFF 255 */ NULL,
 };
 
-uint32_t Opcode_Grp0_Unknown_0(Thread_t* thread)
+/*
+ * Grp0 0x00 (0x00479520): pops a flag and, when it is set, asks for the whole
+ * screen to be composed again at the next frame (0x00461EF0: 0x00566740 = 1 and
+ * the mode at 0x00506BD0 = 1, which the frame at 0x00461D20 reads as "everything",
+ * not only the damaged rectangles). This engine composes the whole screen every
+ * frame, so the request is the damage count the frame loop already watches.
+ */
+uint32_t Opcode_Grp0_RequestRedraw(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t flag = Thread_PopStack(thread);
+	if(flag != 0)
+		gObjectDamage++;
 	return 0;
 }
 
@@ -558,11 +566,27 @@ uint32_t Opcode_Grp0_SetFramerate(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_0x03(Thread_t* thread)
+/*
+ * Grp0 0x03 (0x004795E0): pops a size in bytes; above 0x20000000 it is fatal,
+ * "invalid cache size" (0x004E8384). 0x004399A0 then throws the old file cache
+ * away (0x00439A50) and, for a size other than 0, builds a new one of that size
+ * (0x00445F90) at 0x00565D3C, which the archive reader consults before it reads a
+ * member (0x00439A10 / 0x00439A30). The cache hands back the bytes it was given, so
+ * it changes how often the disc is read and nothing else; this engine reads members
+ * directly and keeps only the size.
+ */
+static uint32_t gFileCacheSize = 0;
+
+uint32_t Opcode_Grp0_SetFileCacheSize(Thread_t* thread)
 {
 	uint32_t size = Thread_PopStack(thread);
-	// Max 0x20000000?
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	if(size > 0x20000000u)
+	{
+		printf("[Thread %d]: %sError: an invalid cache size [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)size);
+		return 0xFFFFFFFC;
+	}
+	gFileCacheSize = size;
 	return 0;
 }
 
@@ -598,10 +622,18 @@ uint32_t Opcode_Grp0_CaptureScreen(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_8(Thread_t* thread)
+/*
+ * Grp0 0x08 (0x00479700 -> 0x00462000 -> 0x00443210): pops a value into the global
+ * at 0x005076AC (0x0041A740) and marks the display list as needing to be put in
+ * order again (0x00430DF0). No code in the executable reads 0x005076AC back (its
+ * only reference is that store), so the value is kept and nothing else follows.
+ */
+static uint32_t gDisplayValue5076AC = 0;
+
+uint32_t Opcode_Grp0_SetDisplayValue5076AC(Thread_t* thread)
 {
-	uint32_t value = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	gDisplayValue5076AC = Thread_PopStack(thread);
+	gObjectDamage++;
 	return 0;
 }
 

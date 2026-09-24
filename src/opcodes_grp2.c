@@ -29,7 +29,7 @@ char* OpcodesGrp2Mnemonics[256] = {
     /* 0x12  18 */ "--Unknown--",
     /* 0x13  19 */ "--Unknown--",
     /* 0x14  20 */ "--Unknown--",
-    /* 0x15  21 */ "--Unknown--",
+    /* 0x15  21 */ "ClearPreloadCache",
     /* 0x16  22 */ "--Unknown--",
     /* 0x17  23 */ "--Unknown--",
     /* 0x18  24 */ "Unknown_24",
@@ -288,7 +288,7 @@ OpcodePtr_t OpcodesGrp2[256] = {
     /* 0x12  18 */ NULL,
     /* 0x13  19 */ NULL,
     /* 0x14  20 */ NULL,
-    /* 0x15  21 */ NULL,
+    /* 0x15  21 */ Opcode_Grp2_ClearPreloadCache,
     /* 0x16  22 */ NULL,
     /* 0x17  23 */ NULL,
     /* 0x18  24 */ Opcode_Grp2_Unknown_24,
@@ -643,4 +643,19 @@ uint32_t Opcode_Grp2_Unknown_145(Thread_t* thread)
 uint32_t Opcode_Grp2_Unknown_156(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
+}
+
+/*
+ * Grp2 0x15 (0x00485A80 -> 0x00401DF0 -> 0x004505D0): empty the preload cache at
+ * 0x00566AA4, freeing every entry (0x00450760). The cache holds files read ahead of
+ * time, keyed by archive and member name: Grp0 0xC5 fills it (0x00401CB0 ->
+ * 0x00450460) and Grp0 0x10 and 0xC7 take from it first (0x00401CE0 ->
+ * 0x00450560). Neither filler is written in this engine - the scripts of the one
+ * game at hand never call Grp0 0xC5 or 0xC7 - so the cache is always empty and
+ * there is nothing to free. Nothing is popped or pushed.
+ */
+uint32_t Opcode_Grp2_ClearPreloadCache(Thread_t* thread)
+{
+	(void)thread;
+	return 0;
 }

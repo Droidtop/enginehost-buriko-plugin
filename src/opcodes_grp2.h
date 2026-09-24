@@ -28,4 +28,5 @@ uint32_t Opcode_Grp2_Unknown_156(Thread_t* thread);
 extern OpcodePtr_t OpcodesGrp2[256];
 extern char* OpcodesGrp2Mnemonics[256];
 
+uint32_t Opcode_Grp2_ClearPreloadCache(Thread_t* thread);
 #endif

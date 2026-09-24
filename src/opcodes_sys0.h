@@ -7,7 +7,7 @@ typedef struct Thread Thread_t;
 
 uint32_t Opcode_Sys0_Srand(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_1(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_2(Thread_t* thread);
+uint32_t Opcode_Sys0_Random(Thread_t* thread);
 uint32_t Opcode_Sys0_GetSysTime(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_8(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_10(Thread_t* thread);

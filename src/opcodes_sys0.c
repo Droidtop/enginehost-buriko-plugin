@@ -24,7 +24,7 @@ static uint32_t Sys0_FlagResult(uint32_t r);
 char* OpcodesSys0Mnemonics[256] = {
 	/* 0x00   0 */ "Srand",
 	/* 0x01   1 */ "Unknown_1",
-	/* 0x02   2 */ "Unknown_2",
+	/* 0x02   2 */ "Random",
 	/* 0x03   3 */ "--Unknown--",
 	/* 0x04   4 */ "GetSysTime",
 	/* 0x05   5 */ "--Unknown--",
@@ -283,7 +283,7 @@ char* OpcodesSys0Mnemonics[256] = {
 OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x00   0 */ Opcode_Sys0_Srand,
 	/* 0x01   1 */ Opcode_Sys0_Unknown_1,
-	/* 0x02   2 */ Opcode_Sys0_Unknown_2,
+	/* 0x02   2 */ Opcode_Sys0_Random,
 	/* 0x03   3 */ NULL,
 	/* 0x04   4 */ Opcode_Sys0_GetSysTime,
 	/* 0x05   5 */ NULL,
@@ -539,10 +539,21 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0xFF 255 */ NULL
 };
 
+// The C runtime's generator the original links (srand 0x004AB739, rand 0x004AB74B):
+// seed = seed * 0x343FD + 0x269EC3, and rand is bits 16 to 30 of the new seed. The
+// scripts all run on the one Windows thread, so there is one seed; it starts at 1.
+static uint32_t gRandSeed = 1;
+
+static uint32_t Sys0_CrtRand(void)
+{
+	gRandSeed = gRandSeed * 0x343FDu + 0x269EC3u;
+	return (gRandSeed >> 16) & 0x7FFF;
+}
+
+// Sys0 0x00 (0x00487EA0): the seed.
 uint32_t Opcode_Sys0_Srand(Thread_t* thread)
 {
-	uint32_t data = Thread_PopStack(thread);
-	srand(data);
+	gRandSeed = Thread_PopStack(thread);
 	return 0;
 }
 
@@ -551,9 +562,24 @@ uint32_t Opcode_Sys0_Unknown_1(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_2(Thread_t* thread)
+/*
+ * Sys0 0x02 (0x00487EE0): pops n and pushes a number from 0 to n - 1, built from
+ * three draws as ((r1 << 8 ^ r2) << 8 ^ r3) and taken modulo n with a signed
+ * division; for n of 0 or below it pushes 0 and draws nothing.
+ */
+uint32_t Opcode_Sys0_Random(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int32_t n = (int32_t)Thread_PopStack(thread);
+	int32_t result = 0;
+	if(n > 0)
+	{
+		int32_t a = (int32_t)(Sys0_CrtRand() << 8);
+		int32_t b = (int32_t)((Sys0_CrtRand() ^ (uint32_t)a) << 8);
+		int32_t c = (int32_t)(Sys0_CrtRand() ^ (uint32_t)b);
+		result = c % n;
+	}
+	Thread_PushStack(thread, (uint32_t)result);
+	return 0;
 }
 
 
