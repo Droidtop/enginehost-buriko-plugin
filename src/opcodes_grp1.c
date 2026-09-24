@@ -200,11 +200,11 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0xB8 184 */ "CreateIconEx",
     /* 0xB9 185 */ "--Unknown--",
     /* 0xBA 186 */ "SetIconContent",
-    /* 0xBB 187 */ "--Unknown--",
+    /* 0xBB 187 */ "SetIconPartEnabled",
     /* 0xBC 188 */ "--Unknown--",
     /* 0xBD 189 */ "--Unknown--",
     /* 0xBE 190 */ "--Unknown--",
-    /* 0xBF 191 */ "Unknown_191",
+    /* 0xBF 191 */ "SetIconKeyMap",
     /* 0xC0 192 */ "--Unknown--",
     /* 0xC1 193 */ "--Unknown--",
     /* 0xC2 194 */ "--Unknown--",
@@ -459,11 +459,11 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0xB8 184 */ Opcode_Grp1_CreateIconEx,
     /* 0xB9 185 */ NULL,
     /* 0xBA 186 */ Opcode_Grp1_SetIconContent,
-    /* 0xBB 187 */ NULL,
+    /* 0xBB 187 */ Opcode_Grp1_SetIconPartEnabled,
     /* 0xBC 188 */ NULL,
     /* 0xBD 189 */ NULL,
     /* 0xBE 190 */ NULL,
-    /* 0xBF 191 */ Opcode_Grp1_Unknown_191,
+    /* 0xBF 191 */ Opcode_Grp1_SetIconKeyMap,
     /* 0xC0 192 */ NULL,
     /* 0xC1 193 */ NULL,
     /* 0xC2 194 */ NULL,
@@ -1054,16 +1054,29 @@ uint32_t Opcode_Grp1_SetIconContent(Thread_t* thread)
 		printf("%s%u parts", i == 0 ? "" : ", ", content->entries[i].partCount);
 	printf(")\n");
 
-	// 0x0044A9E0. The icon takes the descriptor over, and the opcode pushes what it
-	// answers - 0 done, 0x80000001 a bad entry count, 0x80000002 a bad entry.
+	// 0x0044A9E0 builds from the copy, which 0x0046CB00 then frees; the pushed
+	// result is 0, or 2 and 3 for 0x80000001 and 0x80000002.
 	uint32_t result = Icon_SetContent(thread->engine->renderer, icon, content);
-	Thread_PushStack(thread, result);
+	Icon_FreeContent(content);
+	Thread_PushStack(thread, result == ICON_CONTENT_SET_BAD_COUNT ? 2 : result == ICON_CONTENT_SET_BAD_ENTRY ? 3 : 0);
 	return 0;
 }
 
-uint32_t Opcode_Grp1_Unknown_191(Thread_t* thread)
+/*
+ * Grp1 0xBF (0x00485130 -> 0x00447C90): pops the address of 24 actions and a key map
+ * number; maps 4 to 7 take them. Any other number is fatal.
+ */
+uint32_t Opcode_Grp1_SetIconKeyMap(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	const uint32_t* actions = (const uint32_t*)Thread_PopAndResolveAddress(thread);
+	uint32_t map = Thread_PopStack(thread);
+	if(actions == NULL || !Icon_SetKeyMap(map, actions))
+	{
+		printf("[Thread %d]: %sError: an invalid icon key map [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)map);
+		return 0xFFFFFFFC;
+	}
+	return 0;
 }
 
 // Grp1 0x31 (0x00481AE0 -> 0x004620B0 -> 0x004434D0) sets the display object's second
@@ -1128,5 +1141,32 @@ uint32_t Opcode_Grp1_SetRubyStyle(Thread_t* thread)
 	gText565CF0 = a;
 	gText565BB0 = b;
 	gRubyMargin = (uint32_t)margin;
+	return 0;
+}
+
+/*
+ * Grp1 0xBB (0x004850E0 -> 0x0046CE20 -> 0x0044B540): pops the value, the part, the
+ * entry and an Ex icon's handle; the part's sprite is turned on or off. Pushes 0,
+ * 1 for a handle that is not an icon, 4 for a plain icon, 2 and 3 for a bad entry and
+ * a bad part.
+ */
+uint32_t Opcode_Grp1_SetIconPartEnabled(Thread_t* thread)
+{
+	uint32_t value = Thread_PopStack(thread);
+	int32_t part = (int32_t)Thread_PopStack(thread);
+	int32_t entry = (int32_t)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	Icon_t* icon = Icon_Resolve(handle);
+	uint32_t result;
+	if(icon == NULL)
+		result = 1;
+	else if(icon->kind != ICON_KIND_EX)
+		result = 4;
+	else
+	{
+		uint32_t r = Icon_SetPartEnabled(thread->engine->renderer, icon, entry, part, value);
+		result = r == 0x80000001u ? 2 : r == 0x80000002u ? 3 : 0;
+	}
+	Thread_PushStack(thread, result);
 	return 0;
 }

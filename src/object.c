@@ -124,6 +124,8 @@ static void Object_ConstructBase(DisplayObject_t* object, uint32_t type, uint32_
 	object->layerOrder[0] = WINDOW_LAYER_BACKGROUND;
 	object->layerOrder[1] = WINDOW_LAYER_FRAME;
 	object->layerOrder[2] = WINDOW_LAYER_CONTENT;
+	// 0x0041A65D.
+	object->hitEnabled = 1;
 }
 
 // ----------------------------------------------------------------------------------
@@ -145,6 +147,9 @@ static Renderer_t* Object_Renderer(void)
 
 uint32_t Object_DrawKey(const DisplayObject_t* object)
 {
+	// 0x0042AE50: a virtual object with an owner sorts just above it.
+	if(object->type == OBJECT_TYPE_VIRTUAL && object->owner != NULL)
+		return Object_DrawKey(object->owner) + 0x8000;
 	uint32_t type = object->type;
 	if(type >= 8)
 		type = 7;
@@ -331,6 +336,7 @@ void Object_FreeDetached(DisplayObject_t* object)
 	if(object == NULL)
 		return;
 	Sprite5_Free(object);
+	free(object->hitMask);
 	free(object->backgroundPixels);
 	free(object);
 }
@@ -370,6 +376,7 @@ void Object_Destroy(uint32_t handle)
 
 	Object_ListRemove(kind->slots[index]);
 	Sprite5_Free(kind->slots[index]);
+	free(kind->slots[index]->hitMask);
 	free(kind->slots[index]->backgroundPixels);
 	free(kind->slots[index]);
 	kind->slots[index] = NULL;
@@ -389,6 +396,9 @@ int Object_IsDrawable(const DisplayObject_t* object)
 {
 	if(object == NULL)
 		return 0;
+	// 0x0042AE10: a virtual object with an owner answers for its owner.
+	if(object->type == OBJECT_TYPE_VIRTUAL && object->owner != NULL)
+		return Object_IsDrawable(object->owner);
 
 	return object->visible != 0
 		&& object->enabled != 0
@@ -912,6 +922,23 @@ int Object_SetFilterColour(DisplayObject_t* filter, uint32_t colour,
 	return 1;
 }
 
+int Object_Detach(DisplayObject_t* parent, DisplayObject_t* child)
+{
+	if(parent == NULL || child == NULL)
+		return 0;
+	for(ObjectChild_t** link = &parent->children; *link != NULL; link = &(*link)->next)
+	{
+		ObjectChild_t* node = *link;
+		if(node->child != child)
+			continue;
+		*link = node->next;
+		child->owner = NULL;
+		free(node);
+		return 1;
+	}
+	return 0;
+}
+
 uint32_t Object_RemoveFromGroup(uint32_t groupHandle, uint32_t objectHandle)
 {
 	// 0x004428D0's order and its three results: the group, then the object, then
@@ -1160,6 +1187,99 @@ static void Object_ScreenBounds(const DisplayObject_t* object, Rect_t* rect)
 	int32_t x, y;
 	Object_ScreenPosition(object, &x, &y);
 	Renderer_OffsetRect(rect, x, y);
+}
+
+void Object_GetScreenBounds(const DisplayObject_t* object, Rect_t* rect)
+{
+	Object_ScreenBounds(object, rect);
+}
+
+// 0x0041BEC0, the base's hit test.
+static int Object_HitTestBase(const DisplayObject_t* object, int32_t x, int32_t y, int bounded)
+{
+	if(!object->hitEnabled || x < 0 || y < 0)
+		return 0;
+	if(bounded && ((uint32_t)x >= (uint32_t)object->surfaceWidth || (uint32_t)y >= (uint32_t)object->surfaceHeight))
+		return 0;
+	if(object->hitMask == NULL)
+		return 1;
+	if((uint32_t)x >= object->hitMaskWidth || (uint32_t)y >= object->hitMaskHeight)
+		return 0;
+	return (object->hitMask[object->hitMaskStride * (uint32_t)y + ((uint32_t)x >> 3)] >> (x & 7)) & 1;
+}
+
+int Object_HitTest(DisplayObject_t* object, int32_t x, int32_t y, int bounded)
+{
+	if(object == NULL)
+		return 0;
+	if(!Object_HitTestBase(object, x, y, bounded))
+		return 0;
+	// 0x0042AE70: a virtual object then asks its owner about the same point, moved
+	// by the difference of their positions (vtable+0x30).
+	if(object->type == OBJECT_TYPE_VIRTUAL && object->owner != NULL)
+	{
+		int32_t ox, oy, sx, sy;
+		Object_GetPosition(object, &sx, &sy);
+		Object_GetPosition(object->owner, &ox, &oy);
+		return Object_HitTest(object->owner, x + sx - ox, y + sy - oy, bounded);
+	}
+	return 1;
+}
+
+void Object_SetHitMask(DisplayObject_t* object, const Bitmap_t* bitmap)
+{
+	// 0x0041BD40: the old mask freed; from a bitmap, one bit per pixel that is not
+	// empty, which the bitmap's mode decides (the table at 0x0041BE90: mode 0 a
+	// nonzero 16-bit pixel, 1 a nonzero colour, 2 a nonzero alpha, 3 a nonzero byte).
+	free(object->hitMask);
+	object->hitMask = NULL;
+	object->hitMaskWidth = object->hitMaskHeight = object->hitMaskStride = 0;
+	if(bitmap != NULL)
+	{
+		uint32_t w = (uint32_t)bitmap->width, h = (uint32_t)bitmap->height;
+		uint32_t stride = (w + 7) >> 3;
+		object->hitMaskWidth = w;
+		object->hitMaskHeight = h;
+		object->hitMaskStride = stride;
+		object->hitMask = (uint8_t*)calloc(1, (size_t)stride * h + 1);
+		if(object->hitMask != NULL)
+		{
+			for(uint32_t row = 0; row < h; row++)
+			{
+				const uint8_t* p = (const uint8_t*)bitmap->bitmap + (size_t)row * (size_t)bitmap->stride;
+				int bytes = Renderer_ModePixelBytes(bitmap->mode);
+				for(uint32_t col = 0; col < w; col++, p += bytes)
+				{
+					uint32_t v;
+					switch(bitmap->mode)
+					{
+						case BITMAP_MODE_16: v = (uint32_t)p[0] | ((uint32_t)p[1] << 8); break;
+						case BITMAP_MODE_24: v = (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16); break;
+						case BITMAP_MODE_32: v = p[3]; break;
+						case BITMAP_MODE_8:  v = p[0]; break;
+						default: v = 0; break;
+					}
+					if(v != 0)
+						object->hitMask[row * stride + (col >> 3)] |= (uint8_t)(1u << (col & 7));
+				}
+			}
+		}
+	}
+	object->hitEnabled = 1;
+}
+
+void Object_DisableHit(DisplayObject_t* object)
+{
+	Object_SetHitMask(object, NULL);
+	object->hitEnabled = 0;
+}
+
+void Object_SetExtent(DisplayObject_t* object, int width, int height)
+{
+	if(object->surfacePixels != NULL)
+		return;
+	object->surfaceWidth = width;
+	object->surfaceHeight = height;
 }
 
 // 0x0041B840: the transparency the blit is given, which the blend mode decides.

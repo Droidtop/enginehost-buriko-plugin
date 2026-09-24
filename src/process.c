@@ -138,8 +138,8 @@ Process_t* Process_CreateObjectAnimation(Thread_t* thread, uint32_t objectHandle
 	{
 		uint32_t key = REGION_KEY(priority);
 		process->priority = priority;
-		Region_Add(0, key, (int32_t)0x80000000, (int32_t)0x80000000, (int32_t)0x7FFFFFFF, (int32_t)0x7FFFFFFF, 0);
-		Region_Add(1, key, 0, 0, 0, 0, 0);
+		Region_Add(0, key, (int32_t)0x80000000, (int32_t)0x80000000, (int32_t)0x7FFFFFFF, (int32_t)0x7FFFFFFF, NULL);
+		Region_Add(1, key, 0, 0, 0, 0, NULL);
 		process->mouseTotal = Input_ButtonTotals(1);
 		process->keyTotal = Input_ButtonTotals(gProcessKeyButtons | 0x180);
 		process->keyRegistered = 1;

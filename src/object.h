@@ -204,6 +204,18 @@ struct DisplayObject
 	int32_t           contentOriginX;
 	int32_t           contentOriginY;
 	int32_t           contentHalfWidth;
+	// The eight parts of a window's text layer, 0x2C bytes each from +0x1B0: whether
+	// it is shown (+0x1B0), its own copy of an image (+0x1B4 pixels, +0x1B8 the
+	// descriptor), where it sits in the window (+0x1D0, +0x1D4) and its weight
+	// (+0x1D8). An Ex icon puts its cursors into parts 0 to 3.
+	struct
+	{
+		uint32_t enabled;
+		Bitmap_t surface;
+		int32_t  x;
+		int32_t  y;
+		uint32_t weight;
+	} parts[8];
 	// +0x3C0, +0x3C4, +0x3C8: which layer is drawn first, second and third.
 	uint32_t          layerOrder[3];
 	// Which display list this object is filed in, or NULL. The original does not
@@ -231,6 +243,18 @@ struct DisplayObject
 	uint32_t          field88;
 	// +0xC0: sixteen words a script keeps on the object (0x0041C2B0, 0x0041C2D0).
 	uint32_t          userData[16];
+	// +0x108: whether the object answers its hit test at all (the base constructor
+	// sets it; 0x0041BEA0 clears it), and +0x10C..+0x118 the one-bit mask 0x0041BD40
+	// builds from a bitmap (width, height, bytes per row, bits). No mask is a solid
+	// rectangle.
+	// +0x130: the icon that receives this window's messages (0x0041ADC0 sets it when
+	// it is empty, 0x0041ADE0 clears it when it is that icon).
+	void*             receiver;
+	uint32_t          hitEnabled;
+	uint32_t          hitMaskWidth;
+	uint32_t          hitMaskHeight;
+	uint32_t          hitMaskStride;
+	uint8_t*          hitMask;
 };
 
 // ----------------------------------------------------------------------------------
@@ -311,8 +335,22 @@ void     Object_Move(DisplayObject_t* object, int32_t x, int32_t y);
 uint32_t Object_GetEffectLevel(DisplayObject_t* object);
 // 0x0041B3F0: the origin, on the object and every child.
 void Object_SetOrigin(DisplayObject_t* object, int32_t x, int32_t y);
+// vtable+0x24: the object's surface in screen coordinates.
+void Object_GetScreenBounds(const DisplayObject_t* object, Rect_t* rect);
+// vtable+0x64: whether (x, y), in the object's own coordinates, hits it; with
+// `bounded` the point must also be inside its surface (0x0041BEC0; a virtual object,
+// 0x0042AE70, then asks its owner at the same screen point).
+int  Object_HitTest(DisplayObject_t* object, int32_t x, int32_t y, int bounded);
+// 0x0041BD40: the hit mask from a bitmap (NULL frees it), and hit testing on.
+void Object_SetHitMask(DisplayObject_t* object, const Bitmap_t* bitmap);
+// 0x0041BEA0: no mask and hit testing off.
+void Object_DisableHit(DisplayObject_t* object);
+// 0x0041ABE0: the surface's size, unless the object has pixels of its own (+0x90).
+void Object_SetExtent(DisplayObject_t* object, int width, int height);
 // A sprite outside every table (0x00425790 as 0x0042BFB0 makes it), and its destructor.
 DisplayObject_t* Object_CreateDetachedSprite(uint32_t serial);
+// 0x0041AD10: a child out of its owner's child list, its owner link cleared.
+int  Object_Detach(DisplayObject_t* parent, DisplayObject_t* child);
 void Object_FreeDetached(DisplayObject_t* object);
 // Free the object a handle names and give its slot back, so the next object of
 // that kind takes it - which is what the original does and a counter cannot.

@@ -199,13 +199,13 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xB5 181 */ "Unknown_181",
 	/* 0xB6 182 */ "Unknown_182",
 	/* 0xB7 183 */ "SetWindowContent",
-	/* 0xB8 184 */ "Unknown_184",
-	/* 0xB9 185 */ "Unknown_185",
-	/* 0xBA 186 */ "Unknown_186",
+	/* 0xB8 184 */ "CreateIcon",
+	/* 0xB9 185 */ "DestroyIcon",
+	/* 0xBA 186 */ "SetIconContent",
 	/* 0xBB 187 */ "--Unknown--",
-	/* 0xBC 188 */ "Unknown_188",
-	/* 0xBD 189 */ "Unknown_189",
-	/* 0xBE 190 */ "Unknown_190",
+	/* 0xBC 188 */ "GetIconState",
+	/* 0xBD 189 */ "GetIconEntry",
+	/* 0xBE 190 */ "GetIconParts",
 	/* 0xBF 191 */ "TakeIconEvent",
 	/* 0xC0 192 */ "--Unknown--",
 	/* 0xC1 193 */ "--Unknown--",
@@ -458,13 +458,13 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xB5 181 */ Opcode_Grp0_Unknown_181,
 	/* 0xB6 182 */ Opcode_Grp0_Unknown_182,
 	/* 0xB7 183 */ Opcode_Grp0_SetWindowContent,
-	/* 0xB8 184 */ Opcode_Grp0_Unknown_184,
-	/* 0xB9 185 */ Opcode_Grp0_Unknown_185,
-	/* 0xBA 186 */ Opcode_Grp0_Unknown_186,
+	/* 0xB8 184 */ Opcode_Grp0_CreateIcon,
+	/* 0xB9 185 */ Opcode_Grp0_DestroyIcon,
+	/* 0xBA 186 */ Opcode_Grp0_SetIconContent,
 	/* 0xBB 187 */ NULL,
-	/* 0xBC 188 */ Opcode_Grp0_Unknown_188,
-	/* 0xBD 189 */ Opcode_Grp0_Unknown_189,
-	/* 0xBE 190 */ Opcode_Grp0_Unknown_190,
+	/* 0xBC 188 */ Opcode_Grp0_GetIconState,
+	/* 0xBD 189 */ Opcode_Grp0_GetIconEntry,
+	/* 0xBE 190 */ Opcode_Grp0_GetIconParts,
 	/* 0xBF 191 */ Opcode_Grp0_TakeIconEvent,
 	/* 0xC0 192 */ NULL,
 	/* 0xC1 193 */ NULL,
@@ -2511,145 +2511,99 @@ uint32_t Opcode_Grp0_SetWindowContent(Thread_t* thread)
 	return 0;
 }
 
-int gScreenObjectId = 0x00000001;
-uint32_t Opcode_Grp0_Unknown_184(Thread_t* thread)
+/*
+ * Grp0 0xB8 (0x0047F020 -> 0x0046C7B0 with 0): pops a window handle and pushes a new
+ * DCIPIcon's handle, or 0.
+ */
+uint32_t Opcode_Grp0_CreateIcon(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	Thread_PushStack(thread, gScreenObjectId++);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t window = Thread_PopStack(thread);
+	Thread_PushStack(thread, Icon_Create(window, ICON_KIND_PLAIN));
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_185(Thread_t* thread)
+/*
+ * Grp0 0xB9 (0x0047F050 -> 0x0046C870 -> 0x0046C670): pops an icon's handle, destroys
+ * the icon (either kind) and pushes whether there was one.
+ */
+uint32_t Opcode_Grp0_DestroyIcon(Thread_t* thread)
 {
-	// Maybe create screen object?
-	uint32_t value1 = Thread_PopStack(thread);
-	Thread_PushStack(thread, 0x00000001);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t handle = Thread_PopStack(thread);
+	Thread_PushStack(thread, (uint32_t)Icon_Destroy(handle));
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_186(Thread_t* thread)
+/*
+ * Grp0 0xBA (0x0047F080 -> 0x0046CA60): a DCIPIcon's content from a descriptor
+ * (0x0046C8D0 copies it, 0x00447CF0 builds it). Pushes 1 for a handle that is not an
+ * icon and 4 for an Ex icon. The plain icon's content is not ported.
+ */
+uint32_t Opcode_Grp0_SetIconContent(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	Thread_PushStack(thread, 0x00000000);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-	return 0;
-}
-
-uint32_t Opcode_Grp0_Unknown_188(Thread_t* thread)
-{
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	Thread_PushStack(thread, 0x00000001);
-
-	// This write might not actually happen here: Need to do a mem dump before & after this opcode to verify
-	uint32_t* ptr = (uint32_t*)Thread_ResolveAddr(thread, value2);
-	if(thread->ticks == 35696)
+	uint32_t address = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	Icon_t* icon = Icon_Resolve(handle);
+	if(icon == NULL)
 	{
-		*ptr = 0x00000001; ptr++;
-		*ptr = 0x00000069; ptr++;
-		*ptr = 0x0000005A; ptr++;
-		*ptr = 0x00000058; ptr++;
-		*ptr = 0xFFFFFFFF; ptr++;
-		*ptr = 0xFFFFFFFF; ptr++;
+		Thread_PushStack(thread, 1);
+		return 0;
 	}
-	else if(thread->ticks == 36318)
+	if(icon->kind != ICON_KIND_PLAIN)
 	{
-		*ptr = 0x00000001; ptr++;
-		*ptr = 0x00000069; ptr++;
-		*ptr = 0x0000005A; ptr++;
-		*ptr = 0x00000058; ptr++;
-		*ptr = 0xFFFFFFFF; ptr++;
-		*ptr = 0xFFFFFFFF; ptr++;
+		Thread_PushStack(thread, 4);
+		return 0;
 	}
-	else if(
-		thread->ticks == 659 ||
-		thread->ticks == 678 ||
-		thread->ticks == 697 ||
-		thread->ticks == 716 ||
-		thread->ticks == 735 ||
-		thread->ticks == 754 ||
-		thread->ticks == 773 ||
-		thread->ticks == 792 ||
-		thread->ticks == 811 ||
-		thread->ticks == 849 ||
-		thread->ticks == 868 ||
-		thread->ticks == 887 ||
-		thread->ticks == 906 ||
-		thread->ticks == 925 ||
-		thread->ticks == 944 ||
-		thread->ticks == 830 || 
-		thread->ticks == 887
-	)
-	{
-		*ptr = 0x00000001; ptr++;
-		*ptr = 0x00000000; ptr++;
-		*ptr = 0x00000002; ptr++;
-		*ptr = 0x00000001; ptr++;
-		*ptr = 0x00000032; ptr++;
-		*ptr = 0x00000014; ptr++;
-	}
-	else if(thread->ticks == 963)
-	{
-		*ptr = 0x00000000; ptr++;
-		*ptr = 0x00000000; ptr++;
-		*ptr = 0x00000000; ptr++;
-		*ptr = 0x00000001; ptr++;
-		*ptr = 0x00000032; ptr++;
-		*ptr = 0x00000014; ptr++;
-	}
-	else if(thread->ticks == 963 || thread->ticks == 36940 || thread->ticks == 37562)
-	{
-		*ptr = 0x00000001; ptr++;
-		*ptr = 0x00000069; ptr++;
-		*ptr = 0x0000005A; ptr++;
-		*ptr = 0x00000058; ptr++;
-		*ptr = 0xFFFFFFFF; ptr++;
-		*ptr = 0xFFFFFFFF; ptr++;
-	}
-	else
-	{
-		if(thread->ticks < 16817 || thread->ticks >= 19742)
-		{
-			*ptr = 0x00000000; ptr++;
-			*ptr = 0x00000000; ptr++;
-		}
-		else
-		{
-			*ptr = 0x00000001; ptr++;
-			*ptr = 0xFFFFFF00; ptr++;
-		}
-		if(thread->ticks >= 19742)
-		{
-			*ptr = 0x00000002; ptr++;
-			*ptr = 0x00000001; ptr++;
-			*ptr = 0x0000004E; ptr++;
-			*ptr = 0x00000046; ptr++;
-		}
-		else
-		{
-			*ptr = 0x00000000; ptr++;
-			*ptr = 0x00000000; ptr++;
-			*ptr = 0x00000001; ptr++;
-			*ptr = 0x00000062; ptr++;
-			*ptr = 0x00000026; ptr++;
-		}
-	}
-
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-	return 0;
-}
-
-uint32_t Opcode_Grp0_Unknown_189(Thread_t* thread)
-{
+	printf("[Thread %d]: %sError: a DCIPIcon's content (0x0046C8D0 / 0x00447CF0, descriptor 0x%08X) is not ported\n",
+	       thread->threadId, TLevel[thread->level], address);
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_190(Thread_t* thread)
+/*
+ * Grp0 0xBC (0x0047F0C0 -> 0x0046CD80 -> 0x004485A0): pops an icon's handle and an
+ * address, writes six words there - whether the icon is live, the last decision's
+ * entry, part and value, and the point on the part - and pushes whether the icon
+ * exists.
+ */
+uint32_t Opcode_Grp0_GetIconState(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t handle = Thread_PopStack(thread);
+	uint32_t* out = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	Icon_t* icon = Icon_Resolve(handle);
+	if(icon != NULL && out != NULL)
+		Icon_GetState(icon, out);
+	Thread_PushStack(thread, icon != NULL);
+	return 0;
+}
+
+/*
+ * Grp0 0xBD (0x0047F100 -> 0x0046CDA0 -> 0x00448600): pops an icon's handle and an
+ * address, writes the icon's current entry there and pushes whether the icon exists.
+ */
+uint32_t Opcode_Grp0_GetIconEntry(Thread_t* thread)
+{
+	uint32_t handle = Thread_PopStack(thread);
+	uint32_t* out = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	Icon_t* icon = Icon_Resolve(handle);
+	if(icon != NULL && out != NULL)
+		*out = (uint32_t)icon->currentEntry;
+	Thread_PushStack(thread, icon != NULL);
+	return 0;
+}
+
+/*
+ * Grp0 0xBE (0x0047F140 -> 0x0046CDD0 -> 0x00448610): pops an icon's handle and an
+ * address, writes every entry's selected part there and pushes whether the icon
+ * exists.
+ */
+uint32_t Opcode_Grp0_GetIconParts(Thread_t* thread)
+{
+	uint32_t handle = Thread_PopStack(thread);
+	uint32_t* out = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	Icon_t* icon = Icon_Resolve(handle);
+	if(icon != NULL && out != NULL)
+		Icon_SelectedParts(icon, out);
+	Thread_PushStack(thread, icon != NULL);
+	return 0;
 }
 
 /*

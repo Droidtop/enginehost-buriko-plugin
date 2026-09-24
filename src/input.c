@@ -1,9 +1,11 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "input.h"
 #include "region.h"
 #include "engine.h"
 #include "os.h"
+#include "object.h"
 
 extern int gAppActive;
 
@@ -26,6 +28,8 @@ static uint32_t gSkipToggle = 0;     // 0x0056682C
 static uint32_t gActivity = 0;       // 0x0056683C
 static uint32_t gSwapButtons = 0;    // 0x0056691C
 static int32_t  gMouseX = 0, gMouseY = 0;
+// 0x00503E40: where each of the five buttons was last pressed (0x0048E720 reads it).
+static int32_t  gClickX[5], gClickY[5];
 
 // ---------------------------------------------------------------- key lists
 // The logical buttons, each a zero-terminated list of virtual keys, with the
@@ -175,6 +179,15 @@ void Input_MouseMove(int32_t x, int32_t y)
 	gMouseY = y;
 }
 
+int Input_ClickPosition(uint32_t button, int32_t* x, int32_t* y)
+{
+	if(button >= 5)
+		return 0;
+	*x = gClickX[button];
+	*y = gClickY[button];
+	return 1;
+}
+
 void Input_GetMouse(int32_t* x, int32_t* y)
 {
 	*x = gMouseX;
@@ -194,6 +207,8 @@ void Input_MouseButton(int button, int down, int32_t x, int32_t y)
 	Input_MouseMove(x, y);
 	if(down)
 	{
+		gClickX[button] = x;
+		gClickY[button] = y;
 		if(button == 0)
 			Engine_PushGlobalList(0x80, 0, 0);
 		else if(button == 1)
@@ -228,25 +243,133 @@ int Input_HasKeyboard(uint32_t key)
 
 int Input_HasMouse(uint32_t key)
 {
+	// 0x0046D9B0. The pointer is on the display when it is inside the display mode's
+	// size (0x00461220 / 0x00461240).
 	if(!gEnabled)
 		return 0;
 	int32_t x = gMouseX, y = gMouseY;
+	int onScreen = x >= 0 && x < (int32_t)gDisplayModeWidth[gDisplaySizeIndex & 7]
+	            && y >= 0 && y < (int32_t)gDisplayModeHeight[gDisplaySizeIndex & 7];
 	for(Region_t* r = Region_First(0); r != NULL; r = r->next)
 	{
-		// Regions owned by a display object hit-test through it (vtable+0x64);
-		// none are made yet (0x0046D860 has no caller that is written).
-		int inside = r->left <= x && x <= r->right && r->top <= y && y <= r->bottom;
+		// 0x0046DA13: a region an object owns counts only while the pointer is on
+		// the display and the object would be drawn (vtable+0x08), and takes the
+		// object's screen bounds (vtable+0x24) as its rectangle.
+		if(r->owner != NULL)
+		{
+			if(!onScreen || !Object_IsDrawable(r->owner))
+				continue;
+			Rect_t bounds;
+			Object_GetScreenBounds(r->owner, &bounds);
+			r->left = bounds.left;
+			r->top = bounds.top;
+			r->right = bounds.right;
+			r->bottom = bounds.bottom;
+		}
 		if(r->key < key)
 			return 0;
+		int inside = r->left <= x && x <= r->right && r->top <= y && y <= r->bottom;
+		if(!inside)
+			continue;
+		// Inside: a plain rectangle decides at once; an owned one asks the object
+		// about the point in its own coordinates (vtable+0x64 with 1).
+		int hit = r->owner == NULL || Object_HitTest(r->owner, x - r->left, y - r->top, 1);
 		if(r->key == key)
 		{
-			if(inside)
+			if(hit)
 				return 1;
 			continue;
 		}
-		if(inside)
+		if(hit)
 			return 0;
 	}
+	return 0;
+}
+
+// The list at 0x00566830 (head node; +0x08 the first): {id, key, next}, highest key
+// first. An Ex icon that takes the keyboard files itself here (0x0046E680) so that
+// everything below its window's key is shut out of the pointer (0x0046E700).
+typedef struct ModalNode
+{
+	uint32_t id;
+	uint32_t key;
+	struct ModalNode* next;
+} ModalNode_t;
+static ModalNode_t* gModal = NULL;
+
+void Input_AddModal(uint32_t id, uint32_t key)
+{
+	// 0x0046E680: in before the first node whose key is below the new one.
+	ModalNode_t** link = &gModal;
+	while(*link != NULL && (*link)->key >= key)
+		link = &(*link)->next;
+	ModalNode_t* node = (ModalNode_t*)malloc(sizeof(ModalNode_t));
+	if(node == NULL)
+		return;
+	node->id = id;
+	node->key = key;
+	node->next = *link;
+	*link = node;
+}
+
+void Input_RemoveModal(uint32_t id)
+{
+	// 0x0046E6D0: the first node with that id.
+	for(ModalNode_t** link = &gModal; *link != NULL; link = &(*link)->next)
+	{
+		if((*link)->id == id)
+		{
+			ModalNode_t* node = *link;
+			*link = node->next;
+			free(node);
+			return;
+		}
+	}
+}
+
+int Input_AboveModal(uint32_t key)
+{
+	// 0x0046E700: 1 with nothing filed, else whether the key reaches the top one's.
+	return gModal == NULL || key >= gModal->key;
+}
+
+uint32_t Input_MouseHeld(uint32_t key)
+{
+	// 0x0046E610: with the pointer (0x0046D9B0), the mouse buttons held long enough
+	// to repeat (0x0046DDC0), as the region state's mouse bits.
+	uint32_t bits = 0;
+	if(!Input_HasMouse(key))
+		return 0;
+	if(Input_HeldLong(1)) bits |= 0x01;
+	if(Input_HeldLong(2)) bits |= 0x02;
+	if(Input_HeldLong(4)) bits |= 0x04;
+	if(Input_HeldLong(5)) bits |= 0x10;
+	if(Input_HeldLong(6)) bits |= 0x20;
+	return bits;
+}
+
+int Input_HeldLong(uint32_t vk)
+{
+	// 0x0046DDC0: held, and past the time its repeat starts.
+	KeyRecord_t* k = &gKeys[vk & 0xFF];
+	return k->down && OS_GetTicks() >= k->repeatAt;
+}
+
+int Input_BitForKey(uint32_t bits, uint32_t vk)
+{
+	// 0x0046E3F0: whether the region state `bits` has the bit that key stands for
+	// (the table at 0x0046E540); 0 for a key that has none.
+	static const struct { uint32_t vk; uint32_t shift; } kMap[] = {
+		{ 0x01, 0 }, { 0x02, 1 }, { 0x04, 2 }, { 0x05, 4 }, { 0x06, 5 }, { 0x0E, 6 },
+		{ 0x0F, 7 }, { 0xC1, 8 }, { 0xC2, 9 }, { 0x26, 12 }, { 0x28, 13 }, { 0x25, 14 },
+		{ 0x27, 15 }, { 0x31, 16 }, { 0x61, 16 }, { 0x32, 17 }, { 0x62, 17 }, { 0x33, 18 },
+		{ 0x63, 18 }, { 0x34, 19 }, { 0x64, 19 }, { 0x35, 20 }, { 0x65, 20 }, { 0x36, 21 },
+		{ 0x66, 21 }, { 0x37, 22 }, { 0x67, 22 }, { 0x38, 23 }, { 0x68, 23 }, { 0x39, 24 },
+		{ 0x69, 24 }, { 0x30, 25 }, { 0x60, 25 }, { 0x09, 30 },
+	};
+	for(size_t n = 0; n < sizeof(kMap) / sizeof(kMap[0]); n++)
+		if(kMap[n].vk == vk)
+			return (int)((bits >> kMap[n].shift) & 1);
 	return 0;
 }
 
@@ -271,6 +394,13 @@ static uint32_t Input_TakeButtons(void)
 
 uint32_t Input_RegionState(uint32_t key)
 {
+	return Input_RegionStateOf(key, key);
+}
+
+uint32_t Input_RegionStateOf(uint32_t keyboardKey, uint32_t mouseKey)
+{
+	// 0x0046E080 takes the keyboard's key in eax and the pointer's on the stack.
+	uint32_t key = keyboardKey;
 	uint32_t bits = 0;
 	if(Input_HasKeyboard(key))
 	{
@@ -278,7 +408,7 @@ uint32_t Input_RegionState(uint32_t key)
 		if(Input_SkipQuery())
 			bits |= 0x80000000u;
 	}
-	if(Input_HasMouse(key))
+	if(Input_HasMouse(mouseKey))
 	{
 		if(Input_Take(1)) bits |= 0x01;
 		if(Input_Take(2)) bits |= 0x02;

@@ -126,9 +126,9 @@ uint32_t Opcode_Sys0_ReadRecordList(Thread_t* thread);
 uint32_t Opcode_Sys0_DropFromRecordList(Thread_t* thread);
 uint32_t Opcode_Sys0_PopGlobalList(Thread_t* thread);
 uint32_t Opcode_Sys0_PushGlobalList(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_168(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_169(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_172(Thread_t* thread);
+uint32_t Opcode_Sys0_SetIconEnabled(Thread_t* thread);
+uint32_t Opcode_Sys0_GetIconEnabled(Thread_t* thread);
+uint32_t Opcode_Sys0_SendIconMessage(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_176(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_177(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_180(Thread_t* thread);
@@ -178,4 +178,5 @@ extern char* OpcodesSys0Mnemonics[256];
 uint32_t Opcode_Sys0_LoadStringTable(Thread_t* thread);
 uint32_t Opcode_Sys0_SerializeStringTable(Thread_t* thread);
 uint32_t Opcode_Sys0_StringLength(Thread_t* thread);
+uint32_t Opcode_Sys0_SetIconMode(Thread_t* thread);
 #endif

@@ -69,4 +69,21 @@ int Window_RedrawContentSlot(Renderer_t* renderer, DisplayObject_t* window, uint
 struct IconContent;
 uint32_t Window_SetContent(Renderer_t* renderer, DisplayObject_t* window, const struct IconContent* content);
 
+// A content slot's sprite changed in place; 9 for a slot that is missing or empty.
+uint32_t Window_SlotSetEnabled(DisplayObject_t* window, uint32_t slot, uint32_t enabled);              // 0x0042C140
+uint32_t Window_SlotSetBitmap(Renderer_t* renderer, DisplayObject_t* window, uint32_t slot, int32_t bitmap); // 0x0042C170
+uint32_t Window_SlotSetPosition(Renderer_t* renderer, DisplayObject_t* window, uint32_t slot,
+                                int32_t x, int32_t y, int32_t z);                                        // 0x0042C1B0
+uint32_t Window_SlotSetAngle(Renderer_t* renderer, DisplayObject_t* window, uint32_t slot, int32_t angle); // 0x0042C220
+uint32_t Window_SlotSetLayer(DisplayObject_t* window, uint32_t slot, uint32_t layer);                  // 0x0042C250
+int      Window_SlotRedrawWithout(Renderer_t* renderer, DisplayObject_t* window, uint32_t slot);         // 0x0042C300
+
+// The eight parts of the text layer.
+void     Window_ClientRect(const DisplayObject_t* window, Rect_t* rect);                                  // 0x0042C380
+void     Window_EnablePart(Renderer_t* renderer, DisplayObject_t* window, int index, uint32_t enabled);   // 0x0042BB90
+void     Window_SetPartPosition(Renderer_t* renderer, DisplayObject_t* window, int index,
+                                int32_t x, int32_t y, uint32_t weight);                                  // 0x0042BBC0
+uint32_t Window_SetPartBitmap(Renderer_t* renderer, DisplayObject_t* window, int index, const Bitmap_t* bitmap); // 0x0042BC10
+int      Window_PartScreenRect(Renderer_t* renderer, DisplayObject_t* window, int index, Rect_t* rect);  // 0x0042C410
+
 #endif // __WINDOW_H__

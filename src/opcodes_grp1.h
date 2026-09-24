@@ -57,11 +57,12 @@ uint32_t Opcode_Grp1_Unknown_156(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_157(Thread_t* thread);
 uint32_t Opcode_Grp1_CreateIconEx(Thread_t* thread);
 uint32_t Opcode_Grp1_SetIconContent(Thread_t* thread);
-uint32_t Opcode_Grp1_Unknown_191(Thread_t* thread);
+uint32_t Opcode_Grp1_SetIconKeyMap(Thread_t* thread);
 uint32_t Opcode_Grp1_SetObjectHidden(Thread_t* thread);
 
 extern OpcodePtr_t OpcodesGrp1[256];
 extern char* OpcodesGrp1Mnemonics[256];
 
 uint32_t Opcode_Grp1_SetRubyStyle(Thread_t* thread);
+uint32_t Opcode_Grp1_SetIconPartEnabled(Thread_t* thread);
 #endif

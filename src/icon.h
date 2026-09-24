@@ -9,55 +9,156 @@
 
 // ----------------------------------------------------------------------------------
 // Icons: DCIPIcon and DCIPIconEx (the names are the executable's own, out of the RTTI
-// at 0x004F2BBC and 0x004F2C08).
+// at 0x004F2BBC and 0x004F2C08) - the engine's menus.
 //
-// This is a second object family, nothing to do with the display objects' ten handle
-// tables. 0x0046C7B0 is its factory: it resolves a WINDOW handle, allocates 0xA4
-// bytes for kind 0 or 0xD8 for kind 1, constructs it - 0x00447A70 for the base,
-// 0x0044A8A0 for the Ex, which calls the base first - and registers it with
-// 0x0046C620 on the list at 0x005667E8, counting at 0x005667E0. An icon's handle is
-// its own serial (0x00490C70 reads +0x04, which 0x004477B0 filled from the counter at
-// 0x00565D74), so handles are never reused and 0 is never one.
+// An icon is a message receiver (0x004477B0, vtable 0x004E5B5C) that lives in a window:
+// it registers itself as the window's receiver (window+0x130), keeps a queue of
+// messages the script sends it (Sys0 0xAC), and holds a display object of its own
+// (+0x2C, a CDspObjVirtual) attached to the window. 0x0046C7B0 is the factory (kind 0
+// a DCIPIcon, 0x00447A70, vtable 0x004E5B6C; kind 1 a DCIPIconEx, 0x0044A8A0, vtable
+// 0x004E5BBC) and files it on the list at 0x005667E8.
 //
-// What the base constructor really builds is the interesting part: the icon holds the
-// window it was made from (+0x28) and a display object of its own (+0x2C) - a
-// CDspObjVirtual of type 8 - which it positions where the window is, gives the
-// window's draw priority, and then attaches to the window as a child at 0, 0. The
-// icon is therefore a place inside a window that something can later be drawn at.
+// Its content is a tree of entries, each a row of parts. A part of an Ex icon is a
+// kind 5 sprite in the window's content slot for it, with a virtual display object in
+// the window where the pointer can hit it. Once the content is built (+0x30) the
+// icon follows the pointer and the keys every pass of the main loop (vtable+0x04,
+// 0x00448680 -> 0x00448770): it swaps a part's image when the pointer is over it,
+// selects and decides parts, animates frames and turns, and posts what happened to
+// an event queue (+0xA0) that the script reads with Grp0 0xBF.
+//
+// This file ports the DCIPIconEx and the base code it shares. The plain DCIPIcon's
+// own content (0x00447CF0) and its virtuals are not ported and name themselves.
 // ----------------------------------------------------------------------------------
 #define ICON_KIND_PLAIN 0
 #define ICON_KIND_EX    1
 
-// The content descriptor itself is described further down; the icon holds one.
-typedef struct IconContent IconContent_t;
+// ----------------------------------------------------------------------------------
+// An Ex icon's content descriptor (0x0046CB50)
+//
+// The script builds a tree in its own memory and hands over the address of its root;
+// the engine deep-copies it before it uses any of it:
+//
+//   the root, 0x28 bytes: the entry count, the script address of the entry array, the
+//     selected entry, then the words that become +0x40, +0x44, +0x48, +0x4C, +0x50
+//     and (inverted) +0x88
+//   an entry, 0x40 bytes: the part count, the columns, the script address of the part
+//     array, the selected part, and the words the entry record carries
+//   a part, 0xC4 bytes (see IconPart below)
+//
+// Both counts must be between 1 and 0x100 (0x0046CB9A / 0x0046CC23); the original
+// answers 2 when the root's count or its array is bad and 3 when an entry's is.
+// ----------------------------------------------------------------------------------
+#define ICON_CONTENT_ROOT_WORDS  10   // 0x28
+#define ICON_CONTENT_ENTRY_WORDS 16   // 0x40
+#define ICON_CONTENT_PART_WORDS  49   // 0xC4
+#define ICON_CONTENT_MAX_COUNT   0x100
 
-// One entry of an icon's content, as 0x0044A9E0 lands it: the 0x34-byte record at
-// icon+0x38 and the pair at icon+0x54 are two arrays over the same entries in the
-// original, and one record here.
+// The words of a part (0xC4 bytes), as 0x0044A9E0 and the Ex virtuals read them.
+enum
+{
+	ICON_PART_W0       = 0,   // +0x00: with +0x04, whether the part has a hit mask
+	ICON_PART_USED     = 1,   // +0x04: 0 leaves the part out; with flag 0x10 its layer
+	ICON_PART_X        = 2,   // +0x08
+	ICON_PART_Y        = 3,   // +0x0C; with flag 0x02 its layer
+	ICON_PART_ANCHOR_X = 4,   // +0x10: the image's anchor; the sprite sits at x + anchor
+	ICON_PART_ANCHOR_Y = 5,   // +0x14
+	ICON_PART_FRAMES   = 6,   // +0x18: frames of an animation (consecutive bitmaps)
+	ICON_PART_INTERVAL = 7,   // +0x1C: milliseconds per frame
+	ICON_PART_BITMAP   = 8,   // +0x20: the image
+	ICON_PART_HOVER    = 9,   // +0x24: under the pointer, or -1
+	ICON_PART_SELECTED = 10,  // +0x28: selected, or -1
+	ICON_PART_SELHOVER = 11,  // +0x2C: selected and under the pointer, or -1
+	ICON_PART_HITMASK  = 12,  // +0x30: the bitmap whose pixels the pointer must hit; -2 none
+	ICON_PART_NODECIDE = 13,  // +0x34: a selected part cannot be decided again
+	ICON_PART_TURNS    = 14,  // +0x38: how many turn keys follow
+	ICON_PART_KEYS     = 15,  // +0x3C: {angle delta, duration, unused} per key
+	ICON_PART_ANGLE    = 39,  // +0x9C: the angle a turn starts from
+	ICON_PART_TURN_HOVER = 40,// +0xA0: turn only under the pointer
+	ICON_PART_TURN_KEEP  = 41,// +0xA4: keep the angle when the pointer leaves
+	ICON_PART_CURSOR   = 42,  // +0xA8..+0xBC: two cursors {x, y, bitmap} (window parts 2, 3)
+	ICON_PART_FLAGS    = 48,  // +0xC0
+};
+
 typedef struct
 {
-	// icon+0x54, two dwords per entry: how many parts stand side by side, and how
-	// many rows that makes. The columns are the entry's own second word unless it
-	// is not positive or larger than the part count, and then they are the part
-	// count (0x0044AADE); the rows are the part count divided by them, rounded up.
-	uint32_t columns;
-	uint32_t rows;
-	// [0x00] of the 0x34-byte record: how many parts this entry has.
-	uint32_t partCount;
-	// [0x08]: which of this entry's parts is the selected one, or -1 when the
-	// entry's own word is outside 0..partCount-1 (0x0044ACCC).
-	int32_t  selectedPart;
-	// [0x0C] to [0x30]: the entry's words 5 to 14, carried across as they are.
-	// Word 4 is skipped, and words 0, 1, 2 and 3 are the four above.
-	uint32_t carried[10];
+	uint32_t  raw[ICON_CONTENT_ENTRY_WORDS];
+	// The part array the original writes back over the entry's own +0x08. Kept
+	// beside the raw words instead, so the copy of the script's bytes stays a copy.
+	uint32_t  partCount;
+	uint32_t* parts;   // partCount * ICON_CONTENT_PART_WORDS words
+} IconContentEntry_t;
+
+typedef struct IconContent
+{
+	uint32_t            raw[ICON_CONTENT_ROOT_WORDS];
+	uint32_t            entryCount;
+	IconContentEntry_t* entries;
+} IconContent_t;
+
+// 0x0046CB50. 0 and *out set on success; 2 or 3 and *out NULL on the two failures.
+uint32_t Icon_ReadContent(Thread_t* thread, const uint32_t* root, IconContent_t** out);
+// 0x0046CB00.
+void Icon_FreeContent(IconContent_t* content);
+
+// ----------------------------------------------------------------------------------
+// The icon's own records
+// ----------------------------------------------------------------------------------
+// A part's place in the base class's bookkeeping (0x3C bytes, icon+0x38 -> entry +0x04).
+typedef struct
+{
+	uint32_t w0;          // +0x00, the part's +0x00
+	int32_t  x;           // +0x04
+	int32_t  y;           // +0x08
+	int32_t  bitmap;      // +0x0C
+	int32_t  selected;    // +0x10
+	int32_t  hover;       // +0x14
+	int32_t  hitMask;     // +0x18
+	int32_t  cursor[6];   // +0x1C: the part's two cursors
+	uint32_t f34;         // +0x34
+	uint32_t hotkey;      // +0x38: a key that decides the part (bit 31: when held)
+} IconPartRecord_t;
+
+// An entry (0x34 bytes at icon+0x38).
+typedef struct
+{
+	int32_t           partCount;    // +0x00
+	IconPartRecord_t* parts;        // +0x04
+	int32_t           selectedPart; // +0x08, -1 for none
+	// +0x0C..+0x30, the entry's words 5..14: [0] whether it has cursors, [1] the
+	// pointer selects what it is over, [2] a held button counts as a click, [3] a
+	// group (selecting a part clears the other entries of the group), [4..9] two
+	// cursors {x, y, bitmap} in window parts 0 and 1.
+	int32_t           words[10];
 } IconEntry_t;
 
-// +0xA0 of an icon is the head of a queue of events, each a 16-byte node of
-// three words and a link (0x0044A300 pops one and frees it). What an icon puts
-// on it is its own input handling, which needs the hit regions its parts have
-// not been given yet, so nothing fills it in this engine so far - but a script
-// asks for the next event several times per frame, so the queue itself has to
-// be real and has to be empty rather than imaginary and always full.
+// A part the pointer can reach (0x14 bytes at icon+0x5C), one per part in order.
+typedef struct
+{
+	uint32_t          hasImage;     // +0x00
+	int32_t           entry;        // +0x04
+	int32_t           part;         // +0x08
+	IconPartRecord_t* record;       // +0x0C
+	DisplayObject_t*  object;       // +0x10, the virtual object the pointer hits
+} IconHit_t;
+
+// An Ex part's animation (0x30 bytes, icon+0xCC[entry][part]).
+typedef struct
+{
+	uint32_t  used;       // +0x00
+	uint32_t* part;       // +0x04, the icon's own copy of the part's words
+	uint32_t  slot;       // +0x08, the window content slot
+	uint32_t  layer;      // +0x0C
+	uint32_t  frame;      // +0x10
+	uint32_t  frameAt;    // +0x14
+	int32_t   angle;      // +0x18
+	uint32_t  key;        // +0x1C
+	int32_t   step;       // +0x20
+	int32_t   steps;      // +0x24
+	uint32_t  turnAt;     // +0x28
+	int32_t   depth;      // +0x2C
+} IconPartState_t;
+
+// +0xA0: the event queue, three words and a link (0x0044A2B0 appends, 0x0044A300 pops).
 typedef struct IconEvent IconEvent_t;
 struct IconEvent
 {
@@ -65,121 +166,88 @@ struct IconEvent
 	IconEvent_t* next;
 };
 
+// The message queue at +0x18..+0x20 (0x004478C0 appends, 0x00447A10 pops).
+typedef struct IconMessage IconMessage_t;
+struct IconMessage
+{
+	uint32_t       count;
+	uint32_t*      words;
+	IconMessage_t* next;
+};
+
 typedef struct Icon Icon_t;
 struct Icon
 {
-	uint32_t         handle;   // +0x04, the serial from 0x00565D74
-	// +0x24: 0 for a DCIPIcon and 1 for a DCIPIconEx, which is the only field that
-	// tells the two apart until an opcode reaches one of the Ex's own.
-	uint32_t         kind;
-	DisplayObject_t* window;   // +0x0C and +0x28, both the window it was made from
-	DisplayObject_t* object;   // +0x2C, the CDspObjVirtual inside that window
-	Icon_t*          next;     // the +0x08 link of the 12-byte registration node
-
-	// ------------------------------------------------------------------------
-	// What 0x0044A9E0 leaves on the icon. Everything here is the descriptor's,
-	// read out of it once and named, so nothing after this has to walk the raw
-	// words again.
-	// ------------------------------------------------------------------------
-	// +0xA4 and +0xA8: the original copies the whole descriptor a second time,
-	// into memory of the icon's own. Icon_ReadContent has already made that copy
-	// (it is what 0x0046CB50 does), so the icon takes it over rather than copying
-	// a copy - one descriptor, one owner.
-	IconContent_t*   content;
-	uint32_t         entryCount;    // +0x34
-	IconEntry_t*     entries;       // +0x38 and +0x54, one record per entry
-	// +0x3C: which entry is the selected one, or -1 when the descriptor's own
-	// word is outside 0..entryCount-1.
-	int32_t          selectedEntry;
-	uint32_t         carried[5];    // +0x40, +0x44, +0x48, +0x4C (masked to 3
-	                                // bits) and +0x50
-	uint32_t         field88;       // +0x88: 1 when the root's ninth word is zero
-	uint32_t         partCount;     // +0x58: every entry's parts added up
-	uint32_t         ready;         // +0x30: set once the content is built
-	uint32_t         redraw;        // +0x14, which 0x004479B0 sets and 0x004478A0
-	                                // consumes
-	IconEvent_t*     events;        // +0xA0, oldest first
-};
-// The rest of what 0x00447A70 and 0x0044A8A0 initialise is not carried here, because
-// nothing reads it yet and a field nobody reads is a field nobody maintains: the base
-// zeroes +0x14 through +0x20, +0x30 through +0x5C and +0x94 through +0xA0, sets +0x3C,
-// +0x74 and +0x90 to -1 and +0x88 to 1, and the Ex zeroes +0xA4 through +0xD4. The
-// opcode that first reads one of them should add it here with its offset, as the
-// display object's own fields are named.
-
-// ----------------------------------------------------------------------------------
-// An icon's content descriptor (0x0046CB50)
-//
-// The script does not hand an Ex icon its content a field at a time: it builds a tree
-// in its own memory and hands over the address of its root, and the engine deep-copies
-// that tree into its own before it uses any of it. The three levels are:
-//
-//   the root, 0x28 bytes: the entry count at +0x00 and the script address of the
-//     entry array at +0x04, then eight more dwords that are carried along
-//   an entry, 0x40 bytes: the part count in the low half of +0x00 and the script
-//     address of the part array at +0x08, then thirteen more dwords
-//   a part, 0xC4 bytes, copied whole
-//
-// Both counts must be between 1 and 0x100 (0x0046CB9A / 0x0046CC23); the original
-// answers 2 when the root's count or its array is bad and 3 when an entry's is, and
-// in the second case it fills the rest of the copy with nothing rather than stopping
-// - the failure is only reported once the whole tree has been walked, and then the
-// copy is freed and nothing is returned. What the fields inside an entry and a part
-// mean is 0x0044A9E0's business and is not decided here: the copy is faithful to the
-// byte, so naming them can wait for the code that reads them.
-// ----------------------------------------------------------------------------------
-#define ICON_CONTENT_ROOT_WORDS  10   // 0x28
-#define ICON_CONTENT_ENTRY_WORDS 16   // 0x40
-#define ICON_CONTENT_PART_WORDS  49   // 0xC4
-#define ICON_CONTENT_MAX_COUNT   0x100
-
-typedef struct
-{
-	uint32_t  raw[ICON_CONTENT_ENTRY_WORDS];
-	// The part array the original writes back over the entry's own +0x08, replacing
-	// the script address it copied there. Kept beside the raw words instead, so the
-	// copy of the script's own bytes stays a copy.
-	uint32_t  partCount;
-	uint32_t* parts;   // partCount * ICON_CONTENT_PART_WORDS words
-} IconContentEntry_t;
-
-struct IconContent
-{
-	uint32_t            raw[ICON_CONTENT_ROOT_WORDS];
-	uint32_t            entryCount;
-	IconContentEntry_t* entries;
+	uint32_t         handle;        // +0x04, the serial from 0x00565D74
+	uint32_t         enabled;       // +0x10: the main loop runs only enabled icons
+	uint32_t         dirty;         // +0x14 (0x004479B0)
+	IconMessage_t*   messages;      // +0x20
+	uint32_t         kind;          // +0x24: 0 DCIPIcon, 1 DCIPIconEx
+	DisplayObject_t* window;        // +0x0C and +0x28
+	DisplayObject_t* object;        // +0x2C, the CDspObjVirtual
+	uint32_t         ready;         // +0x30: the content is built and live
+	int32_t          entryCount;    // +0x34
+	IconEntry_t*     entries;       // +0x38
+	int32_t          currentEntry;  // +0x3C
+	uint32_t         keyboard;      // +0x40: the icon takes the keyboard
+	uint32_t         mouseRegion;   // +0x44: the window takes the pointer
+	uint32_t         ignoreBits;    // +0x48: input bits the icon ignores
+	uint32_t         keyMap;        // +0x4C: which key table the actions come from (0..7)
+	uint32_t         decideSelects; // +0x50: deciding a part selects it
+	int32_t*         grid;          // +0x54: {columns, rows} per entry
+	int32_t          hitCount;      // +0x58
+	IconHit_t*       hits;          // +0x5C
+	int32_t          hitX, hitY;    // +0x60, +0x64
+	int32_t          lastEntry;     // +0x68
+	int32_t          lastPart;      // +0x6C
+	uint32_t         lastValue;     // +0x70
+	int32_t          hover;         // +0x74
+	int32_t          mouseX, mouseY;// +0x78, +0x7C
+	int32_t          under;         // +0x80: the hit under the pointer
+	int32_t          underChecked;  // +0x84: the same, decidable and reachable
+	uint32_t         active;        // +0x88
+	uint32_t         input;         // +0x8C
+	int32_t          pressed;       // +0x90: the hit a press waits to be released on
+	IconEvent_t*     events;        // +0xA0
+	// DCIPIconEx (+0xA4 to +0xD4).
+	uint32_t         root[ICON_CONTENT_ROOT_WORDS];   // +0xA4
+	IconContentEntry_t* copies;     // +0xA8: the entries and their parts, the icon's own
+	IconPartState_t** states;       // +0xCC
+	int32_t*         order;         // +0xD0: hits by layer, highest first
+	int32_t          orderCount;    // +0xD4
+	Icon_t*          next;          // the +0x08 link of the registration node
 };
 
-// 0x0046CB50. Copies the tree at the resolved address `root` into freshly allocated
-// memory. 0 and *out set on success; 2 or 3 and *out NULL on the two failures above.
-uint32_t Icon_ReadContent(Thread_t* thread, const uint32_t* root, IconContent_t** out);
-// 0x0046CB00. Frees what Icon_ReadContent built, parts first.
-void Icon_FreeContent(IconContent_t* content);
+// 0x0046C7B0. The icon's handle, or 0.
+uint32_t Icon_Create(uint32_t windowHandle, uint32_t kind);
+// 0x0046C650 / 0x0046C790: the icon a handle names, or NULL.
+Icon_t*  Icon_Resolve(uint32_t handle);
+// 0x0046C670: out of the list and destroyed. Answers whether there was one.
+int      Icon_Destroy(uint32_t handle);
+void     Icon_FreeAll(void);
 
-// 0x0044A9E0. Gives an icon the content a descriptor describes. The icon takes over
-// `content`, whatever the answer: 0 when the content was built, 0x80000001 when the
-// entry count is outside 1..0x100, 0x80000002 when an entry has more than 0x100
-// parts. The results are the original's own.
+// 0x0044A9E0: an Ex icon's content from a descriptor (which it copies; the caller
+// frees it). 0, 0x80000001 for a bad entry count, 0x80000002 for a bad part count.
 #define ICON_CONTENT_SET_OK          0x00000000u
 #define ICON_CONTENT_SET_BAD_COUNT   0x80000001u
 #define ICON_CONTENT_SET_BAD_ENTRY   0x80000002u
-uint32_t Icon_SetContent(Renderer_t* renderer, Icon_t* icon, IconContent_t* content);
+uint32_t Icon_SetContent(Renderer_t* renderer, Icon_t* icon, const IconContent_t* content);
 
-// 0x0046C7B0. Returns the icon's handle, or 0 when the window handle is not a window
-// or the kind is neither 0 nor 1.
-uint32_t Icon_Create(uint32_t windowHandle, uint32_t kind);
-// 0x0046C650: the icon a handle names, or NULL.
-Icon_t* Icon_Resolve(uint32_t handle);
-// 0x0046C610: how many icons exist, which the frame loop asks twice a frame.
-uint32_t Icon_Count(void);
-// 0x0046C670: take one out of the list and free it.
-void Icon_Destroy(uint32_t handle);
-void Icon_FreeAll(void);
-
-// 0x00448640. Copies the oldest event's three words to `out` and frees it,
-// answering 1; with an empty queue it writes three zeros and answers 0.
-int Icon_TakeEvent(Icon_t* icon, uint32_t* out);
-// 0x0044A330's half of the same queue: one event onto the end of it.
-void Icon_PostEvent(Icon_t* icon, uint32_t word0, uint32_t word1, uint32_t word2);
+// 0x00448640: the oldest event's three words into `out`, 1; or zeros and 0.
+int      Icon_TakeEvent(Icon_t* icon, uint32_t* out);
+// 0x004478C0 (Sys0 0xAC): a message of `count` words (1..0x100) for the icon.
+int      Icon_PostMessage(Icon_t* icon, const uint32_t* words, uint32_t count);
+// 0x004485A0 (Grp0 0xBC): ready, the last decision's entry, part, value and point.
+void     Icon_GetState(Icon_t* icon, uint32_t out[6]);
+// 0x0044B540 (Grp1 0xBB): a part's sprite on or off. 0, 0x80000001, 0x80000002.
+uint32_t Icon_SetPartEnabled(Renderer_t* renderer, Icon_t* icon, int32_t entry, int32_t part, uint32_t enabled);
+// 0x00448610 (Grp0 0xBE): every entry's selected part into `out`; answers the count.
+int32_t  Icon_SelectedParts(Icon_t* icon, uint32_t* out);
+// 0x00447C90 (Grp1 0xBF): the key table for maps 4 to 7 (24 actions). 0 for another map.
+int      Icon_SetKeyMap(uint32_t map, const uint32_t* actions);
+// Sys0 0xAF (0x0046C5F0): 0 the icons run whole, 1 they only take messages. 0 for >1.
+int      Icon_SetMode(uint32_t mode);
+// The main loop's pass over the icons (0x0048CDDC).
+void     Icon_FrameUpdate(Renderer_t* renderer);
 
 #endif // __ICON_H__

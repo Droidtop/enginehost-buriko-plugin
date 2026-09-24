@@ -14,6 +14,7 @@
 #include "process.h"
 #include "opcodes.h"
 #include "opcodes_sys0.h"
+#include "icon.h"
 #include "object.h"
 #include "os.h"
 #include "thread.h"
@@ -191,14 +192,14 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0xA5 165 */ "--Unknown--",
 	/* 0xA6 166 */ "--Unknown--",
 	/* 0xA7 167 */ "--Unknown--",
-	/* 0xA8 168 */ "Unknown_168",
-	/* 0xA9 169 */ "Unknown_169",
+	/* 0xA8 168 */ "SetIconEnabled",
+	/* 0xA9 169 */ "GetIconEnabled",
 	/* 0xAA 170 */ "--Unknown--",
 	/* 0xAB 171 */ "--Unknown--",
-	/* 0xAC 172 */ "Unknown_172",
+	/* 0xAC 172 */ "SendIconMessage",
 	/* 0xAD 173 */ "--Unknown--",
 	/* 0xAE 174 */ "--Unknown--",
-	/* 0xAF 175 */ "--Unknown--",
+	/* 0xAF 175 */ "SetIconMode",
 	/* 0xB0 176 */ "Unknown_176",
 	/* 0xB1 177 */ "Unknown_177",
 	/* 0xB2 178 */ "--Unknown--",
@@ -450,14 +451,14 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0xA5 165 */ NULL,
 	/* 0xA6 166 */ NULL,
 	/* 0xA7 167 */ NULL,
-	/* 0xA8 168 */ Opcode_Sys0_Unknown_168,
-	/* 0xA9 169 */ Opcode_Sys0_Unknown_169,
+	/* 0xA8 168 */ Opcode_Sys0_SetIconEnabled,
+	/* 0xA9 169 */ Opcode_Sys0_GetIconEnabled,
 	/* 0xAA 170 */ NULL,
 	/* 0xAB 171 */ NULL,
-	/* 0xAC 172 */ Opcode_Sys0_Unknown_172,
+	/* 0xAC 172 */ Opcode_Sys0_SendIconMessage,
 	/* 0xAD 173 */ NULL,
 	/* 0xAE 174 */ NULL,
-	/* 0xAF 175 */ NULL,
+	/* 0xAF 175 */ Opcode_Sys0_SetIconMode,
 	/* 0xB0 176 */ Opcode_Sys0_Unknown_176,
 	/* 0xB1 177 */ Opcode_Sys0_Unknown_177,
 	/* 0xB2 178 */ NULL,
@@ -737,8 +738,8 @@ uint32_t Opcode_Sys0_AddRegion(Thread_t* thread)
 	// which takes whatever the new region can now see.
 	uint32_t number = Thread_PopStack(thread);
 	uint32_t key = REGION_KEY(number);
-	Region_Add(0, key, (int32_t)0x80000000, (int32_t)0x80000000, (int32_t)0x7FFFFFFF, (int32_t)0x7FFFFFFF, 0);
-	Region_Add(1, key, 0, 0, 0, 0, 0);
+	Region_Add(0, key, (int32_t)0x80000000, (int32_t)0x80000000, (int32_t)0x7FFFFFFF, (int32_t)0x7FFFFFFF, NULL);
+	Region_Add(1, key, 0, 0, 0, 0, NULL);
 	Input_RegionState(key);
 	return 0;
 }
@@ -2063,19 +2064,51 @@ uint32_t Opcode_Sys0_PushGlobalList(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_168(Thread_t* thread)
+/*
+ * Sys0 0xA8 (0x0048A330): pops a value and an icon's handle; the icon's +0x10 (the
+ * main loop runs only enabled icons) takes the value. Pushes whether the icon exists.
+ */
+uint32_t Opcode_Sys0_SetIconEnabled(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	Icon_t* icon = Icon_Resolve(handle);
+	if(icon != NULL)
+		icon->enabled = value;
+	Thread_PushStack(thread, icon != NULL);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_169(Thread_t* thread)
+/*
+ * Sys0 0xA9 (0x0048A380): pops an address and an icon's handle, writes the icon's
+ * +0x10 there and pushes whether the icon exists.
+ */
+uint32_t Opcode_Sys0_GetIconEnabled(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t* out = (uint32_t*)Thread_PopAndResolveAddress(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	Icon_t* icon = Icon_Resolve(handle);
+	if(icon != NULL && out != NULL)
+		*out = icon->enabled;
+	Thread_PushStack(thread, icon != NULL);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_172(Thread_t* thread)
+/*
+ * Sys0 0xAC (0x0048A3D0 -> 0x004478C0): pops the address of a message, its word count
+ * (1..0x100) and an icon's handle; the message joins the icon's queue, which the main
+ * loop hands to the icon (0x00447940). Pushes whether the icon exists.
+ */
+uint32_t Opcode_Sys0_SendIconMessage(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	const uint32_t* words = (const uint32_t*)Thread_PopAndResolveAddress(thread);
+	uint32_t count = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	Icon_t* icon = Icon_Resolve(handle);
+	if(icon != NULL)
+		Icon_PostMessage(icon, words, count);
+	Thread_PushStack(thread, icon != NULL);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_176(Thread_t* thread)
@@ -2391,5 +2424,16 @@ uint32_t Opcode_Sys0_StringLength(Thread_t* thread)
 	if(r == 0 && out)
 		Thread_WriteIntToMemory(thread, out, BGI_SIZE_DWORD, length);
 	Thread_PushStack(thread, r);
+	return 0;
+}
+
+/*
+ * Sys0 0xAF (0x0048A430 -> 0x0046C5F0): pops the icons' mode - 0 they run whole each
+ * pass, 1 they only take their messages - and pushes 1, or 0 for a mode above 1.
+ */
+uint32_t Opcode_Sys0_SetIconMode(Thread_t* thread)
+{
+	uint32_t mode = Thread_PopStack(thread);
+	Thread_PushStack(thread, (uint32_t)Icon_SetMode(mode));
 	return 0;
 }

@@ -634,6 +634,9 @@ void Engine_Execute(Engine_t* engine)
 			break;
 		}
 
+		// 0x0048CDDC: the icons' pass, every pass of the loop.
+		Icon_FrameUpdate(engine->renderer);
+
 		OS_Poll();
 		uint32_t frameNow = OS_GetTicks();
 		if(frameNow >= nextFrame)

@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+struct DisplayObject;
+
 // ----------------------------------------------------------------------------------
 // The two priority-keyed region lists, at 0x005667F0 and 0x0056680C.
 //
@@ -31,7 +33,10 @@ struct Region
 	int32_t   top;      // +0x08
 	int32_t   right;    // +0x0C
 	int32_t   bottom;   // +0x10
-	uint32_t  owner;    // +0x14
+	// +0x14: a display object whose screen bounds the rectangle is refreshed from and
+	// whose own hit test (vtable+0x64) decides a point inside it (0x0046D9B0); NULL
+	// for a plain rectangle.
+	struct DisplayObject* owner;
 	Region_t* next;     // +0x18
 };
 
@@ -42,7 +47,9 @@ struct Region
 #define REGION_KEY(number) (((number) << 16) | 0xFFFFu)
 
 // 0x0046D7E0, which both adders share: insert in descending key order.
-void Region_Add(int list, uint32_t key, int32_t left, int32_t top, int32_t right, int32_t bottom, uint32_t owner);
+void Region_Add(int list, uint32_t key, int32_t left, int32_t top, int32_t right, int32_t bottom, struct DisplayObject* owner);
+// 0x0046D940: drop the first region of the pointer list that an object owns.
+int  Region_RemoveByOwner(struct DisplayObject* owner);
 // 0x0046D8E0: drop the first region of that key. Answers whether one went.
 int  Region_RemoveByKey(int list, uint32_t key);
 // The head, so the input pass can walk it once it is read.

@@ -17,7 +17,7 @@ Region_t* Region_First(int list)
 	return gRegionLists[list];
 }
 
-void Region_Add(int list, uint32_t key, int32_t left, int32_t top, int32_t right, int32_t bottom, uint32_t owner)
+void Region_Add(int list, uint32_t key, int32_t left, int32_t top, int32_t right, int32_t bottom, struct DisplayObject* owner)
 {
 	Region_t* region = (Region_t*)malloc(sizeof(Region_t));
 	if(region == NULL)
@@ -61,6 +61,28 @@ int Region_RemoveByKey(int list, uint32_t key)
 			previous->next = region->next;
 		else
 			gRegionLists[list] = region->next;
+		if(gHeldRegion == region)
+			gHeldRegion = NULL;
+		free(region);
+		return 1;
+	}
+	return 0;
+}
+
+int Region_RemoveByOwner(struct DisplayObject* owner)
+{
+	Region_t* previous = NULL;
+	for(Region_t* region = gRegionLists[0]; region != NULL; region = region->next)
+	{
+		if(region->owner != owner)
+		{
+			previous = region;
+			continue;
+		}
+		if(previous != NULL)
+			previous->next = region->next;
+		else
+			gRegionLists[0] = region->next;
 		if(gHeldRegion == region)
 			gHeldRegion = NULL;
 		free(region);

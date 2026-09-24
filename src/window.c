@@ -394,3 +394,187 @@ uint32_t Window_SetContent(Renderer_t* renderer, DisplayObject_t* window, const 
 	}
 	return 0;
 }
+
+// ----------------------------------------------------------------------------------
+// A content slot's sprite, changed in place (0x0042C140 to 0x0042C300). Each answers
+// 9 for a slot the window does not have or that is empty.
+// ----------------------------------------------------------------------------------
+static DisplayObject_t* Window_Slot(DisplayObject_t* window, uint32_t slot)
+{
+	if(window == NULL || slot >= window->contentSlotCount)
+		return NULL;
+	return window->contentSlots[slot];
+}
+
+uint32_t Window_SlotSetEnabled(DisplayObject_t* window, uint32_t slot, uint32_t enabled)
+{
+	// 0x0042C140: vtable+0x0C's setter (0x0041AE30).
+	DisplayObject_t* sprite = Window_Slot(window, slot);
+	if(sprite == NULL)
+		return 9;
+	Object_SetEnabled(sprite, (int)enabled);
+	return 0;
+}
+
+uint32_t Window_SlotSetBitmap(Renderer_t* renderer, DisplayObject_t* window, uint32_t slot, int32_t bitmap)
+{
+	// 0x0042C170: the content setter (0x004273C0); 2 when it refuses.
+	DisplayObject_t* sprite = Window_Slot(window, slot);
+	if(sprite == NULL)
+		return 9;
+	return Object_SetContentBitmap(renderer, sprite, bitmap, NULL) != OBJECT_CONTENT_OK ? 2 : 0;
+}
+
+uint32_t Window_SlotSetPosition(Renderer_t* renderer, DisplayObject_t* window, uint32_t slot,
+                                int32_t x, int32_t y, int32_t z)
+{
+	// 0x0042C1B0: the 3D position about the content origin (vtable+0x3C), then the
+	// sprite re-filed in the window's list (0x004308B0).
+	DisplayObject_t* sprite = Window_Slot(window, slot);
+	if(sprite == NULL)
+		return 9;
+	const char* unread = Sprite5_SetPosition3D(renderer, sprite,
+	                                           (int32_t)((uint32_t)(window->contentOriginX + x) << 16),
+	                                           (int32_t)((uint32_t)(window->contentOriginY + y) << 16),
+	                                           (int32_t)((uint32_t)z << 16));
+	if(unread != NULL)
+		printf("[Engine]: Warning: a window content sprite reached unported work: %s\n", unread);
+	Object_ListRemoveFrom(window->contentList, sprite);
+	Object_ListInsertInto(window->contentList, sprite);
+	return 0;
+}
+
+uint32_t Window_SlotSetAngle(Renderer_t* renderer, DisplayObject_t* window, uint32_t slot, int32_t angle)
+{
+	// 0x0042C220: the sprite's angle (0x00428130, its parameter 0x41).
+	DisplayObject_t* sprite = Window_Slot(window, slot);
+	if(sprite == NULL)
+		return 9;
+	uint32_t result;
+	const char* unread = NULL;
+	Sprite5_SetParameter(renderer, sprite, 0x41, (uint32_t)angle, 0, &result, &unread);
+	return 0;
+}
+
+uint32_t Window_SlotSetLayer(DisplayObject_t* window, uint32_t slot, uint32_t layer)
+{
+	// 0x0042C250: the layer (vtable+0x54, 0x0041B980, which leaves 0x10000 and up
+	// alone), then the sprite re-filed in the window's list (0x004308B0).
+	DisplayObject_t* sprite = Window_Slot(window, slot);
+	if(sprite == NULL)
+		return 9;
+	if(layer < 0x10000)
+		sprite->layer = layer;
+	Object_ListRemoveFrom(window->contentList, sprite);
+	Object_ListInsertInto(window->contentList, sprite);
+	return 0;
+}
+
+int Window_SlotRedrawWithout(Renderer_t* renderer, DisplayObject_t* window, uint32_t slot)
+{
+	// 0x0042C300: the part of the window the sprite covers redrawn with the sprite
+	// hidden, and the sprite shown again - what a sprite about to move leaves behind.
+	DisplayObject_t* sprite = Window_Slot(window, slot);
+	if(sprite == NULL)
+		return 0;
+	Object_SetVisible(sprite, 0);
+	Window_RedrawContentSlot(renderer, window, slot);
+	Object_SetVisible(sprite, 1);
+	return 1;
+}
+
+// ----------------------------------------------------------------------------------
+// The eight parts of the text layer (0x0042BB90 to 0x0042C410).
+// ----------------------------------------------------------------------------------
+void Window_ClientRect(const DisplayObject_t* window, Rect_t* rect)
+{
+	// 0x0042C380: +0x1A0..+0x1AC.
+	rect->left = window->clientRect[0];
+	rect->top = window->clientRect[1];
+	rect->right = window->clientRect[2];
+	rect->bottom = window->clientRect[3];
+}
+
+// 0x0042CE50: the part's area redrawn as if it were shown or not (`shown`), when it is
+// on and has an image; answers whether the index is one of the eight.
+static int Window_RedrawPart(Renderer_t* renderer, DisplayObject_t* window, int index, uint32_t shown)
+{
+	if(index < 0 || index >= 8)
+		return 0;
+	if(window->parts[index].enabled == 0 || window->parts[index].surface.bitmap == NULL)
+		return 1;
+	uint32_t was = window->parts[index].enabled;
+	window->parts[index].enabled = shown;
+	// 0x0042CE10: the image's rectangle at the part's place.
+	Rect_t area = { window->parts[index].x, window->parts[index].y,
+	                window->parts[index].x + window->parts[index].surface.width - 1,
+	                window->parts[index].y + window->parts[index].surface.height - 1 };
+	Window_Redraw(renderer, window, &area);
+	window->parts[index].enabled = was;
+	return 1;
+}
+
+void Window_EnablePart(Renderer_t* renderer, DisplayObject_t* window, int index, uint32_t enabled)
+{
+	// 0x0042BB90.
+	if(window == NULL || index < 0 || index >= 8)
+		return;
+	Window_RedrawPart(renderer, window, index, 0);
+	window->parts[index].enabled = enabled;
+	Window_RedrawPart(renderer, window, index, 1);
+}
+
+void Window_SetPartPosition(Renderer_t* renderer, DisplayObject_t* window, int index,
+                            int32_t x, int32_t y, uint32_t weight)
+{
+	// 0x0042BBC0.
+	if(window == NULL || index < 0 || index >= 8)
+		return;
+	Window_RedrawPart(renderer, window, index, 0);
+	window->parts[index].x = x;
+	window->parts[index].y = y;
+	window->parts[index].weight = weight;
+	Window_RedrawPart(renderer, window, index, 1);
+}
+
+uint32_t Window_SetPartBitmap(Renderer_t* renderer, DisplayObject_t* window, int index, const Bitmap_t* bitmap)
+{
+	// 0x0042BC10: 4 for an image in a mode the display cannot take (0x0040A9D0);
+	// otherwise the part's own surface is made the image's size (0x0041C060) and the
+	// image copied into it (0x0040A9E0, mode 0x80).
+	if(window == NULL || index < 0 || index >= 8 || bitmap == NULL)
+		return 4;
+	int bytes = Renderer_ModePixelBytes(bitmap->mode);
+	if(bytes <= 0)
+		return 4;
+	Window_RedrawPart(renderer, window, index, 0);
+	Bitmap_t* surface = &window->parts[index].surface;
+	size_t size = (size_t)bitmap->stride * (size_t)bitmap->height;
+	uint8_t* pixels = (uint8_t*)realloc(surface->bitmap, size > 0 ? size : 1);
+	if(pixels != NULL)
+	{
+		memcpy(pixels, bitmap->bitmap, size);
+		*surface = *bitmap;
+		surface->bitmap = pixels;
+	}
+	Window_RedrawPart(renderer, window, index, 1);
+	return 0;
+}
+
+int Window_PartScreenRect(Renderer_t* renderer, DisplayObject_t* window, int index, Rect_t* rect)
+{
+	// 0x0042C410: the part's image rectangle at the part's place, moved by the
+	// window's screen position (vtable+0x34); 0 when the part is off or empty.
+	(void)renderer;
+	if(window == NULL || index < 0 || index >= 8)
+		return 0;
+	if(window->parts[index].enabled == 0 || window->parts[index].surface.bitmap == NULL)
+		return 0;
+	Rect_t where;
+	Object_GetScreenBounds(window, &where);
+	rect->left = where.left + window->parts[index].x;
+	rect->top = where.top + window->parts[index].y;
+	rect->right = rect->left + window->parts[index].surface.width - 1;
+	rect->bottom = rect->top + window->parts[index].surface.height - 1;
+	return 1;
+}

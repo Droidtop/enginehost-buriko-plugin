@@ -29,6 +29,7 @@ void Input_MouseButton(int button, int down, int32_t x, int32_t y); // 0 left, 1
 void Input_MouseWheel(int delta);           // WM_MOUSEWHEEL, 0x00499A86
 void Input_MouseMove(int32_t x, int32_t y); // in game pixels
 void Input_GetMouse(int32_t* x, int32_t* y);// 0x0048E810
+int  Input_ClickPosition(uint32_t button, int32_t* x, int32_t* y); // 0x0048E720
 
 // 0x0046DC00 / 0x0046DC80: a press and a release of one virtual key.
 int  Input_Press(uint32_t vk);
@@ -49,6 +50,14 @@ void     Input_SkipToggle(void);               // Sys0 0x16 (0x0046DB20)
 uint32_t Input_SkipQuery(void);                // Sys0 0x17 (0x0046DFB0)
 uint32_t Input_Activity(void);                 // Sys0 0x13 (0x0046E740)
 uint32_t Input_RegionState(uint32_t key);      // Sys0 0x1A (0x0046E080)
+uint32_t Input_RegionStateOf(uint32_t keyboardKey, uint32_t mouseKey); // 0x0046E080 itself
+// The pointer shut-out list at 0x00566830 (0x0046E680 / 0x0046E6D0 / 0x0046E700).
+void Input_AddModal(uint32_t id, uint32_t key);
+void Input_RemoveModal(uint32_t id);
+int  Input_AboveModal(uint32_t key);
+uint32_t Input_MouseHeld(uint32_t key);        // 0x0046E610
+int  Input_HeldLong(uint32_t vk);              // 0x0046DDC0
+int  Input_BitForKey(uint32_t bits, uint32_t vk); // 0x0046E3F0
 uint32_t Input_SetButtonKeys(const uint32_t* keys, uint32_t bit); // Sys0 0x1B (0x0046E120)
 uint32_t Input_ButtonTotals(uint32_t mask);    // Sys0 0x1C (0x0046E1F0)
 uint32_t Input_RegionTake(uint32_t vk, uint32_t key); // Sys0 0x1D (0x00488410)
