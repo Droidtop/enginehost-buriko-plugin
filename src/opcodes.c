@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdlib.h>
 #include "opcodes.h"
 #include "opcodes_user.h"
 #include "opcodes_sys0.h"
@@ -673,6 +674,56 @@ uint32_t Opcode_Add(Thread_t* thread)
 	return 0;
 }
 
+// A one-line record of every group opcode, in the same shape as the record the
+// original executable was traced into (thread, the opcode's own address, the
+// eight stack words it was handed, the stack after it and its result), so the
+// two can be compared line against line. Written only when OPENBGI_TRACE names
+// a file; on the console that is how a run is compared with the original's.
+static FILE* Opcode_TraceFile(void)
+{
+	static int initialised = 0;
+	static FILE* file = NULL;
+	if(!initialised)
+	{
+		const char* path = getenv("OPENBGI_TRACE");
+		initialised = 1;
+		if(path && *path)
+		{
+			file = fopen(path, "w");
+			if(file)
+				setvbuf(file, NULL, _IOFBF, 1 << 20);
+		}
+	}
+	return file;
+}
+
+static uint32_t Opcode_TraceStack(Thread_t* thread, uint32_t k)
+{
+	if(thread->stackPointer <= k)
+		return 0xDEADDEAD;
+	return thread->stack[thread->stackPointer - 1 - k];
+}
+
+static uint32_t Opcode_TraceCall(Thread_t* thread, const char* group, uint8_t opcode, uint32_t (*handler)(Thread_t*))
+{
+	static uint32_t sequence = 0;
+	FILE* trace = Opcode_TraceFile();
+	uint32_t before[8], sp0, ip, res;
+	int i;
+	if(!trace)
+		return handler(thread);
+	ip = thread->instructionPointer;
+	sp0 = thread->stackPointer;
+	for(i = 0; i < 8; i++)
+		before[i] = Opcode_TraceStack(thread, i);
+	res = handler(thread);
+	fprintf(trace, "%u %d T%d ip=%.8X %s.%.2X sp=%X a=[%X %X %X %X %X %X %X %X] -> sp=%X top=[%X %X %X] r=%X %s\n",
+		++sequence, thread->ticks, thread->threadId, ip, group, opcode, sp0,
+		before[0], before[1], before[2], before[3], before[4], before[5], before[6], before[7],
+		thread->stackPointer, Opcode_TraceStack(thread, 0), Opcode_TraceStack(thread, 1), Opcode_TraceStack(thread, 2), res, Thread_Where(thread, ip));
+	return res;
+}
+
 uint32_t Opcode_Sys0(Thread_t* thread)
 {
 	uint8_t opcode = Thread_ReadCode8(thread);
@@ -687,7 +738,7 @@ uint32_t Opcode_Sys0(Thread_t* thread)
 		printf("[Thread %d]: %sError: opcode 0x80%.2X (%d) not implemented\n", thread->threadId, TLevel[thread->level], opcode, opcode);
 		return 0xFFFFFFFF;
 	}
-	uint32_t res = OpcodesSys0[opcode](thread);
+	uint32_t res = Opcode_TraceCall(thread, "sys0", opcode, OpcodesSys0[opcode]);
 	thread->level--;
 	return res;
 }
@@ -705,7 +756,7 @@ uint32_t Opcode_Sys1(Thread_t* thread)
 		printf("[Thread %d]: %sError: opcode 0x81%.2X (%d) not implemented\n", thread->threadId, TLevel[thread->level], opcode, opcode);
 		return 0xFFFFFFFF;
 	}
-	uint32_t res = OpcodesSys1[opcode](thread);
+	uint32_t res = Opcode_TraceCall(thread, "sys1", opcode, OpcodesSys1[opcode]);
 	thread->level--;
 	return res;
 }
@@ -723,7 +774,7 @@ uint32_t Opcode_Grp0(Thread_t* thread)
 		printf("[Thread %d]: %sError: opcode 0x90%.2X (%d) not implemented\n", thread->threadId, TLevel[thread->level], opcode, opcode);
 		return 0xFFFFFFFF;
 	}
-	uint32_t res = OpcodesGrp0[opcode](thread);
+	uint32_t res = Opcode_TraceCall(thread, "grp0", opcode, OpcodesGrp0[opcode]);
 	thread->level--;
 	return res;
 }
@@ -741,7 +792,7 @@ uint32_t Opcode_Grp1(Thread_t* thread)
 		printf("[Thread %d]: %sError: opcode 0x91%.2X (%d) not implemented\n", thread->threadId, TLevel[thread->level], opcode, opcode);
 		return 0xFFFFFFFF;
 	}
-	uint32_t res = OpcodesGrp1[opcode](thread);
+	uint32_t res = Opcode_TraceCall(thread, "grp1", opcode, OpcodesGrp1[opcode]);
 	thread->level--;
 	return res;
 }
@@ -759,7 +810,7 @@ uint32_t Opcode_Grp2(Thread_t* thread)
 		printf("[Thread %d]: %sError: opcode 0x92%.2X (%d) not implemented\n", thread->threadId, TLevel[thread->level], opcode, opcode);
 		return 0xFFFFFFFF;
 	}
-	uint32_t res = OpcodesGrp2[opcode](thread);
+	uint32_t res = Opcode_TraceCall(thread, "grp2", opcode, OpcodesGrp2[opcode]);
 	thread->level--;
 	return res;
 }
@@ -777,7 +828,7 @@ uint32_t Opcode_Snd0(Thread_t* thread)
 		printf("[Thread %d]: %sError: opcode 0xA0%.2X (%d) not implemented\n", thread->threadId, TLevel[thread->level], opcode, opcode);
 		return 0xFFFFFFFF;
 	}
-	uint32_t res = OpcodesSnd0[opcode](thread);
+	uint32_t res = Opcode_TraceCall(thread, "snd0", opcode, OpcodesSnd0[opcode]);
 	thread->level--;
 	return res;
 }
@@ -795,7 +846,7 @@ uint32_t Opcode_Ext0(Thread_t* thread)
 		printf("[Thread %d]: %sError: opcode 0xB0%.2X (%d) not implemented\n", thread->threadId, TLevel[thread->level], opcode, opcode);
 		return 0xFFFFFFFF;
 	}
-	uint32_t res = OpcodesExt0[opcode](thread);
+	uint32_t res = Opcode_TraceCall(thread, "ext0", opcode, OpcodesExt0[opcode]);
 	thread->level--;
 	return res;
 }
@@ -813,7 +864,7 @@ uint32_t Opcode_Ext1(Thread_t* thread)
 		printf("[Thread %d]: %sError: opcode 0xC0%.2X (%d) not implemented\n", thread->threadId, TLevel[thread->level], opcode, opcode);
 		return 0xFFFFFFFF;
 	}
-	uint32_t res = OpcodesExt1[opcode](thread);
+	uint32_t res = Opcode_TraceCall(thread, "ext1", opcode, OpcodesExt1[opcode]);
 	thread->level--;
 	return res;
 }
