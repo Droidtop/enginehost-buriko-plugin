@@ -143,6 +143,10 @@ struct DisplayObject
 	// but the dispatch is written out, so the day content exists it is already
 	// the original's dispatch and not a special case.
 	int32_t   contentKind;        // +0x244
+	// A sprite of kind 5's own state (+0x248 to +0x340: its transform, its two
+	// bitmaps and the surface it renders itself into), owned here and kept by
+	// sprite5.c; NULL for every other kind.
+	struct Sprite5*  sprite5;
 	// +0x240, a sprite's own level: what its vtable+0x4C answers for content kind 1,
 	// and where kinds 1, 5 and 6 keep the second effect parameter (0x00428540).
 	uint32_t  field240;
