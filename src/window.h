@@ -47,4 +47,12 @@ void Window_ResetTextCursor(DisplayObject_t* window);
 // pixels) or 2 (no such bitmap).
 uint32_t Window_SetBackground(Renderer_t* renderer, DisplayObject_t* window, int32_t bitmap);
 
+// Grp2 0x88 (0x0042B490): whether the background surface is shown.
+uint32_t Window_SetBackgroundShown(Renderer_t* renderer, DisplayObject_t* window, uint32_t shown);
+// Grp2 0x8A (0x0042B4A0): the background surface filled with one colour.
+uint32_t Window_FillBackground(Renderer_t* renderer, DisplayObject_t* window, uint32_t colour);
+// Grp2 0x89 (0x0042B4E0): a bitmap blended onto the background surface at (x, y).
+uint32_t Window_DrawOnBackground(Renderer_t* renderer, DisplayObject_t* window, int32_t bitmap,
+                                 int32_t x, int32_t y, uint32_t mode, uint32_t level);
+
 #endif // __WINDOW_H__

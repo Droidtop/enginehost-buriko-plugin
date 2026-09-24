@@ -40,7 +40,6 @@ typedef struct Screen
 	// same opcode. What reads them back is not read yet.
 	// +0x15C, written by 0x0042B490, after which the window is laid out
 	// again. What reads it back is not read yet.
-	int field15C;
 	// +0x374, the message swinging style: 0, 1 or 2 only (0x0042C660).
 	int swingingStyle;
 	int field354;

@@ -4,6 +4,8 @@
 #include "engine.h"
 #include "opcodes.h"
 #include "opcodes_grp2.h"
+#include "object.h"
+#include "window.h"
 #include "movie.h"
 #include "renderer.h"
 #include "thread.h"
@@ -145,9 +147,9 @@ char* OpcodesGrp2Mnemonics[256] = {
     /* 0x85 133 */ "--Unknown--",
     /* 0x86 134 */ "--Unknown--",
     /* 0x87 135 */ "--Unknown--",
-    /* 0x88 136 */ "SetWindowField15C",
-    /* 0x89 137 */ "Unknown_137",
-    /* 0x8A 138 */ "SetWindowField164",
+    /* 0x88 136 */ "ShowWindowBackground",
+    /* 0x89 137 */ "DrawOnWindowBackground",
+    /* 0x8A 138 */ "FillWindowBackground",
     /* 0x8B 139 */ "--Unknown--",
     /* 0x8C 140 */ "Unknown_140",
     /* 0x8D 141 */ "Unknown_141",
@@ -404,9 +406,9 @@ OpcodePtr_t OpcodesGrp2[256] = {
     /* 0x85 133 */ NULL,
     /* 0x86 134 */ NULL,
     /* 0x87 135 */ NULL,
-    /* 0x88 136 */ Opcode_Grp2_SetWindowField15C,
-    /* 0x89 137 */ Opcode_Grp2_Unknown_137,
-    /* 0x8A 138 */ Opcode_Grp2_SetWindowField164,
+    /* 0x88 136 */ Opcode_Grp2_ShowWindowBackground,
+    /* 0x89 137 */ Opcode_Grp2_DrawOnWindowBackground,
+    /* 0x8A 138 */ Opcode_Grp2_FillWindowBackground,
     /* 0x8B 139 */ NULL,
     /* 0x8C 140 */ Opcode_Grp2_Unknown_140,
     /* 0x8D 141 */ Opcode_Grp2_Unknown_141,
@@ -576,43 +578,43 @@ uint32_t Opcode_Grp2_Unknown_31(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp2_SetWindowField15C(Thread_t* thread)
+/*
+ * Grp2 0x89 (0x00486290 -> 0x00462E70 -> 0x00440C60 -> 0x0042B4E0): a bitmap blended
+ * onto a window's background surface. Popped: the level (0x00497F40), the blend mode
+ * (0x00497DD0), the bitmap (0x00497CF0), y, x and the window. On success the drawable
+ * test and damage follow; the handler makes 1 (no pixels) and 2 (no such bitmap)
+ * fatal, as it does an invalid window.
+ */
+uint32_t Opcode_Grp2_DrawOnWindowBackground(Thread_t* thread)
 {
-	uint32_t value = Thread_PopStack(thread);
+	uint32_t level = Thread_PopStack(thread);
+	uint32_t mode = Thread_PopStack(thread);
+	int32_t bitmap = (int32_t)Thread_PopStack(thread);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
 	uint32_t handle = Thread_PopStack(thread);
-
-	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
+	if(level > 0x100 || (uint32_t)bitmap >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: Grp2 0x89 out of range: level %d, bitmap %d\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)level, bitmap);
+		return 0xFFFFFFFC;
+	}
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
 	if(window == NULL)
 	{
-		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
-		       thread->threadId, TLevel[thread->level]);
-		return 0xFFFFFFFF;
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
 	}
-	window->field15C = (int)value;
-	return 0;
-}
-
-uint32_t Opcode_Grp2_Unknown_137(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Grp2_SetWindowField164(Thread_t* thread)
-{
-	uint32_t value = Thread_PopStack(thread);
-	uint32_t handle = Thread_PopStack(thread);
-
-	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
-	if(window == NULL)
+	uint32_t r = Window_DrawOnBackground(thread->engine->renderer, window, bitmap, x, y, mode, level);
+	if(r == 1 || r == 2)
 	{
-		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
-		       thread->threadId, TLevel[thread->level]);
-		return 0xFFFFFFFF;
+		printf("[Thread %d]: %sError: drawing bitmap %d onto window 0x%.8X failed (%u)\n",
+		       thread->threadId, TLevel[thread->level], bitmap, handle, r);
+		return 0xFFFFFFFC;
 	}
-	// 0x0042B4A0 returns without doing anything while +0x13C of the
-	// window is zero, which is what the constructor leaves it and what
-	// nothing here sets yet. The other branch is unread.
-	(void)value;
+	if(r == 0 && Object_IsDrawable(window))
+		gObjectDamage++;
 	return 0;
 }
 
@@ -692,5 +694,54 @@ uint32_t Opcode_Grp2_PlayMovie(Thread_t* thread)
 			result = Movie_Play(data, size);
 	}
 	Thread_PushStack(thread, result);
+	return 0;
+}
+
+/*
+ * Grp2 0x88 (0x00486250 -> 0x00462E30 -> 0x00440BE0 -> 0x0042B490): pops a flag and a
+ * window; the window's background surface is shown or not (+0x15C) and the window
+ * redrawn, with damage when it would be drawn. A handle that is not a window is fatal.
+ */
+uint32_t Opcode_Grp2_ShowWindowBackground(Thread_t* thread)
+{
+	uint32_t shown = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	Window_SetBackgroundShown(thread->engine->renderer, window, shown);
+	if(Object_IsDrawable(window))
+		gObjectDamage++;
+	return 0;
+}
+
+/*
+ * Grp2 0x8A (0x004863A0 -> 0x00462E40 -> 0x00440C30 -> 0x0042B4A0): pops a colour and a
+ * window and fills the window's background surface with the colour. A window without
+ * pixels answers 1, which the handler reports; a handle that is not a window is fatal.
+ */
+uint32_t Opcode_Grp2_FillWindowBackground(Thread_t* thread)
+{
+	uint32_t colour = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	if(Window_FillBackground(thread->engine->renderer, window, colour) != 0)
+	{
+		printf("[Thread %d]: %sError: the window 0x%.8X has no pixels to fill\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	if(Object_IsDrawable(window))
+		gObjectDamage++;
 	return 0;
 }

@@ -176,21 +176,81 @@ void Window_ResetTextCursor(DisplayObject_t* window)
 	}
 }
 
+
+// The background surface (+0x160 / +0x164), made the window's size on first use; the
+// window's sizing (0x0042B280) builds it cleared.
+static int Window_Background(Renderer_t* renderer, DisplayObject_t* window, Bitmap_t* out)
+{
+	Bitmap_t pixels;
+	if(window == NULL || !Renderer_WindowBitmap(renderer, window->handle, &pixels))
+		return 0;
+	if(window->backgroundPixels == NULL)
+	{
+		window->backgroundPixels = (uint8_t*)calloc(1, (size_t)pixels.stride * (size_t)pixels.height);
+		if(window->backgroundPixels == NULL)
+			return 0;
+	}
+	*out = pixels;
+	out->bitmap = window->backgroundPixels;
+	return 1;
+}
+
+uint32_t Window_SetBackgroundShown(Renderer_t* renderer, DisplayObject_t* window, uint32_t shown)
+{
+	// 0x0042B490: +0x15C, then the whole window redrawn.
+	window->backgroundSet = shown;
+	Window_RedrawAll(renderer, window);
+	return 0;
+}
+
+uint32_t Window_FillBackground(Renderer_t* renderer, DisplayObject_t* window, uint32_t colour)
+{
+	// 0x0042B4A0: with pixels (+0x13C), the background surface filled with the
+	// colour (0x0040A710) and the window redrawn; without, 1.
+	Bitmap_t background;
+	if(!Window_Background(renderer, window, &background))
+		return 1;
+	Renderer_FillSolid(&background, colour);
+	Window_RedrawAll(renderer, window);
+	return 0;
+}
+
+uint32_t Window_DrawOnBackground(Renderer_t* renderer, DisplayObject_t* window, int32_t bitmap,
+                                 int32_t x, int32_t y, uint32_t mode, uint32_t level)
+{
+	// 0x0042B4E0: 1 without pixels, 2 for a bitmap that does not exist; otherwise the
+	// bitmap blended onto the background surface at (x, y) with the mode and level
+	// (0x0040A530), whose answers 1-4 become 5, 6, 7 and 4; on 0 the part it covered
+	// is redrawn (0x0042CE10).
+	Bitmap_t background;
+	if(!Window_Background(renderer, window, &background))
+		return 1;
+	Bitmap_t* image = Renderer_ResolveBitmap(renderer, bitmap);
+	if(image == NULL)
+		return 2;
+	int r = Renderer_BlitAt(&background, x, y, image, (int)mode, (int)level);
+	switch(r)
+	{
+		case 0:
+		{
+			Rect_t area = { x, y, x + image->width - 1, y + image->height - 1 };
+			Window_Redraw(renderer, window, &area);
+			return 0;
+		}
+		case 1: return 5;
+		case 2: return 6;
+		case 3: return 7;
+		case 4: return 4;
+	}
+	return (uint32_t)r;
+}
+
 uint32_t Window_SetBackground(Renderer_t* renderer, DisplayObject_t* window, int32_t bitmap)
 {
 	// 0x0042B380. A window with no pixels yet (+0x13C) answers 1.
-	Bitmap_t pixels;
-	if(window == NULL || !Renderer_WindowBitmap(renderer, window->handle, &pixels))
+	Bitmap_t background;
+	if(!Window_Background(renderer, window, &background))
 		return 1;
-	size_t size = (size_t)pixels.stride * (size_t)pixels.height;
-	if(window->backgroundPixels == NULL)
-	{
-		window->backgroundPixels = (uint8_t*)calloc(1, size);
-		if(window->backgroundPixels == NULL)
-			return 1;
-	}
-	Bitmap_t background = pixels;
-	background.bitmap = window->backgroundPixels;
 	if(bitmap != -1)
 	{
 		// A bitmap that does not exist answers 2 and changes nothing (0x0042B3E6).
@@ -204,7 +264,5 @@ uint32_t Window_SetBackground(Renderer_t* renderer, DisplayObject_t* window, int
 	else
 		Renderer_ClearBitmap(&background);
 	// 0x0042B490: +0x15C, then the whole window redrawn (0x0042CAE0).
-	window->backgroundSet = bitmap != -1;
-	Window_RedrawAll(renderer, window);
-	return 0;
+	return Window_SetBackgroundShown(renderer, window, bitmap != -1);
 }

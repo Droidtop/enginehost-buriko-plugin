@@ -15,9 +15,7 @@ uint32_t Opcode_Grp2_Unknown_28(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_29(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_30(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_31(Thread_t* thread);
-uint32_t Opcode_Grp2_SetWindowField15C(Thread_t* thread);
-uint32_t Opcode_Grp2_Unknown_137(Thread_t* thread);
-uint32_t Opcode_Grp2_SetWindowField164(Thread_t* thread);
+uint32_t Opcode_Grp2_DrawOnWindowBackground(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_140(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_141(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_142(Thread_t* thread);
@@ -30,4 +28,6 @@ extern char* OpcodesGrp2Mnemonics[256];
 
 uint32_t Opcode_Grp2_ClearPreloadCache(Thread_t* thread);
 uint32_t Opcode_Grp2_PlayMovie(Thread_t* thread);
+uint32_t Opcode_Grp2_ShowWindowBackground(Thread_t* thread);
+uint32_t Opcode_Grp2_FillWindowBackground(Thread_t* thread);
 #endif
