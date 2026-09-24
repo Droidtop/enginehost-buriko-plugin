@@ -48,8 +48,8 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x1E  30 */ "Unknown_30",
 	/* 0x1F  31 */ "CopyBitmap",
 	/* 0x20  32 */ "AnimateObject",
-	/* 0x21  33 */ "AnimateObjectStepped",
-	/* 0x22  34 */ "MoveObject",
+	/* 0x21  33 */ "MoveObject",
+	/* 0x22  34 */ "AnimateObjectStepped",
 	/* 0x23  35 */ "MoveObjectStepped",
 	/* 0x24  36 */ "Unknown_36",
 	/* 0x25  37 */ "--Unknown--",
@@ -198,7 +198,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xB4 180 */ "Unknown_180",
 	/* 0xB5 181 */ "Unknown_181",
 	/* 0xB6 182 */ "Unknown_182",
-	/* 0xB7 183 */ "Unknown_183",
+	/* 0xB7 183 */ "SetWindowContent",
 	/* 0xB8 184 */ "Unknown_184",
 	/* 0xB9 185 */ "Unknown_185",
 	/* 0xBA 186 */ "Unknown_186",
@@ -307,8 +307,8 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x1E  30 */ Opcode_Grp0_Unknown_30,
 	/* 0x1F  31 */ Opcode_Grp0_CopyBitmap,
 	/* 0x20  32 */ Opcode_Grp0_AnimateObject,
-	/* 0x21  33 */ Opcode_Grp0_AnimateObjectStepped,
-	/* 0x22  34 */ Opcode_Grp0_MoveObject,
+	/* 0x21  33 */ Opcode_Grp0_MoveObject,
+	/* 0x22  34 */ Opcode_Grp0_AnimateObjectStepped,
 	/* 0x23  35 */ Opcode_Grp0_MoveObjectStepped,
 	/* 0x24  36 */ Opcode_Grp0_Unknown_36,
 	/* 0x25  37 */ NULL,
@@ -457,7 +457,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xB4 180 */ Opcode_Grp0_Unknown_180,
 	/* 0xB5 181 */ Opcode_Grp0_Unknown_181,
 	/* 0xB6 182 */ Opcode_Grp0_Unknown_182,
-	/* 0xB7 183 */ Opcode_Grp0_Unknown_183,
+	/* 0xB7 183 */ Opcode_Grp0_SetWindowContent,
 	/* 0xB8 184 */ Opcode_Grp0_Unknown_184,
 	/* 0xB9 185 */ Opcode_Grp0_Unknown_185,
 	/* 0xBA 186 */ Opcode_Grp0_Unknown_186,
@@ -1130,7 +1130,7 @@ uint32_t Opcode_Grp0_AnimateObject(Thread_t* thread)
 }
 
 /*
- * Grp0 0x21 (0x0047A910): 0x20 with a frame step. Popped: the priority, whether a
+ * Grp0 0x22 (0x0047A910): 0x20 with a frame step. Popped: the priority, whether a
  * press may cut it short, the frame step, the frame rate, the duration, the level,
  * the object.
  */
@@ -1158,7 +1158,7 @@ uint32_t Opcode_Grp0_AnimateObjectStepped(Thread_t* thread)
 }
 
 /*
- * Grp0 0x22 (0x0047AA10 -> 0x00491CD0 -> 0x00431E30): position and effect level
+ * Grp0 0x21 (0x0047AA10 -> 0x00491CD0 -> 0x00431E30): position and effect level
  * together, the position over a curve (0x0041A760), no frame step. Popped: the
  * priority, whether a press may cut it short, the frame rate, the duration, the
  * level, the curve, y, x, the object.
@@ -1189,7 +1189,7 @@ uint32_t Opcode_Grp0_MoveObject(Thread_t* thread)
 }
 
 /*
- * Grp0 0x23 (0x0047AB30): 0x22 with a frame step. Popped: the priority, whether a
+ * Grp0 0x23 (0x0047AB30): 0x21 with a frame step. Popped: the priority, whether a
  * press may cut it short, the frame step, the frame rate, the duration, the level,
  * the curve, y, x, the object.
  */
@@ -2475,9 +2475,40 @@ uint32_t Opcode_Grp0_Unknown_182(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_183(Thread_t* thread)
+/*
+ * Grp0 0xB7 (0x0047EFE0 -> 0x0046CF30): pops a descriptor address (0x0048E0E0) and a
+ * window handle; the descriptor tree is copied (0x0046CB50, as for an Ex icon's
+ * content), the window's content built from it (0x0044B340) and the copy freed
+ * (0x0046CB00). Pushed: 0 done, 1 not a window, 2 or 3 a malformed tree, 2 for a bad
+ * entry count and 3 for a bad part count (0x80000001 / 0x80000002).
+ */
+uint32_t Opcode_Grp0_SetWindowContent(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	const uint32_t* root = (const uint32_t*)Thread_PopAndResolveAddress(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		Thread_PushStack(thread, 1);
+		return 0;
+	}
+	IconContent_t* content = NULL;
+	uint32_t status = Icon_ReadContent(thread, root, &content);
+	if(status != 0)
+	{
+		printf("[Thread %d]: %sWindow 0x%08X was given a malformed content descriptor (%u)\n",
+		       thread->threadId, TLevel[thread->level], handle, status);
+		Thread_PushStack(thread, status);
+		return 0;
+	}
+	uint32_t result = Window_SetContent(thread->engine->renderer, window, content);
+	Icon_FreeContent(content);
+	Thread_PushStack(thread, result == 0x80000001u ? 2 : result == 0x80000002u ? 3 : 0);
+	// 0x0044B516: on every path out, the window's vtable+0x0C (0x0041AF30) damages
+	// the screen where it is drawn.
+	if(Object_IsDrawable(window))
+		gObjectDamage++;
+	return 0;
 }
 
 int gScreenObjectId = 0x00000001;

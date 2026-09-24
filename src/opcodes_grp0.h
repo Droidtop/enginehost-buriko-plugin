@@ -131,7 +131,7 @@ uint32_t Opcode_Grp0_Unknown_177(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_180(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_181(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_182(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_183(Thread_t* thread);
+uint32_t Opcode_Grp0_SetWindowContent(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_184(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_185(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_186(Thread_t* thread);

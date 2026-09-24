@@ -55,4 +55,18 @@ uint32_t Window_FillBackground(Renderer_t* renderer, DisplayObject_t* window, ui
 uint32_t Window_DrawOnBackground(Renderer_t* renderer, DisplayObject_t* window, int32_t bitmap,
                                  int32_t x, int32_t y, uint32_t mode, uint32_t level);
 
+// 0x0042BFB0: a sprite of kind 5 in content slot `slot`, whose anchor (anchorX,
+// anchorY of the bitmap) lands on (x, y) of the window. 0, 2 when the sprite could not
+// be given the bitmap, 9 for a slot the window does not have.
+uint32_t Window_SetContentSlot(Renderer_t* renderer, DisplayObject_t* window, uint32_t slot,
+                               int32_t bitmap, int32_t x, int32_t y,
+                               int32_t anchorX, int32_t anchorY, uint32_t layer);
+// 0x0042C2A0: the part of the window a slot's sprite covers, redrawn. 1 when there was one.
+int Window_RedrawContentSlot(Renderer_t* renderer, DisplayObject_t* window, uint32_t slot);
+// 0x0044B340 (Grp0 0xB7): a window's content made from a descriptor (the tree
+// 0x0046CB50 copies, as an Ex icon's): one slot per part. 0, or 0x80000001 for an
+// entry count outside 1..0x100, 0x80000002 for an entry's part count outside it.
+struct IconContent;
+uint32_t Window_SetContent(Renderer_t* renderer, DisplayObject_t* window, const struct IconContent* content);
+
 #endif // __WINDOW_H__

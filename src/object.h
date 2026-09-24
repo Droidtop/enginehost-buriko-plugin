@@ -311,6 +311,9 @@ void     Object_Move(DisplayObject_t* object, int32_t x, int32_t y);
 uint32_t Object_GetEffectLevel(DisplayObject_t* object);
 // 0x0041B3F0: the origin, on the object and every child.
 void Object_SetOrigin(DisplayObject_t* object, int32_t x, int32_t y);
+// A sprite outside every table (0x00425790 as 0x0042BFB0 makes it), and its destructor.
+DisplayObject_t* Object_CreateDetachedSprite(uint32_t serial);
+void Object_FreeDetached(DisplayObject_t* object);
 // Free the object a handle names and give its slot back, so the next object of
 // that kind takes it - which is what the original does and a counter cannot.
 void Object_Destroy(uint32_t handle);

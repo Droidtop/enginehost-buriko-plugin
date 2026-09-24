@@ -4,6 +4,8 @@
 
 #include "engine.h"
 #include "window.h"
+#include "sprite5.h"
+#include "icon.h"
 
 void Window_ReserveContent(Renderer_t* renderer, DisplayObject_t* window, uint32_t count)
 {
@@ -19,7 +21,7 @@ void Window_ReserveContent(Renderer_t* renderer, DisplayObject_t* window, uint32
 		if(sprite == NULL)
 			continue;
 		Object_ListRemoveFrom(window->contentList, sprite);
-		free(sprite);
+		Object_FreeDetached(sprite);
 	}
 	free(window->contentSlots);
 	if(window->contentList != NULL)
@@ -116,18 +118,15 @@ void Window_Redraw(Renderer_t* renderer, DisplayObject_t* window, const Rect_t* 
 				break;
 
 			case WINDOW_LAYER_CONTENT:
-				// 0x0042CBD0: the window's own display list, drawn into the
-				// window's pixels. Not written: 0x0042BFB0 places a content
-				// sprite at contentOriginX + x, an origin measured from the
-				// middle of the SCREEN, and what maps that onto the window's own
-				// pixels is 0x00430FD0's target, which is not read yet. Writing
-				// the draw before that is written is guessing where the pixels
-				// go.
-				if(window->contentList != NULL && window->contentList->head != NULL)
-				{
-					printf("[Engine]: Error: a window's content layer (0x0042CBD0"
-					       " through 0x00430FD0) is not written yet\n");
-				}
+				// 0x0042CBD0: with a content list (+0x340), the part being
+				// redrawn is damaged in it (0x00430910) and the list composed
+				// (0x00430FD0) onto its target, which 0x0042BDBF made the
+				// window's own pixels and rectangle. A content sprite sits at
+				// ((contentOriginX + x) << 16) about the device centre, and the
+				// origin is minus half the display, so its anchor lands on (x, y)
+				// of the window: the window's pixels are the list's coordinates.
+				if(window->contentList != NULL)
+					Object_DrawListOf(window->contentList, renderer, &pixels, &area);
 				break;
 		}
 	}
@@ -265,4 +264,133 @@ uint32_t Window_SetBackground(Renderer_t* renderer, DisplayObject_t* window, int
 		Renderer_ClearBitmap(&background);
 	// 0x0042B490: +0x15C, then the whole window redrawn (0x0042CAE0).
 	return Window_SetBackgroundShown(renderer, window, bitmap != -1);
+}
+
+uint32_t Window_SetContentSlot(Renderer_t* renderer, DisplayObject_t* window, uint32_t slot,
+                               int32_t bitmap, int32_t x, int32_t y,
+                               int32_t anchorX, int32_t anchorY, uint32_t layer)
+{
+	// 0x0042BFB0. A slot outside +0x310 is 9.
+	if(window == NULL || slot >= window->contentSlotCount)
+		return 9;
+
+	// 0x0042BFEA: whatever the slot held is taken out of the list (0x00430850) and
+	// destroyed.
+	DisplayObject_t* old = window->contentSlots[slot];
+	if(old != NULL)
+	{
+		Object_ListRemoveFrom(window->contentList, old);
+		Object_FreeDetached(old);
+		window->contentSlots[slot] = NULL;
+	}
+
+	// 0x0042C015: a new sprite (0x00425790 with the slot as its serial and 0 for
+	// +0x100), its +0x48 cleared (0x0041AEC0).
+	DisplayObject_t* sprite = Object_CreateDetachedSprite(slot);
+	if(sprite == NULL)
+		return 2;
+	window->contentSlots[slot] = sprite;
+	sprite->priority = 0;
+
+	// 0x0042C05E: 0x00427240 with the position about the content origin (16.16, z 0),
+	// the bitmap and no second, level 0, content kind 0, the anchor, angle 0, the
+	// focal distance +0x34C, no perspective, smooth, blend mode 0x20, effect level 0
+	// and the layer.
+	const char* unread = NULL;
+	uint32_t result = Sprite5_Setup(renderer, sprite, 0,
+	                                (int32_t)((uint32_t)(window->contentOriginX + x) << 16),
+	                                (int32_t)((uint32_t)(window->contentOriginY + y) << 16), 0,
+	                                bitmap, -1, 0, 0, anchorX, anchorY, 0,
+	                                (uint32_t)window->contentHalfWidth, 0, 1, 0x20, 0, layer, &unread);
+	if(unread != NULL)
+		printf("[Engine]: Warning: a window content sprite reached unported work: %s\n", unread);
+	if(result != 0)
+	{
+		// 0x0042C0EC: the sprite destroyed, the slot emptied, 2.
+		Object_FreeDetached(sprite);
+		window->contentSlots[slot] = NULL;
+		return 2;
+	}
+
+	// 0x0042C0B9: shown (vtable+0x04 with 1) and into the window's list (0x004307D0).
+	Object_SetVisible(sprite, 1);
+	Object_ListInsertInto(window->contentList, sprite);
+	return 0;
+}
+
+int Window_RedrawContentSlot(Renderer_t* renderer, DisplayObject_t* window, uint32_t slot)
+{
+	// 0x0042C2A0: nothing for an empty or missing slot; otherwise the part of the
+	// window the sprite covers (vtable+0x24) is redrawn (0x0042CB10). The rectangle it
+	// then moves by the window's screen position (0x00409170) is its caller's to use,
+	// and 0x0044B340 drops it.
+	if(window == NULL || slot >= window->contentSlotCount || window->contentSlots[slot] == NULL)
+		return 0;
+	Rect_t area;
+	Sprite5_ScreenBounds(window->contentSlots[slot], &area);
+	Window_Redraw(renderer, window, &area);
+	return 1;
+}
+
+uint32_t Window_SetContent(Renderer_t* renderer, DisplayObject_t* window, const IconContent_t* content)
+{
+	// 0x0044B340. First the window is emptied: the eight text parts (0x0042BC90 ->
+	// 0x0042BB90 with 0 each), the content slots (0x0042BCB0 with 0), the text
+	// surface cleared (0x0042BA90 -> 0x0040A620, then 0x0042CAE0), its weight +0x19C
+	// and flag +0x17C set to 0 (0x0042B630, 0x0042B620), and the whole window redrawn
+	// (0x0042CAE0). This engine's windows carry no text layer yet, so of those the
+	// slots and the redraws are what there is to do.
+	Window_ReserveContent(renderer, window, 0);
+	Window_RedrawAll(renderer, window);
+
+	// 0x0044B38D: the entry count in 1..0x100, else 0x80000001.
+	uint32_t count = content->raw[0];
+	if((int32_t)count <= 0 || count > ICON_CONTENT_MAX_COUNT)
+		return 0x80000001u;
+
+	// 0x0044B3B8: every entry's part count (the whole dword +0x00) in 1..0x100, else
+	// 0x80000002; their sum is the number of slots.
+	uint32_t total = 0;
+	for(uint32_t i = 0; i < count; i++)
+	{
+		int32_t parts = (int32_t)content->entries[i].raw[0];
+		total += (uint32_t)parts;
+		if(parts <= 0 || parts > ICON_CONTENT_MAX_COUNT)
+			return 0x80000002u;
+	}
+	Window_ReserveContent(renderer, window, total);
+
+	// 0x0044B409: one slot per part, in order, whether or not the part is used.
+	uint32_t slot = 0;
+	for(uint32_t i = 0; i < count; i++)
+	{
+		const IconContentEntry_t* entry = &content->entries[i];
+		uint32_t parts = entry->raw[0];
+		for(uint32_t j = 0; j < parts; j++, slot++)
+		{
+			const uint32_t* part = entry->parts + (size_t)j * ICON_CONTENT_PART_WORDS;
+			// +0x04: a part with 0 there is skipped.
+			if(part[1] == 0)
+				continue;
+			// +0x20 is the bitmap; for the entry's selected part (+0x0C) it is +0x28
+			// when that is not -1 (and +0x20 is not -1 either).
+			int32_t bitmap = (int32_t)part[8];
+			if(bitmap != -1 && j == entry->raw[3] && (int32_t)part[10] != -1)
+				bitmap = (int32_t)part[10];
+			// 0x00407F20: a bitmap that does not exist leaves the slot empty.
+			if(Renderer_ResolveBitmap(renderer, bitmap) == NULL)
+				continue;
+			// +0xC0's flags choose the layer: bit 4 takes +0x04, bit 1 takes +0x0C
+			// (the part's y), and otherwise it is the slot number.
+			uint32_t flags = part[48];
+			uint32_t layer = (flags & 0x10) ? part[1] : (flags & 0x02) ? part[3] : slot;
+			// The position is +0x08/+0x0C plus the anchor +0x10/+0x14, so the
+			// bitmap's corner lands on +0x08/+0x0C.
+			Window_SetContentSlot(renderer, window, slot, bitmap,
+			                      (int32_t)(part[2] + part[4]), (int32_t)(part[3] + part[5]),
+			                      (int32_t)part[4], (int32_t)part[5], layer);
+			Window_RedrawContentSlot(renderer, window, slot);
+		}
+	}
+	return 0;
 }

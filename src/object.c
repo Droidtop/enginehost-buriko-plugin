@@ -313,6 +313,28 @@ uint32_t Object_Create(uint32_t tag)
 
 	return object->handle;
 }
+// 0x00425790 called with the serial in ecx and 0 for +0x100, as 0x0042BFB0 calls it
+// for a window's content: a sprite that is in no handle table and no display list
+// until its owner puts it in one.
+DisplayObject_t* Object_CreateDetachedSprite(uint32_t serial)
+{
+	DisplayObject_t* object = (DisplayObject_t*)malloc(sizeof(DisplayObject_t));
+	if(object == NULL)
+		return NULL;
+	Object_ConstructBase(object, OBJECT_TYPE_SPRITE, serial);
+	return object;
+}
+
+// The sprite's deleting destructor (vtable+0x00 with 1, 0x00425910) for one of those.
+void Object_FreeDetached(DisplayObject_t* object)
+{
+	if(object == NULL)
+		return;
+	Sprite5_Free(object);
+	free(object->backgroundPixels);
+	free(object);
+}
+
 DisplayObject_t* Object_Resolve(uint32_t handle)
 {
 	// 0x00443350 answers the handle 0 with the screen object before it looks at a
