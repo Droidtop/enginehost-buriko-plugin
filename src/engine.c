@@ -29,8 +29,11 @@ void Engine_Init(Engine_t* engine)
 	engine->threads = NULL;
 	engine->programs = NULL;
 	engine->memory = NULL;
-	for(int i = 0; i < 48; i++)
-		engine->auxMemory[i] = NULL;
+	for(int i = 0; i < 5; i++)
+	{
+		engine->auxSlots[i] = (uint8_t**)calloc(kAuxClasses[i].slots, sizeof(uint8_t*));
+		engine->auxSizes[i] = (uint32_t*)calloc(kAuxClasses[i].slots, sizeof(uint32_t));
+	}
 	engine->globalBufferSize = 0;
 	engine->globalMem = NULL;
 	engine->knobObjectHandle = 0xE0000000;
@@ -400,11 +403,11 @@ static int gWatchCount = 0;
 
 int Engine_AddWatch(uint32_t address, uint32_t width)
 {
-	int tag = address >> 24;
-	if(tag == 0x10 || tag == 0x11 || tag == 0x12)
+	uint32_t type = BGI_ADDR_TYPE(address);
+	if(type >= 1 && type <= 3)
 	{
 		fprintf(stderr, "[EngineHost]: 0x%.8X is in a thread's own memory, which is a "
-			"different word in every thread; only global (tag 0) and aux (tag 0x40 and "
+			"different word in every thread; only global (type 0) and aux (type 0x10 and "
 			"up) addresses can be watched.\n", address);
 		return 0;
 	}
@@ -428,20 +431,22 @@ int Engine_AddWatch(uint32_t address, uint32_t width)
 
 static uint32_t Engine_ReadWatch(Engine_t* engine, Watch_t* watch, int* ok)
 {
-	int tag = watch->address >> 24;
-	uint32_t offset = watch->address & 0x00FFFFFF;
+	uint32_t type = BGI_ADDR_TYPE(watch->address);
+	uint32_t offset = BGI_ADDR_OFFSET(watch->address);
 	uint8_t* base = NULL;
 	uint32_t size = 0;
 
-	if(tag == 0)
+	if(type == 0)
 	{
 		base = engine->globalMem;
 		size = engine->globalBufferSize;
 	}
-	else if(tag >= 0x40 && (tag >> 1) - 32 < 48)
+	else if(type >= 0x10)
 	{
-		base = engine->auxMemory[(tag >> 1) - 32];
-		size = engine->auxMemorySize[(tag >> 1) - 32];
+		uint32_t available = 0;
+		base = Engine_ResolveAuxMemory(engine, watch->address, &available);
+		offset = 0;
+		size = available;
 	}
 
 	// Global memory is re-created larger as the boot goes on and an aux area is
@@ -1094,56 +1099,103 @@ int Engine_InitGlobalMemory(Engine_t* engine, uint32_t level)
 	return 1;
 }
 
+// Sys0 0x20 / 0x21 (0x00488500 -> 0x0048DE00, 0x0048DEA0). The original keeps
+// five size classes of aux area, each a table of slots (0x00503E78) and each
+// owning a range of address types (0x00503EE0): an area of up to 4 KB takes a
+// slot of the first class and an address from 0x40000000, up to 64 KB the
+// second from 0x50000000, up to 1 MB the third from 0x60000000, up to 16 MB the
+// fourth from 0x70000000, up to 64 MB the fifth from 0x80000000. The first class
+// whose block holds the size and has a free slot wins, and within it the lowest
+// free slot. The slot index becomes the address: its high bits are added to the
+// class's first type, its low bits shifted up by the class's block shift
+// (0x00503EA4), which leaves the offset bits of the block (0x00503EB8) zero.
+// Only the size asked for is allocated, and it is not cleared (malloc).
+const AuxClass_t kAuxClasses[5] = {
+	/* slots,   shift, mask,       block,      first type */
+	{ 0x10000, 0x0C, 0x00000FFF, 0x00001000, 0x10 },
+	{ 0x1000,  0x10, 0x0000FFFF, 0x00010000, 0x14 },
+	{ 0x100,   0x14, 0x000FFFFF, 0x00100000, 0x18 },
+	{ 0x10,    0x18, 0x00FFFFFF, 0x01000000, 0x1C },
+	{ 0x20,    0x1A, 0x03FFFFFF, 0x04000000, 0x20 },
+};
+// The type after the last class's range (0x00503EF4).
+#define AUX_TYPE_END 0x40
+
 uint32_t Engine_AllocAuxMemory(Engine_t* engine, uint32_t size)
 {
-	if(size > 0x2000000)
+	// 0x00497A80 refuses a size of zero or over 64 MB as a fatal error.
+	if(size == 0 || size > 0x4000000)
 	{
-		printf("[Engine]: Attempting to allocate too much aux memory\n");
+		printf("[Engine]: Error: aux memory of 0x%.8X bytes is not a size the original allocates (1 to 0x04000000)\n", size);
 		engine->isRunning = 0;
 		return 0;
 	}
-	for(int i = 0; i < 48; i++)
+	for(int c = 0; c < 5; c++)
 	{
-		if(engine->auxMemory[i] != NULL)
+		const AuxClass_t* k = &kAuxClasses[c];
+		if(size > k->block)
 			continue;
-		engine->auxMemory[i] = (uint8_t*)malloc(size);
-		engine->auxMemorySize[i] = size;
-		printf("[Engine]: Initialised aux memory in slot %d with size 0x%.8X\n", i, size);
-		return (i + 32) * 0x2000000;
+		for(uint32_t slot = 0; slot < k->slots; slot++)
+		{
+			if(engine->auxSlots[c][slot] != NULL)
+				continue;
+			engine->auxSlots[c][slot] = (uint8_t*)malloc(size);
+			engine->auxSizes[c][slot] = size;
+			uint32_t typeBits = 0x1A - k->shift;
+			uint32_t type = (slot >> typeBits) + k->firstType;
+			uint32_t low = (slot & ((1u << typeBits) - 1)) << k->shift;
+			return (type << 26) | low;
+		}
 	}
 	return 0;
 }
 
-uint8_t* Engine_GetAuxMemory(Engine_t* engine, uint8_t slot)
+// Which class and slot an aux address belongs to; -1 when it is in none. The
+// same decoding as 0x0048E013 and 0x0048DEA0.
+static int Engine_AuxSlotOf(uint32_t address, uint32_t* slotOut)
 {
-	if(slot >= 48)
+	uint32_t type = BGI_ADDR_TYPE(address);
+	for(int c = 0; c < 5; c++)
+	{
+		const AuxClass_t* k = &kAuxClasses[c];
+		uint32_t typeEnd = c < 4 ? kAuxClasses[c + 1].firstType : AUX_TYPE_END;
+		if(type < k->firstType || type >= typeEnd)
+			continue;
+		*slotOut = ((type - k->firstType) << (0x1A - k->shift)) | (BGI_ADDR_OFFSET(address) >> k->shift);
+		return c;
+	}
+	return -1;
+}
+
+uint8_t* Engine_ResolveAuxMemory(Engine_t* engine, uint32_t address, uint32_t* available)
+{
+	uint32_t slot;
+	int c = Engine_AuxSlotOf(address, &slot);
+	if(c < 0 || engine->auxSlots[c][slot] == NULL)
 		return NULL;
-	return NULL;
+	uint32_t offset = address & kAuxClasses[c].mask;
+	if(available)
+		*available = offset < engine->auxSizes[c][slot] ? engine->auxSizes[c][slot] - offset : 0;
+	return engine->auxSlots[c][slot] + offset;
 }
 
 // Sys0 0x21 (fureraba.exe 0x00488550 -> 0x0048DEA0) releases the aux memory area an
-// address belongs to. The original finds the area by decoding the address the same
-// way its resolver does, frees the block and clears the slot, and answers 1. A null
-// address is accepted and answers 1 without freeing anything. An address that is not
-// in any allocated area is fatal - "an invalid address was given as the target of a
-// global memory free" - so this reports it and stops the thread rather than ignoring
-// it.
+// address belongs to. The address must be the start of the area (no offset bits
+// set); the block is freed, the slot cleared and the answer is 1. A null address is
+// accepted and answers 1 without freeing anything. Anything else answers 0, which
+// the caller treats as fatal - "an invalid address was given as the target of a
+// global memory free".
 uint32_t Engine_FreeAuxMemory(Engine_t* engine, uint32_t address)
 {
 	if(address == 0)
 		return 1;
-
-	int tag = address >> 24;
-	if(tag < 0x40)
+	uint32_t slot;
+	int c = Engine_AuxSlotOf(address, &slot);
+	if(c < 0 || (address & kAuxClasses[c].mask) != 0 || engine->auxSlots[c][slot] == NULL)
 		return 0;
-
-	int slot = (tag >> 1) - 32;
-	if(slot < 0 || slot >= 48 || engine->auxMemory[slot] == NULL)
-		return 0;
-
-	free(engine->auxMemory[slot]);
-	engine->auxMemory[slot] = NULL;
-	printf("[Engine]: Freed aux memory in slot %d\n", slot);
+	free(engine->auxSlots[c][slot]);
+	engine->auxSlots[c][slot] = NULL;
+	engine->auxSizes[c][slot] = 0;
 	return 1;
 }
 
@@ -2238,13 +2290,14 @@ void Engine_Free(Engine_t* engine)
 		engine->globalMem = NULL;
 	}
 
-	for(int i = 0; i < 48; i++)
+	for(int i = 0; i < 5; i++)
 	{
-		if(engine->auxMemory[i])
-		{
-			free(engine->auxMemory[i]);
-			engine->auxMemory[i] = NULL;
-		}
+		for(uint32_t j = 0; engine->auxSlots[i] && j < kAuxClasses[i].slots; j++)
+			free(engine->auxSlots[i][j]);
+		free(engine->auxSlots[i]);
+		free(engine->auxSizes[i]);
+		engine->auxSlots[i] = NULL;
+		engine->auxSizes[i] = NULL;
 	}
 
 	Renderer_Free(engine->renderer);

@@ -7,6 +7,15 @@
 #include "thread.h"
 
 typedef struct Renderer Renderer_t;
+typedef struct AuxClass
+{
+	uint32_t slots;     // 0x00503E90
+	uint32_t shift;     // 0x00503EA4
+	uint32_t mask;      // 0x00503EB8
+	uint32_t block;     // 0x00503ECC
+	uint32_t firstType; // 0x00503EE0
+} AuxClass_t;
+extern const AuxClass_t kAuxClasses[5];
 typedef struct Engine Engine_t;
 struct Engine
 {
@@ -15,10 +24,12 @@ struct Engine
 	Thread_t* threads;
 	Program_t* programs;
 	Memory_t* memory;
-    uint8_t* auxMemory[48];
-    // Beside each aux area, the size it was asked for. The original has no use
-    // for it, but nothing else here can tell whether an address is inside one.
-    uint32_t auxMemorySize[48];
+    // The aux areas Sys0 0x20 hands out, one slot table per size class (the
+    // original's tables at 0x00503E78). Beside each area, the size it was asked
+    // for: the original has no use for it, but nothing else here can tell
+    // whether an address is inside one.
+    uint8_t** auxSlots[5];
+    uint32_t* auxSizes[5];
     uint32_t globalBufferSize;
     uint8_t* globalMem;
     int isRunning;
@@ -41,13 +52,13 @@ uint32_t Engine_ReadFileToMemory(Engine_t* engine, const char* archive, const ch
 // has no such thing - it is the desktop runner's --ticks.
 extern int gTickLimit;
 
-// A watch on one engine-wide memory word, in the script's own tagged address
-// form (tag 0 is global memory, tag 0x40 and up is aux memory). The value is
-// compared after every interpreter step and every change is reported with the
-// thread and the program offset that made it, which is how a word nothing
-// writes by a literal address is traced back to its writer. Thread-local areas
-// (tags 0x10 and 0x11) are refused rather than watched, because they are a
-// different word per thread and one watch cannot mean all of them.
+// A watch on one engine-wide memory word, in the script's own address form
+// (type 0 is global memory, type 0x10 and up is aux memory; BGI_ADDR_TYPE).
+// The value is compared after every interpreter step and every change is
+// reported with the thread and the program offset that made it, which is how a
+// word nothing writes by a literal address is traced back to its writer.
+// Thread-own areas (types 1 to 3) are refused rather than watched, because
+// they are a different word per thread and one watch cannot mean all of them.
 #define ENGINE_MAX_WATCHES 8
 int  Engine_AddWatch(uint32_t address, uint32_t width);
 void Engine_CheckWatches(Engine_t* engine, Thread_t* thread, uint32_t address);
@@ -134,7 +145,10 @@ uint32_t Engine_SetFontAdjust(const char* name, uint32_t scaleX, uint32_t scaleY
 int Engine_InitGlobalMemory(Engine_t* engine, uint32_t level);
 
 uint32_t Engine_AllocAuxMemory(Engine_t* engine, uint32_t size);
-uint8_t* Engine_GetAuxMemory(Engine_t* engine, uint8_t slot);
+// The aux memory an address of type 0x10 and up points into, or NULL when no
+// allocated area holds it; *available is set to the bytes left in the area
+// from that address when it is not NULL (0x0048E013).
+uint8_t* Engine_ResolveAuxMemory(Engine_t* engine, uint32_t address, uint32_t* available);
 uint32_t Engine_FreeAuxMemory(Engine_t* engine, uint32_t address);
 
 extern uint32_t gFrameTimeMs;

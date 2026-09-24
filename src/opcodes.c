@@ -568,10 +568,10 @@ uint32_t Opcode_CodeOffset(Thread_t* thread)
 uint32_t Opcode_CodeAddr(Thread_t* thread)
 {
 	// 0x004737A0, the same signed offset as CodeOffset, tagged as an
-	// address in code memory (the original tags it 0x04000000).
+	// address in code memory: `or esi, 0x4000000`.
 	int16_t offset = (int16_t)Thread_ReadCode16(thread);
 	uint32_t ip = Thread_GetInstructionPointer(thread);
-	Thread_PushStack(thread, (uint32_t)(ip + offset) | 0x11000000);
+	Thread_PushStack(thread, (uint32_t)(ip + offset) | BGI_ADDR_CODE);
 	return 0;
 }
 
@@ -873,8 +873,10 @@ uint32_t Opcode_BaseOffset(Thread_t* thread)
 {
 	uint16_t offset = Thread_ReadCode16(thread);
 	uint32_t base = Thread_GetBasePointer(thread);
+	// 0x00473770: the base pointer less the immediate, tagged as an address in
+	// the thread's local memory: `or eax, 0x8000000`.
 	uint32_t relativeOffset = base - offset;
-	uint32_t taggedValue    = relativeOffset | 0x10000000;
+	uint32_t taggedValue    = relativeOffset | BGI_ADDR_LOCAL;
 	Thread_PushStack(thread, taggedValue);
 	return 0;
 }

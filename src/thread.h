@@ -117,6 +117,16 @@ const char* Thread_Where(Thread_t* thread, uint32_t address);
 void Thread_SetInstructionPointer(Thread_t* thread, uint32_t value);
 void Thread_SetUnknownTimestamp(Thread_t* thread, uint32_t value);
 uint8_t* Thread_PopAndResolveAddress(Thread_t* thread);
+// A script address, as the resolver 0x0048DF60 reads it: the top six bits are
+// its type and the low 26 bits an offset. Type 0 is global memory, 1 the
+// thread's code space, 2 its local memory, 3 an area the thread object answers
+// for through its vtable+0x0C, and 0x10 upward the aux areas Sys0 0x20 hands
+// out (Engine_AllocAuxMemory).
+#define BGI_ADDR_TYPE(a)    ((uint32_t)(a) >> 26)
+#define BGI_ADDR_OFFSET(a)  ((uint32_t)(a) & 0x03FFFFFFu)
+#define BGI_ADDR_GLOBAL     0x00000000u
+#define BGI_ADDR_CODE       0x04000000u
+#define BGI_ADDR_LOCAL      0x08000000u
 uint8_t* Thread_ResolveAddr(Thread_t* thread, uint32_t address);
 // The width the read and write opcodes carry in their operand byte, and what
 // Thread_WriteIntToMemory's size means: a log2 code, not a byte count.

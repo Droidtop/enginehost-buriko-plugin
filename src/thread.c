@@ -539,72 +539,43 @@ uint32_t Thread_Execute(Thread_t* thread)
 	return res;
 }
 
+// 0x0048DF60. The top six bits of an address are its type (see BGI_ADDR_TYPE):
+// 0 global memory, 1 the thread's code space, 2 its local memory, 3 an area
+// its vtable+0x0C answers for, and anything from 0x10 up an aux area, looked up
+// through the size classes 0x0048E013 walks. Null is null. An address no area
+// holds is fatal in the original ("an invalid address", 0x004EC0BC through
+// 0x00464870); here it stops the thread with that said.
 uint8_t* Thread_ResolveAddr(Thread_t* thread, uint32_t address)
 {
 	if(address == 0)
 		return NULL;
 
-	int tag = address >> 24;
-	uint32_t offset = address & 0x00ffffff;
+	uint32_t type = BGI_ADDR_TYPE(address);
+	uint32_t offset = BGI_ADDR_OFFSET(address);
+	uint8_t* ptr;
 
-	// TODO: Bounds checking
-	switch(tag)
+	switch(type)
 	{
 		case 0:
-			if(!thread->inBasicOpcode || !thread->silenceBasicOpcodeLog)
-				printf("[Thread %d]: %sResolved address: GlobalMem Offset 0x%.8X\n", thread->threadId, TLevel[thread->level], offset);
 			return thread->engine->globalMem + offset;
-		case 0x10:
-			if(!thread->inBasicOpcode || !thread->silenceBasicOpcodeLog)
-				printf("[Thread %d]: %sResolved address: LocalMem Offset 0x%.8X\n", thread->threadId, TLevel[thread->level], offset);
-			return thread->localMem + offset;
-		case 0x11:
-			if(!thread->inBasicOpcode || !thread->silenceBasicOpcodeLog)
-				printf("[Thread %d]: %sResolved address: CodeMem Offset 0x%.8X\n", thread->threadId, TLevel[thread->level], offset);
+		case 1:
 			return thread->code + offset;
-		case 0x12:
-			printf("[Thread %d]: %sError: Struct Memory area %.2X is not implemented\n", thread->threadId, TLevel[thread->level], tag);
-			//return BGI_GetUnknownStuctMem(thread, offset);
+		case 2:
+			return thread->localMem + offset;
+		case 3:
+			printf("[Thread %d]: %sError: address 0x%.8X is in the thread's own type 3 area (vtable+0x0C of the thread object), which is not implemented\n", thread->threadId, TLevel[thread->level], address);
+			thread->running = 0;
+			thread->error = 1;
 			return NULL;
 		default:
-			if(tag < 0x40)
+			ptr = Engine_ResolveAuxMemory(thread->engine, address, NULL);
+			if(ptr == NULL)
 			{
-				printf("[Thread %d]: %sError: %.2X is an invalid memory area\n", thread->threadId, TLevel[thread->level], tag);
-				return NULL;
-			}
-			int slot = (tag >> 1) - 32;
-			if(thread->engine->auxMemory[slot] == NULL)
-			{
-				printf("[Thread %d]: %sError: %.2X is an uninitialised aux memory area\n", thread->threadId, TLevel[thread->level], tag);
+				printf("[Thread %d]: %sError: 0x%.8X is not an address in any allocated area\n", thread->threadId, TLevel[thread->level], address);
 				thread->running = 0;
 				thread->error = 1;
-				return NULL;
 			}
-
-			if(!thread->inBasicOpcode || !thread->silenceBasicOpcodeLog)
-				printf("[Thread %d]: %sResolved address: AuxMem Offset 0x%.8X\n", thread->threadId, TLevel[thread->level], offset);
-			return thread->engine->auxMemory[slot] + offset;
-
-			//printf("[Thread %d]: %sError: Aux Memory area %.2X is not implemented\n", thread->threadId, TLevel[thread->level], tag);
-			////return BGI_GetUnknownStuctMem(thread, offset);
-			//thread->running = 0;
-			//thread->error = 1;
-			//return NULL;
-			/*
-			if(tag < 16)
-			{
-				printf("[Thread %d]: %sError: %.2X is an invalid memory area\n", thread->threadId, TLevel[thread->level], tag);
-				return NULL;
-			}
-
-			uint8_t* auxMem = Engine_GetAuxMemory(tag - 16);
-			if(auxMem == NULL)
-			{
-				printf("[Thread %d]: %sError: %.2X is an uninitialised aux memory area\n", thread->threadId, TLevel[thread->level], tag);
-				return NULL;
-			}
-			return auxMem + offset;
-			*/
+			return ptr;
 	}
 }
 
