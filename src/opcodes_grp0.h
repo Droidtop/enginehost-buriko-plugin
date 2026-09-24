@@ -73,7 +73,7 @@ uint32_t Opcode_Grp0_DestroyObject(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_83(Thread_t* thread);
 uint32_t Opcode_Grp0_SetSpriteVisible(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_85(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_86(Thread_t* thread);
+uint32_t Opcode_Grp0_SetSprite(Thread_t* thread);
 uint32_t Opcode_Grp0_SetSpriteBitmap(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_88(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_89(Thread_t* thread);

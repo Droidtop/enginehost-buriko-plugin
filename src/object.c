@@ -995,7 +995,7 @@ int Object_SetSurfaceSize(Renderer_t* renderer, DisplayObject_t* object, int wid
 
 // 0x004274E0, the arm for a sprite of kind 0, which is what a fresh sprite is: its
 // content is one whole bitmap.
-static uint32_t Object_SetContentBitmapKind0(Renderer_t* renderer, DisplayObject_t* sprite, int number)
+uint32_t Object_SetContentBitmapKind0(Renderer_t* renderer, DisplayObject_t* sprite, int number)
 {
 	// 0x00407F20 fills a six-dword descriptor - pixels, stride, width, height, mode
 	// and bytes per pixel - out of the bitmap table entry, and answers 0 when the

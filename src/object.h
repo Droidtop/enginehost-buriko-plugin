@@ -376,6 +376,9 @@ void Object_ApplyPosition(DisplayObject_t* object, int32_t x, int32_t y);
 // yet, refused by name in `*unread` rather than guessed at.
 #define OBJECT_CONTENT_UNREAD       0x80FF0000u
 uint32_t Object_SetContentBitmap(Renderer_t* renderer, DisplayObject_t* sprite, int number, const char** unread);
+// 0x004274E0, the kind 0 arm by itself: the sprite becomes kind 0 showing one whole
+// bitmap, whatever kind it was.
+uint32_t Object_SetContentBitmapKind0(Renderer_t* renderer, DisplayObject_t* sprite, int number);
 // The same, bracketed as 0x0043ED80 brackets it. 0xFF for a handle that is not a
 // live sprite, which the opcode treats as fatal.
 #define OBJECT_CONTENT_BAD_SPRITE   0x000000FFu

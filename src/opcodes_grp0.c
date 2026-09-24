@@ -99,7 +99,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x53  83 */ "Unknown_83",
 	/* 0x54  84 */ "SetSpriteVisible",
 	/* 0x55  85 */ "Unknown_85",
-	/* 0x56  86 */ "Unknown_86",
+	/* 0x56  86 */ "SetSprite",
 	/* 0x57  87 */ "SetSpriteBitmap",
 	/* 0x58  88 */ "Unknown_88",
 	/* 0x59  89 */ "Unknown_89",
@@ -358,7 +358,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x53  83 */ Opcode_Grp0_Unknown_83,
 	/* 0x54  84 */ Opcode_Grp0_SetSpriteVisible,
 	/* 0x55  85 */ Opcode_Grp0_Unknown_85,
-	/* 0x56  86 */ Opcode_Grp0_Unknown_86,
+	/* 0x56  86 */ Opcode_Grp0_SetSprite,
 	/* 0x57  87 */ Opcode_Grp0_SetSpriteBitmap,
 	/* 0x58  88 */ Opcode_Grp0_Unknown_88,
 	/* 0x59  89 */ Opcode_Grp0_Unknown_89,
@@ -1640,16 +1640,57 @@ uint32_t Opcode_Grp0_Unknown_85(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_86(Thread_t* thread)
+/*
+ * Grp0 0x56 (0x0047C450 -> 0x004624F0 -> 0x0043E770 -> 0x00427020): a sprite given
+ * everything at once. Popped: the draw layer (0x00497D40, below 0x10000), the effect
+ * level (0x00497F40, at most 0x100), the blend mode (0x00497DD0), the bitmap
+ * (0x00497CF0, below 0x4000), y, x and the sprite; each check is fatal (the blend
+ * mode's table at 0x00497E54 is not read, so the mode is taken as it comes). The sprite
+ * becomes kind 0 over the whole bitmap (0x004274E0), then its vtable+0x2C with x and
+ * y, the blend mode (0x0041B6D0), vtable+0x48 with the level and vtable+0x54 with
+ * the layer, bracketed by the drawable test and damage (vtable+0x08 / +0x0C) and
+ * followed by the list re-sort (0x004308B0). A bitmap that does not exist answers 1
+ * and a handle that is not a sprite 0xFF, both fatal in the handler.
+ */
+uint32_t Opcode_Grp0_SetSprite(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint32_t value3 = Thread_PopStack(thread);
-	uint32_t value4 = Thread_PopStack(thread);
-	uint32_t value5 = Thread_PopStack(thread);
-	uint32_t value6 = Thread_PopStack(thread);
-	uint32_t value7 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t layer = Thread_PopStack(thread);
+	uint32_t level = Thread_PopStack(thread);
+	uint32_t blend = Thread_PopStack(thread);
+	uint32_t bitmap = Thread_PopStack(thread);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	if(layer >= 0x10000 || level > 0x100 || bitmap >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: Grp0 0x56 out of range: layer %d, level %d, bitmap %d\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)layer, (int32_t)level, (int32_t)bitmap);
+		return 0xFFFFFFFC;
+	}
+	DisplayObject_t* sprite = Object_ResolveKind(handle, OBJECT_TYPE_SPRITE);
+	if(sprite == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid sprite handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	if(Object_IsDrawable(sprite))
+		gObjectDamage++;
+	if(Object_SetContentBitmapKind0(thread->engine->renderer, sprite, (int)bitmap) != OBJECT_CONTENT_OK)
+	{
+		printf("[Thread %d]: %sError: the specified bitmap [ %d ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)bitmap);
+		return 0xFFFFFFFC;
+	}
+	Object_Move(sprite, x, y);
+	sprite->unknownA8 = blend;
+	const char* unread = Object_ApplyEffectLevel(sprite, level);
+	if(unread != NULL)
+		printf("[Thread %d]: %sWarning: the sprite's effect level needs %s\n", thread->threadId, TLevel[thread->level], unread);
+	sprite->layer = layer;
+	if(Object_IsDrawable(sprite))
+		gObjectDamage++;
+	Object_ListResort(sprite);
 	return 0;
 }
 
