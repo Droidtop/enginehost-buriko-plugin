@@ -763,18 +763,6 @@ uint32_t Engine_SetDisplayFlagUnknown98(uint32_t value)
 	return 1;
 }
 
-// Grp1 0x0D (fureraba.exe 0x004808D0 -> 0x00469100 -> 0x0042DD10) pops one value
-// into the global at 0x00565B60 and pushes nothing. The single reader, at
-// 0x0042E1F2, is a gate: when the global is zero the routine keeps the value it has
-// just computed, and when it is non-zero it consults 0x0042DC40 and discards that
-// value if the query answers 2. What the option is called is not established from
-// the binary, so it keeps the engine's numbering.
-uint32_t gGrp1FlagUnknown13 = 0;
-void Engine_SetGrp1FlagUnknown13(uint32_t value)
-{
-	gGrp1FlagUnknown13 = value;
-}
-
 // Ext0 0xC7 (fureraba.exe 0x00479440 -> 0x004690E0 -> 0x0042D900) fills the engine's
 // font substitution table: a singly linked list of { name, replacement } whose head
 // is 0x00565B5C, plus a fallback replacement at 0x00565B4C used when a name is not
@@ -938,19 +926,22 @@ static int32_t Engine_FontAdjustOriginLimit(uint32_t scale)
 
 uint32_t Engine_SetFontAdjust(const char* name, uint32_t scaleX, uint32_t scaleY, int32_t originX, int32_t originY)
 {
-	if(scaleX == 0 && scaleY == 0 && originX == 0 && originY == 0)
-		return 0;
+	// All four zero passes the validator and is kept like any other entry
+	// (0x0042EF36): it is what makes 0x0042E077 ask CreateFontA for the character
+	// height and read the origin from the outline metrics.
+	if(scaleX != 0 || scaleY != 0 || originX != 0 || originY != 0)
+	{
+		if((scaleX < 0x10000 || scaleX > 0x20000) && scaleX != 0)
+			return 0x80000005;
+		if(scaleY < 0x10000 || scaleY > 0x20000)
+			return 0x80000005;
 
-	if((scaleX < 0x10000 || scaleX > 0x20000) && scaleX != 0)
-		return 0x80000005;
-	if(scaleY < 0x10000 || scaleY > 0x20000)
-		return 0x80000005;
-
-	uint32_t reference = scaleX != 0 ? scaleX : scaleY;
-	if(originX > Engine_FontAdjustOriginLimit(reference))
-		return 0x80000006;
-	if(originY > Engine_FontAdjustOriginLimit(scaleY))
-		return 0x80000006;
+		uint32_t reference = scaleX != 0 ? scaleX : scaleY;
+		if(originX > Engine_FontAdjustOriginLimit(reference))
+			return 0x80000006;
+		if(originY > Engine_FontAdjustOriginLimit(scaleY))
+			return 0x80000006;
+	}
 
 	if(name == NULL)
 		return 0;
@@ -981,9 +972,12 @@ uint32_t Engine_SetFontAdjust(const char* name, uint32_t scaleX, uint32_t scaleY
 // a "function parameter" in its own two error messages, and rejects anything else:
 // an unknown number is fatal, and so is a negative value for function 0x80000001,
 // which is the only one that checks its parameter. The four destinations are
-// 0x0050764C, 0x00565CF4, 0x00507654 and 0x00565D30; what they mean is not
-// established from the binary, so they are held by number here.
-uint32_t gFunctionParameters[4] = { 0 };
+// 0x0050764C, 0x00565CF4, 0x00507654 and 0x00565D30, held by number here. The text
+// layout reads two of them: 0x0050764C lets the characters a line may not start
+// with hang past the margin (0x00436E6A), 0x00565D30 moves ruby by its offset
+// (0x004354A4). The data section starts 0x0050764C at 1 and 0x00507654 at
+// 0x10000; the other two are in its zeroed part.
+uint32_t gFunctionParameters[4] = { 1, 0, 0x10000, 0 };
 
 uint32_t Engine_SetFunctionParameter(uint32_t function, int32_t value)
 {
@@ -1170,47 +1164,6 @@ void Engine_SetFramerateTime(uint32_t fps)
 	printf("[Engine]: Set framerate to %d (%d ms)\n", fps, gFrameTimeMs);
 
 	gFrameTimer = 0;
-}
-
-int gAntiAliasing1 = 0;
-int gAntiAliasing2 = 0;
-int gAntiAliasing3 = 0;
-void Engine_SetAntialiasingLevel(int level)
-{
-	if(level > 4)
-		return;
-
-	switch(level)
-	{
-		case 0:
-			gAntiAliasing1 = 1;
-			gAntiAliasing2 = 2;
-			gAntiAliasing3 = 2;
-			return;
-		case 1:
-			gAntiAliasing1 = 2;
-			gAntiAliasing2 = 4;
-			gAntiAliasing3 = 4;
-			return;
-		case 2:
-			gAntiAliasing2 = 6;
-			gAntiAliasing3 = 8;
-			gAntiAliasing1 = 3;
-			return;
-		case 3:
-			gAntiAliasing2 = 8;
-			gAntiAliasing3 = 0x10;
-			gAntiAliasing1 = 4;
-			return;
-		default:
-			gAntiAliasing2 = 0;
-			gAntiAliasing3 = 1;
-			gAntiAliasing1 = 0;
-	}
-
-	printf("[Engine]: Set antialiasing level to %d\n", level);
-
-	return;
 }
 
 // Sys0 0x66 (fureraba.exe 0x00489580) is the window title, not the cursor shape:

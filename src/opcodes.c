@@ -1208,3 +1208,30 @@ uint32_t Opcode_Streq(Thread_t* thread)
 	Thread_PushStack(thread, strcmp(str1, str2) == 0);
 	return 0;
 }
+
+/*
+ * The four failures of the draw 0x00403B10, which Grp2 0x9C (0x00486B25), Grp1 0x9C
+ * (0x00484D06) and Grp1 0x9D (0x00484F5B) all report the same way and all treat as
+ * fatal: the size, the width or the font number refused (0x80000001..3), or a
+ * bitmap that does not exist (0x80000004). 1 when the result was one of them.
+ */
+int Opcode_ReportTextFailure(Thread_t* thread, uint32_t result, int32_t size, int32_t width, uint32_t fontNumber, int32_t bitmap)
+{
+	switch(result)
+	{
+		case 0x80000001:
+			printf("[Thread %d]: %sError: the specified font size [ %d ] is invalid\n", thread->threadId, TLevel[thread->level], size);
+			return 1;
+		case 0x80000002:
+			printf("[Thread %d]: %sError: the specified font width [ %d ] is invalid\n", thread->threadId, TLevel[thread->level], width);
+			return 1;
+		case 0x80000003:
+			printf("[Thread %d]: %sError: the specified font number [ %d ] is invalid\n", thread->threadId, TLevel[thread->level], (int32_t)fontNumber);
+			return 1;
+		case 0x80000004:
+			printf("[Thread %d]: %sError: the specified bitmap [ %d ] does not exist\n", thread->threadId, TLevel[thread->level], bitmap);
+			return 1;
+		default:
+			return 0;
+	}
+}

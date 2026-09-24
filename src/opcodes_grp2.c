@@ -9,6 +9,8 @@
 #include "movie.h"
 #include "renderer.h"
 #include "thread.h"
+#include "text.h"
+#include <string.h>
 
 char* OpcodesGrp2Mnemonics[256] = {
     /* 0x00   0 */ "Unknown_0",
@@ -167,7 +169,7 @@ char* OpcodesGrp2Mnemonics[256] = {
     /* 0x99 153 */ "--Unknown--",
     /* 0x9A 154 */ "--Unknown--",
     /* 0x9B 155 */ "--Unknown--",
-    /* 0x9C 156 */ "Unknown_156",
+    /* 0x9C 156 */ "DrawText",
     /* 0x9D 157 */ "--Unknown--",
     /* 0x9E 158 */ "--Unknown--",
     /* 0x9F 159 */ "--Unknown--",
@@ -426,7 +428,7 @@ OpcodePtr_t OpcodesGrp2[256] = {
     /* 0x99 153 */ NULL,
     /* 0x9A 154 */ NULL,
     /* 0x9B 155 */ NULL,
-    /* 0x9C 156 */ Opcode_Grp2_Unknown_156,
+    /* 0x9C 156 */ Opcode_Grp2_DrawText,
     /* 0x9D 157 */ NULL,
     /* 0x9E 158 */ NULL,
     /* 0x9F 159 */ NULL,
@@ -643,9 +645,70 @@ uint32_t Opcode_Grp2_Unknown_145(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp2_Unknown_156(Thread_t* thread)
+/*
+ * Grp2 0x9C (0x00486950): text drawn into a bitmap. Popped, in order: one value
+ * the handler drops (0x0048696B), the effect - weight, colour, the two offsets and
+ * the kind, built by 0x00434F10 - the line spacing, kinsoku, proportional setting,
+ * bold, width, size, font number, the ruby colour, the ruby dictionary (a string,
+ * 0x0048E0E0), whether there is ruby, the colour, the text (a string), y, x and the
+ * bitmap. A bitmap number outside the table (0x00497CF0) and a font number nothing
+ * was registered under (0x00497C80) are fatal before anything is drawn, and so is
+ * each failure the draw reports (the switch at 0x00486B25): a bad size, a bad
+ * width, a bad font number, a bitmap that does not exist. What is pushed is the
+ * number of lines the text took (0x004451B0).
+ *
+ * 0x00434F10's answer is not looked at: a style it refuses leaves the handler's
+ * own stack as it was, and the draw then uses whatever that held. This passes the
+ * plain style instead.
+ */
+uint32_t Opcode_Grp2_DrawText(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Thread_PopStack(thread);
+	uint32_t weight = Thread_PopStack(thread);
+	uint32_t effectColour = Thread_PopStack(thread);
+	int32_t b = (int32_t)Thread_PopStack(thread);
+	int32_t a = (int32_t)Thread_PopStack(thread);
+	uint32_t kind = Thread_PopStack(thread);
+	int32_t lineSpacing = (int32_t)Thread_PopStack(thread);
+	uint32_t kinsoku = Thread_PopStack(thread);
+	uint32_t proportional = Thread_PopStack(thread);
+	uint32_t bold = Thread_PopStack(thread);
+	int32_t width = (int32_t)Thread_PopStack(thread);
+	int32_t size = (int32_t)Thread_PopStack(thread);
+	uint32_t fontNumber = Thread_PopStack(thread);
+	uint32_t rubyColour = Thread_PopStack(thread);
+	const char* dictionary = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t ruby = Thread_PopStack(thread);
+	uint32_t colour = Thread_PopStack(thread);
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	int32_t bitmap = (int32_t)Thread_PopStack(thread);
+	if(bitmap < 0 || bitmap >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: an invalid bitmap number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], bitmap);
+		return 0xFFFFFFFC;
+	}
+	if(Engine_FontNameById(fontNumber) == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid font number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], fontNumber);
+		return 0xFFFFFFFC;
+	}
+	TextStyle_t style;
+	memset(&style, 0, sizeof(style));
+	Text_MakeStyle(&style, kind, a, b, effectColour, weight);
+	// The draw's answer lands where x was, so a failure that is not one of the four
+	// pushes x back (0x00486B96).
+	uint32_t lines = (uint32_t)x;
+	uint32_t result = Text_DrawIntoBitmap(thread->engine->renderer, bitmap, &lines, x, y, text, ruby,
+	                                      dictionary, fontNumber, size, width, bold, proportional,
+	                                      kinsoku, lineSpacing, colour, rubyColour, &style);
+	if(Opcode_ReportTextFailure(thread, result, size, width, fontNumber, bitmap))
+		return 0xFFFFFFFC;
+	Thread_PushStack(thread, lines);
+	return 0;
 }
 
 /*
