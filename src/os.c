@@ -78,6 +78,12 @@ uint32_t OS_GetTicks()
 	return SDL_GetTicks();
 }
 
+// 0x00493C70's wait when no frame was due.
+void OS_Sleep(uint32_t milliseconds)
+{
+	SDL_Delay(milliseconds);
+}
+
 int OS_Init(Engine_t* engine)
 {
 	osEngine = engine;

@@ -504,65 +504,128 @@ static int Engine_HasRunnableThread(Engine_t* engine)
 	return 0;
 }
 
+// The live thread with the smallest id above `after` (0 for the first), which is the
+// original's list order (0x00444C30: threads are appended as they are made).
+static Thread_t* Engine_NextLiveThread(Engine_t* engine, uint32_t after)
+{
+	Thread_t* best = NULL;
+	for(Thread_t* t = engine->threads; t != NULL; t = t->previousThread)
+	{
+		if(t->flags & THREAD_FLAG_TERMINATED)
+			continue;
+		if(t->threadId > after && (best == NULL || t->threadId < best->threadId))
+			best = t;
+	}
+	return best;
+}
+
+// 0x0048CFE5: one thread's instructions, one after another, until an instruction
+// answers something other than 0 or 0x100000 of them have run. Answers that result
+// (0 for the cap).
+static uint32_t Engine_RunInstructions(Engine_t* engine, Thread_t* thread)
+{
+	thread->running = 1;
+	for(uint32_t count = 0; count < 0x100000; count++)
+	{
+		// Delayed pushes from asynchronous work.
+		while(thread->queuePush)
+		{
+			thread->queuePush--;
+			Thread_PushStack(thread, thread->queuePushQueue[thread->queuePush]);
+		}
+		uint32_t watchAddress = Thread_GetInstructionPointer(thread);
+		uint32_t res = Thread_Execute(thread);
+		Engine_CheckWatches(engine, thread, watchAddress);
+		totalTicks++;
+		if(res != 0)
+			return res;
+		if(!engine->isRunning)
+			return 0;
+		if(gTickLimit != 0 && totalTicks >= gTickLimit)
+			return 0;
+	}
+	return 0;
+}
+
 void Engine_Execute(Engine_t* engine)
 {
 	engine->isRunning = 1;
 
-	Thread_t* thread = engine->threads;
-	Thread_t* nextThread;
-	int lastSleep = 0;
-	// 0x0048CD5F runs one interpreter step and then the whole of a frame's work,
-	// of which composing the screen (0x00461D20) is one call. It is the deadline in
-	// 0x00566744, not the step count, that decides when that happens, so the frame
-	// is timed here too rather than drawn on every tick.
+	// 0x0048CD5F: every pass of the main loop runs each thread in turn (0x0048CF00)
+	// and then does a frame's work - composing the screen when its deadline has come
+	// (0x00461D20), the window messages, the joysticks (0x00460C00) - and, when no
+	// frame was due, waits a millisecond (0x00493C70).
 	uint32_t nextFrame = 0;
 	while(engine->isRunning)
 	{
-		OS_Poll();
-
-		uint32_t frameNow = OS_GetTicks();
-		if(frameNow >= nextFrame)
+		// 0x0048CF00, one pass over the thread list.
+		Thread_t* thread = Engine_NextLiveThread(engine, 0);
+		while(thread != NULL && engine->isRunning)
 		{
-			Renderer_DrawScreen(engine->renderer);
-			nextFrame = frameNow + OS_FrameInterval();
-		}
-
-		if(GoldenLogTotal)
-		{
-			if(lastSleep == 0)
-				lastSleep = GoldenLog[GoldenLogIndex].time;
-			else
+			// 0x0048CFB2: a thread waiting on a process runs the process instead, and
+			// goes on to its instructions in the same pass once the process is done.
+			if(thread->flags & THREAD_FLAG_WAITING)
 			{
-				int delta = GoldenLog[GoldenLogIndex].time - lastSleep;
-				if(delta > 20000)
+				if(Thread_RunProcess(thread) == 0)
 				{
-					lastSleep = GoldenLog[GoldenLogIndex].time;
-					Engine_Sleep(delta);
+					thread = Engine_NextLiveThread(engine, thread->threadId);
+					continue;
 				}
 			}
+			uint32_t res = Engine_RunInstructions(engine, thread);
+			if(res == 0xFFFFFFFF)
+			{
+				printf("[Engine]: Stub opcode encountered in %s. Stopping.\n", Thread_Where(thread, Thread_GetInstructionPointer(thread)));
+				engine->isRunning = 0;
+				break;
+			}
+			if(res == 0xFFFFFFFE || res == 0xFFFFFFFD || res == 0xFFFFFFFC)
+			{
+				printf("[Engine]: %s in %s. Stopping.\n",
+				       res == 0xFFFFFFFD ? "Unknown opcode" : res == 0xFFFFFFFE ? "Golden log mismatch" : "Error",
+				       Thread_Where(thread, Thread_GetInstructionPointer(thread)));
+				engine->isRunning = 0;
+				break;
+			}
+			if(gTickLimit != 0 && totalTicks >= gTickLimit)
+			{
+				printf("[Engine]: The %d tick limit was reached.\n", gTickLimit);
+				engine->isRunning = 0;
+				break;
+			}
+			switch(res)
+			{
+				case 2:
+					// 0x0048D042: the same thread again, which now runs its process.
+					continue;
+				case 3:
+				{
+					// 0x0048D04A: on to the thread 0x00566894 names.
+					Thread_t* requested = engine->nextThreadRequest ? Engine_GetLiveThreadById(engine, engine->nextThreadRequest) : NULL;
+					engine->nextThreadRequest = 0;
+					thread = requested != NULL ? requested : Engine_NextLiveThread(engine, thread->threadId);
+					continue;
+				}
+				case 4:
+					// 0x0048D06C: the outermost frame returned; bit 31 of the flags
+					// marks the thread ended and the list steps over it from now on.
+					thread->flags |= THREAD_FLAG_TERMINATED;
+					thread->running = 0;
+					printf("[Engine]: Thread %d has ended.\n", thread->threadId);
+					break;
+				case 0:
+				case 1:
+					break;
+				default:
+					printf("[Engine]: Non-zero result from opcode (%u / 0x%.8X) in %s. Stopping.\n", res, res,
+					       Thread_Where(thread, Thread_GetInstructionPointer(thread)));
+					engine->isRunning = 0;
+					break;
+			}
+			thread = Engine_NextLiveThread(engine, thread->threadId);
 		}
-
-		// 0x0048CFB2: a thread waiting on a process runs the process instead of
-		// an instruction, and only runs again once the process is finished.
-		int waiting = 0;
-		if(thread->flags & THREAD_FLAG_WAITING)
-			waiting = (Thread_RunProcess(thread) == 0);
-		if(!waiting)
-		{
-			if(thread->waitTicks == 0)
-				Engine_ExecuteThread(engine, thread->threadId, 1);
-			else
-				thread->waitTicks--;
-		}
-		if(engine->nextThreadRequest)
-		{
-			nextThread = Engine_GetThreadById(engine, engine->nextThreadRequest);
-			engine->nextThreadRequest = 0;
-		}
-		else
-			nextThread = Engine_GetThreadById(engine, thread->threadId + 1);
-		if(nextThread == NULL)
-			nextThread = Engine_GetThreadById(engine, 2);
+		if(!engine->isRunning)
+			break;
 
 		if(!Engine_HasRunnableThread(engine))
 		{
@@ -570,20 +633,16 @@ void Engine_Execute(Engine_t* engine)
 			engine->isRunning = 0;
 			break;
 		}
-		if(gTickLimit != 0 && totalTicks >= gTickLimit)
+
+		OS_Poll();
+		uint32_t frameNow = OS_GetTicks();
+		if(frameNow >= nextFrame)
 		{
-			printf("[Engine]: The %d tick limit was reached.\n", gTickLimit);
-			engine->isRunning = 0;
-			break;
+			Renderer_DrawScreen(engine->renderer);
+			nextFrame = frameNow + OS_FrameInterval();
 		}
-		while(nextThread == NULL || (nextThread->flags & THREAD_FLAG_TERMINATED))
-		{
-			uint32_t after = (nextThread == NULL) ? 1 : nextThread->threadId;
-			nextThread = Engine_GetThreadById(engine, after + 1);
-			if(nextThread == NULL)
-				nextThread = Engine_GetThreadById(engine, 2);
-		}
-		thread = nextThread;
+		else
+			OS_Sleep(gIdleWaitTime != 0 ? gIdleWaitTime : 1);
 	}
 	printf("[Engine]: Engine stopped. Executed %d ticks...\n", totalTicks);
 
@@ -598,105 +657,6 @@ void Engine_Execute(Engine_t* engine)
 		       Thread_Where(t, Thread_GetInstructionPointer(t)),
 		       (t->flags & THREAD_FLAG_WAITING) ? " (waiting on a process)" : "");
 	}
-}
-
-void Engine_ExecuteThread(Engine_t* engine, uint32_t threadId, int ticks)
-{
-	Thread_t* thread = Engine_GetThreadById(engine, threadId);
-	int runSteps = ticks; //81944;
-	int steps = runSteps;
-	thread->running = 1;
-
-
-	//printf("[Engine]: Running %d instructions...\n", steps);
-	while(steps && thread->running)
-	{
-		// Delayed push from async execution
-		while(thread->queuePush)
-		{
-			thread->queuePush--;
-			Thread_PushStack(thread, thread->queuePushQueue[thread->queuePush]);
-		}
-
-		uint32_t watchAddress = Thread_GetInstructionPointer(thread);
-		uint32_t res = Thread_Execute(thread);
-		Engine_CheckWatches(engine, thread, watchAddress);
-		if(res == 0xFFFFFFFF)
-		{
-			printf("[Engine]: Stub opcode encountered in %s. Stopping.\n", Thread_Where(thread, Thread_GetInstructionPointer(thread)));
-			engine->isRunning = 0;
-			break;
-		}
-		if(res == 0xFFFFFFFE)
-		{
-			printf("[Engine]: Golden log mismatch encountered. Stopping.\n");
-			engine->isRunning = 0;
-			break;
-		}
-		if(res == 0xFFFFFFFD)
-		{
-			printf("[Engine]: Unknown opcode encountered. Stopping.\n");
-			engine->isRunning = 0;
-			break;
-		}
-		if(res == 0xFFFFFFFC)
-		{
-			printf("[Engine]: Error encountered. Stopping.\n");
-			engine->isRunning = 0;
-			break;
-		}
-		// Result 4 is the outermost frame returning: the thread is over. The
-		// original handles it at 0x0048D06C by setting bit 31 of the thread's flags
-		// word at +0x70 and, unlike a yield, staying where it is instead of stepping
-		// on; the scheduler sees the mark on its next visit and unlinks the thread.
-		if(res == 4)
-		{
-			thread->flags |= THREAD_FLAG_TERMINATED;
-			thread->running = 0;
-			printf("[Engine]: Thread %d has ended.\n", thread->threadId);
-			break;
-		}
-		if(res != 0 && res != 1 && res != 2 && res != 3)
-		{
-			printf("[Engine]: Non-zero result from opcode (%u / 0x%.8X). Stopping.\n", res, res);
-			engine->isRunning = 0;
-			break;
-		}
-		if(res == 2)
-		{
-			// Simulate async if we have golden log
-			if(GoldenLogTotal)
-			{
-				int idx = GoldenLogIndex;
-				int repeatThread = GoldenLog[GoldenLogIndex].thread;
-				int ticks = 0;
-				idx++;
-				while(idx < GoldenLogTotal)
-				{
-					if(GoldenLog[idx].type != LOG_TYPE_EXEC)
-					{
-						idx++;
-						continue;
-					}
-					int cThread = GoldenLog[idx].thread;
-					if(cThread == repeatThread)
-						ticks++;
-					if(cThread == threadId)
-						break;
-					idx++;
-				}
-				thread->waitTicks = ticks - 1;
-				printf("[Engine]: Sleeping thread for %d ticks.\n", ticks);
-			}
-		}
-		if(res == 1 || res == 3)
-		{
-			break;
-		}
-		steps--;
-		totalTicks++;
-	}
-	//printf("[Engine]: Ran %d instructions; Yielding at tick %d...\n", runSteps - steps, thread->ticks);
 }
 
 uint32_t gUnknownVal001 = 0;

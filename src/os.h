@@ -6,6 +6,7 @@
 typedef struct Engine Engine_t;
 
 int OS_Init(Engine_t* engine);
+void OS_Sleep(uint32_t milliseconds);
 int OS_Poll();
 int OS_Quit();
 

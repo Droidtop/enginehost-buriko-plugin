@@ -68,7 +68,6 @@ extern int gTickLimit;
 int  Engine_AddWatch(uint32_t address, uint32_t width);
 void Engine_CheckWatches(Engine_t* engine, Thread_t* thread, uint32_t address);
 void Engine_Execute(Engine_t* engine);
-void Engine_ExecuteThread(Engine_t* engine, uint32_t threadId, int ticks);
 Thread_t* Engine_GetThreadById(Engine_t* engine, uint32_t threadId);
 // The same, but blind to threads that have ended: what 0x00444C70 answers.
 Thread_t* Engine_GetLiveThreadById(Engine_t* engine, uint32_t threadId);
