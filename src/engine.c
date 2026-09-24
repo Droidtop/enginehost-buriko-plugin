@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include <time.h>
 #include "engine.h"
+#include "gdb.h"
 #include "nametable.h"
 #include "icon.h"
 #include "object.h"
@@ -2301,6 +2302,7 @@ void Engine_Free(Engine_t* engine)
 	}
 
 	Renderer_Free(engine->renderer);
+	GDB_FreeAll();
 
 	Engine_FreeUserInstructions();
 	Icon_FreeAll();

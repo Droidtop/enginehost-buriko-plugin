@@ -37,4 +37,5 @@ uint32_t Opcode_Ext0_Unknown_240(Thread_t* thread);
 extern OpcodePtr_t OpcodesExt0[256];
 extern char* OpcodesExt0Mnemonics[256];
 
+uint32_t Opcode_Ext0_MoveWindow(Thread_t* thread);
 #endif

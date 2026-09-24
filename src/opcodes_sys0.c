@@ -16,6 +16,9 @@
 #include "object.h"
 #include "os.h"
 #include "thread.h"
+#include "gdb.h"
+
+static uint32_t Sys0_FlagResult(uint32_t r);
 
 char* OpcodesSys0Mnemonics[256] = {
 	/* 0x00   0 */ "Srand",
@@ -147,17 +150,17 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x7E 126 */ "--Unknown--",
 	/* 0x7F 127 */ "--Unknown--",
 	/* 0x80 128 */ "LoadGlobalDatabase",
-	/* 0x81 129 */ "Unknown_129",
-	/* 0x82 130 */ "Unknown_130",
-	/* 0x83 131 */ "Unknown_131",
-	/* 0x84 132 */ "Unknown_132",
-	/* 0x85 133 */ "Unknown_133",
+	/* 0x81 129 */ "SaveGlobalDatabase",
+	/* 0x82 130 */ "WritePersistent",
+	/* 0x83 131 */ "ReadPersistent",
+	/* 0x84 132 */ "AddGlobalString",
+	/* 0x85 133 */ "HasGlobalString",
 	/* 0x86 134 */ "--Unknown--",
 	/* 0x87 135 */ "--Unknown--",
-	/* 0x88 136 */ "Unknown_136",
-	/* 0x89 137 */ "Unknown_137",
-	/* 0x8A 138 */ "Unknown_138",
-	/* 0x8B 139 */ "Unknown_139",
+	/* 0x88 136 */ "DefineFlags",
+	/* 0x89 137 */ "SetFlag",
+	/* 0x8A 138 */ "SetFlagRange",
+	/* 0x8B 139 */ "GetFlag",
 	/* 0x8C 140 */ "--Unknown--",
 	/* 0x8D 141 */ "--Unknown--",
 	/* 0x8E 142 */ "--Unknown--",
@@ -234,13 +237,13 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0xD5 213 */ "--Unknown--",
 	/* 0xD6 214 */ "--Unknown--",
 	/* 0xD7 215 */ "--Unknown--",
-	/* 0xD8 216 */ "Unknown_216",
-	/* 0xD9 217 */ "Unknown_217",
-	/* 0xDA 218 */ "--Unknown--",
-	/* 0xDB 219 */ "--Unknown--",
-	/* 0xDC 220 */ "Unknown_220",
-	/* 0xDD 221 */ "Unknown_221",
-	/* 0xDE 222 */ "--Unknown--",
+	/* 0xD8 216 */ "ClearStringTables",
+	/* 0xD9 217 */ "StringTableCount",
+	/* 0xDA 218 */ "LoadStringTable",
+	/* 0xDB 219 */ "SerializeStringTable",
+	/* 0xDC 220 */ "AddString",
+	/* 0xDD 221 */ "ReadString",
+	/* 0xDE 222 */ "StringLength",
 	/* 0xDF 223 */ "--Unknown--",
 	/* 0xE0 224 */ "Unknown_224",
 	/* 0xE1 225 */ "Unknown_225",
@@ -406,17 +409,17 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x7E 126 */ NULL,
 	/* 0x7F 127 */ NULL,
 	/* 0x80 128 */ Opcode_Sys0_LoadGlobalDatabase,
-	/* 0x81 129 */ Opcode_Sys0_Unknown_129,
-	/* 0x82 130 */ Opcode_Sys0_Unknown_130,
-	/* 0x83 131 */ Opcode_Sys0_Unknown_131,
-	/* 0x84 132 */ Opcode_Sys0_Unknown_132,
-	/* 0x85 133 */ Opcode_Sys0_Unknown_133,
+	/* 0x81 129 */ Opcode_Sys0_SaveGlobalDatabase,
+	/* 0x82 130 */ Opcode_Sys0_WritePersistent,
+	/* 0x83 131 */ Opcode_Sys0_ReadPersistent,
+	/* 0x84 132 */ Opcode_Sys0_AddGlobalString,
+	/* 0x85 133 */ Opcode_Sys0_HasGlobalString,
 	/* 0x86 134 */ NULL,
 	/* 0x87 135 */ NULL,
-	/* 0x88 136 */ Opcode_Sys0_Unknown_136,
-	/* 0x89 137 */ Opcode_Sys0_Unknown_137,
-	/* 0x8A 138 */ Opcode_Sys0_Unknown_138,
-	/* 0x8B 139 */ Opcode_Sys0_Unknown_139,
+	/* 0x88 136 */ Opcode_Sys0_DefineFlags,
+	/* 0x89 137 */ Opcode_Sys0_SetFlag,
+	/* 0x8A 138 */ Opcode_Sys0_SetFlagRange,
+	/* 0x8B 139 */ Opcode_Sys0_GetFlag,
 	/* 0x8C 140 */ NULL,
 	/* 0x8D 141 */ NULL,
 	/* 0x8E 142 */ NULL,
@@ -493,13 +496,13 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0xD5 213 */ NULL,
 	/* 0xD6 214 */ NULL,
 	/* 0xD7 215 */ NULL,
-	/* 0xD8 216 */ Opcode_Sys0_Unknown_216,
-	/* 0xD9 217 */ Opcode_Sys0_Unknown_217,
-	/* 0xDA 218 */ NULL,
-	/* 0xDB 219 */ NULL,
-	/* 0xDC 220 */ Opcode_Sys0_Unknown_220,
-	/* 0xDD 221 */ Opcode_Sys0_Unknown_221,
-	/* 0xDE 222 */ NULL,
+	/* 0xD8 216 */ Opcode_Sys0_ClearStringTables,
+	/* 0xD9 217 */ Opcode_Sys0_StringTableCount,
+	/* 0xDA 218 */ Opcode_Sys0_LoadStringTable,
+	/* 0xDB 219 */ Opcode_Sys0_SerializeStringTable,
+	/* 0xDC 220 */ Opcode_Sys0_AddString,
+	/* 0xDD 221 */ Opcode_Sys0_ReadString,
+	/* 0xDE 222 */ Opcode_Sys0_StringLength,
 	/* 0xDF 223 */ NULL,
 	/* 0xE0 224 */ Opcode_Sys0_Unknown_224,
 	/* 0xE1 225 */ Opcode_Sys0_Unknown_225,
@@ -1620,71 +1623,123 @@ uint32_t Opcode_Sys0_Unknown_123(Thread_t* thread)
 
 uint32_t Opcode_Sys0_LoadGlobalDatabase(Thread_t* thread)
 {
-	// It normally loads the database, but pushes 1 if it's not found, or 2 if it's corrupt
-	// We'll pretend it doesn't exist
-	Thread_PushStack(thread, 0);
-	printf("[Thread %d]: %sWarning: dummy opcode: Pretending global database file doesn't exist\n", thread->threadId, TLevel[thread->level]);
+	// 0x00489920 -> 0x0046B800: read BGI.gdb, then push the window's left and
+	// top it keeps and the status: 0 read, 1 no file (0x80000001), 2 not a
+	// database this engine reads (0x80000002). The position is pushed as it was
+	// saved; the original first checks it against the monitors (0x0046FAB0) and
+	// centres the window otherwise (0x00461760), which a display that is the
+	// whole screen has no use for.
+	int32_t left = 0, top = 0;
+	uint32_t status = GDB_Load(thread->engine->globalMem, thread->engine->globalBufferSize, &left, &top);
+	uint32_t pushed = status == 0 ? 0 : status == 0x80000001u ? 1 : status == 0x80000002u ? 2 : status;
+	Thread_PushStack(thread, (uint32_t)left);
+	Thread_PushStack(thread, (uint32_t)top);
+	Thread_PushStack(thread, pushed);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_129(Thread_t* thread)
+uint32_t Opcode_Sys0_SaveGlobalDatabase(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x00489990 -> 0x0046B640: write BGI.gdb and push 1 when it was written.
+	Thread_PushStack(thread, GDB_Save(thread->engine->globalMem, thread->engine->globalBufferSize));
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_130(Thread_t* thread)
+uint32_t Opcode_Sys0_WritePersistent(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x004899B0: the size, the source, then the offset into the persistent
+	// block. An offset past the block, an empty copy or one that runs off its
+	// end are fatal in the original (0x004EBB6C / 0x004EBB98).
+	uint32_t size = Thread_PopStack(thread);
+	uint8_t* source = Thread_PopAndResolveAddress(thread);
+	uint32_t offset = Thread_PopStack(thread);
+	if(offset >= PERSISTENT_SIZE || size == 0 || size > PERSISTENT_SIZE || offset + size > PERSISTENT_SIZE || source == NULL)
+	{
+		printf("[Thread %d]: %sError: persistent block write of 0x%X bytes at 0x%X is out of its 1 MB\n", thread->threadId, TLevel[thread->level], size, offset);
+		return 0xFFFFFFFC;
+	}
+	memcpy(Persistent_Block() + offset, source, size);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_131(Thread_t* thread)
+uint32_t Opcode_Sys0_ReadPersistent(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x00489A70: the size, the offset into the persistent block, then where to
+	// copy it; the same bounds as Sys0 0x82.
+	uint32_t size = Thread_PopStack(thread);
+	uint32_t offset = Thread_PopStack(thread);
+	uint8_t* destination = Thread_PopAndResolveAddress(thread);
+	if(offset >= PERSISTENT_SIZE || size == 0 || size > PERSISTENT_SIZE || offset + size > PERSISTENT_SIZE || destination == NULL)
+	{
+		printf("[Thread %d]: %sError: persistent block read of 0x%X bytes at 0x%X is out of its 1 MB\n", thread->threadId, TLevel[thread->level], size, offset);
+		return 0xFFFFFFFC;
+	}
+	memcpy(destination, Persistent_Block() + offset, size);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_132(Thread_t* thread)
+uint32_t Opcode_Sys0_AddGlobalString(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Sys0_Unknown_133(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Sys0_Unknown_136(Thread_t* thread)
-{
-	uint32_t data = Thread_PopStack(thread);
-	uint8_t* ptr2 = Thread_PopAndResolveAddress(thread);
-	//printf("[Thread %d]: %sDeleting file (\"%s\", \"%s\")\n", thread->threadId, TLevel[thread->level], ptr1, ptr2);
+	// 0x00489B30 -> 0x0046B5B0: add a string to table 0x80000000 and push 1.
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+	if(text)
+		StrTab_Add(STRTAB_GLOBAL_ID, text);
 	Thread_PushStack(thread, 1);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_137(Thread_t* thread)
+uint32_t Opcode_Sys0_HasGlobalString(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Sys0_Unknown_138(Thread_t* thread)
-{
-	uint32_t consecutiveFlag = Thread_PopStack(thread);
-	uint32_t unknown = Thread_PopStack(thread);
-	uint32_t flagNumber = Thread_PopStack(thread);
-	uint8_t* groupName = Thread_PopAndResolveAddress(thread);
-	printf("[Thread %d]: %sChecking flag %d from group %s\n", thread->threadId, TLevel[thread->level], flagNumber, groupName);
-	Thread_PushStack(thread, 0);
-	//*ptr2 = 0x80; // Where does this come from?
+	// 0x00489B60 -> 0x0046B5D0: 1 when table 0x80000000 holds the string.
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, text && StrTab_GlobalHas(text) == 0 ? 1 : 0);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_139(Thread_t* thread)
+uint32_t Opcode_Sys0_DefineFlags(Thread_t* thread)
 {
-	uint32_t flagNumber = Thread_PopStack(thread);
-	uint8_t* groupName = Thread_PopAndResolveAddress(thread);
-	uint8_t* ptr2 = Thread_PopAndResolveAddress(thread);
-	printf("[Thread %d]: %sChecking flag %d from group %s\n", thread->threadId, TLevel[thread->level], flagNumber, groupName);
-	Thread_PushStack(thread, 0);
+	// 0x00489B90 -> 0x0046B5E0: the bit count, then the name; defines the named
+	// bit array or resizes it keeping what fits, and pushes 1 when it could.
+	uint32_t bits = Thread_PopStack(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, name && Flags_Define(name, bits) == 0 ? 1 : 0);
+	return 0;
+}
+
+uint32_t Opcode_Sys0_SetFlag(Thread_t* thread)
+{
+	// 0x00489BC0 -> 0x0046B600 -> 0x00446DB0: the value, the bit, then the name.
+	uint32_t value = Thread_PopStack(thread);
+	uint32_t index = Thread_PopStack(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, Sys0_FlagResult(name ? Flags_Set(name, index, value) : 0x80000002u));
+	return 0;
+}
+
+uint32_t Opcode_Sys0_SetFlagRange(Thread_t* thread)
+{
+	// 0x00489C40 -> 0x0046B610 -> 0x00446E20: the count, the value, the first
+	// bit, then the name.
+	uint32_t count = Thread_PopStack(thread);
+	uint32_t value = Thread_PopStack(thread);
+	uint32_t start = Thread_PopStack(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, Sys0_FlagResult(name ? Flags_SetRange(name, start, count, value) : 0x80000002u));
+	return 0;
+}
+
+uint32_t Opcode_Sys0_GetFlag(Thread_t* thread)
+{
+	// 0x00489D00 -> 0x0046B630 -> 0x00446EC0: the bit, where to put it (a
+	// dword, 0 or 1), then the name.
+	uint32_t index = Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t value = 0;
+	uint32_t r = name ? Flags_Get(name, index, &value) : 0x80000002u;
+	if(r == 0 && out)
+		Thread_WriteIntToMemory(thread, out, BGI_SIZE_DWORD, value);
+	Thread_PushStack(thread, Sys0_FlagResult(r));
 	return 0;
 }
 
@@ -1932,24 +1987,40 @@ uint32_t Opcode_Sys0_ReadRecord(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_216(Thread_t* thread)
+uint32_t Opcode_Sys0_ClearStringTables(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A990 -> 0x00495630: every string table but 0x80000000.
+	StrTab_RemoveAll(1);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_217(Thread_t* thread)
+uint32_t Opcode_Sys0_StringTableCount(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048A9A0 -> 0x00495850: how many strings a table holds (0 for none).
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, StrTab_Count(id));
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_220(Thread_t* thread)
+uint32_t Opcode_Sys0_AddString(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048AA50 -> 0x00495870: the string, then the table id; pushes its index,
+	// the old one when the table already has it.
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, text ? StrTab_Add(id, text) : 0);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_221(Thread_t* thread)
+uint32_t Opcode_Sys0_ReadString(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0048AA80 -> 0x004959E0: the index, the table id, then where to copy the
+	// string. Pushes 0, 0x80000001 (no table) or 0x80000002 (no such index).
+	uint32_t index = Thread_PopStack(thread);
+	uint32_t id = Thread_PopStack(thread);
+	char* out = (char*)Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, StrTab_Read(id, (int32_t)index, out, NULL));
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_224(Thread_t* thread)
@@ -2083,5 +2154,53 @@ uint32_t Opcode_Sys0_SetUserDirectory(Thread_t* thread)
 {
 	const char* path = (const char*)Thread_PopAndResolveAddress(thread);
 	Thread_PushStack(thread, Engine_SetUserDirectory(path));
+	return 0;
+}
+
+static uint32_t Sys0_FlagResult(uint32_t r)
+{
+	switch(r)
+	{
+		case 0:           return 0;
+		case 0x80000002u: return 1;
+		case 0x80000003u: return 2;
+		case 0x80000004u: return 3;
+		default:          return r;
+	}
+}
+
+uint32_t Opcode_Sys0_LoadStringTable(Thread_t* thread)
+{
+	// 0x0048A9D0 -> 0x004956E0: the strings (NUL-terminated, one after another),
+	// their count, then the table id. Replaces the table; a count of 0 removes it.
+	const char* data = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t count = Thread_PopStack(thread);
+	uint32_t id = Thread_PopStack(thread);
+	Thread_PushStack(thread, StrTab_Load(id, count, data));
+	return 0;
+}
+
+uint32_t Opcode_Sys0_SerializeStringTable(Thread_t* thread)
+{
+	// 0x0048AA10 -> 0x004957D0: the table id, then where to copy its strings (or
+	// nothing, to ask the size). Pushes the byte count.
+	uint32_t id = Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, StrTab_Serialize(id, out));
+	return 0;
+}
+
+uint32_t Opcode_Sys0_StringLength(Thread_t* thread)
+{
+	// 0x0048AAC0 -> 0x004959E0: the index, the table id, then where to put the
+	// string's length (a dword). Pushes the same status as Sys0 0xDD.
+	uint32_t index = Thread_PopStack(thread);
+	uint32_t id = Thread_PopStack(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	uint32_t length = 0;
+	uint32_t r = StrTab_Read(id, (int32_t)index, NULL, &length);
+	if(r == 0 && out)
+		Thread_WriteIntToMemory(thread, out, BGI_SIZE_DWORD, length);
+	Thread_PushStack(thread, r);
 	return 0;
 }

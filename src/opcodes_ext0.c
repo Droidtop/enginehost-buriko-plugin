@@ -10,7 +10,7 @@ char* OpcodesExt0Mnemonics[256] = {
     /* 0x00   0 */ "Unknown_0",
     /* 0x01   1 */ "--Unknown--",
     /* 0x02   2 */ "--Unknown--",
-    /* 0x03   3 */ "--Unknown--",
+    /* 0x03   3 */ "MoveWindow",
     /* 0x04   4 */ "Unknown_4",
     /* 0x05   5 */ "SetCursorAutoHideTimeout",
     /* 0x06   6 */ "--Unknown--",
@@ -269,7 +269,7 @@ OpcodePtr_t OpcodesExt0[256] = {
     /* 0x00   0 */ Opcode_Ext0_Unknown_0,
     /* 0x01   1 */ NULL,
     /* 0x02   2 */ NULL,
-    /* 0x03   3 */ NULL,
+    /* 0x03   3 */ Opcode_Ext0_MoveWindow,
     /* 0x04   4 */ Opcode_Ext0_Unknown_4,
     /* 0x05   5 */ Opcode_Ext0_SetCursorAutoHideTimeout,
     /* 0x06   6 */ NULL,
@@ -681,4 +681,20 @@ uint32_t Opcode_Ext0_Unknown_143(Thread_t* thread)
 uint32_t Opcode_Ext0_Unknown_240(Thread_t* thread)
 {
 	return 0xFFFFFFFF;
+}
+
+uint32_t Opcode_Ext0_MoveWindow(Thread_t* thread)
+{
+	// 0x00478260: the top, then the left. When the display is not fullscreen
+	// (0x0045F7C0 reads 0x00565E94) and the point is on a monitor (0x0046FAB0),
+	// the window is moved there (SetWindowPos, 0x25) and 1 is pushed; otherwise
+	// nothing moves and 0 is pushed. The engine's window is the whole display, the
+	// fullscreen case, so there is never anything to move: 0, which is also what
+	// the original answered for Fureraba's saved position in the reference trace.
+	uint32_t top = Thread_PopStack(thread);
+	uint32_t left = Thread_PopStack(thread);
+	(void)top;
+	(void)left;
+	Thread_PushStack(thread, 0);
+	return 0;
 }
