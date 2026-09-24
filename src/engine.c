@@ -2423,3 +2423,51 @@ uint8_t* Engine_ReadLooseFile(const char* name, size_t* size)
 	printf("[Engine]: Read \"%s\" (%zu bytes)\n", path, *size);
 	return data;
 }
+
+/*
+ * Where a file the scripts write goes. Separators become '/', and every directory
+ * part that already exists under another case is taken with the case it has (Windows
+ * matches names without regard to case, the host's file system may not); the last
+ * part keeps the script's own spelling unless a file of that name exists already.
+ */
+void Engine_ResolveWritePath(const char* name, char* out, size_t outSize)
+{
+	char path[1024];
+	snprintf(path, sizeof(path), "%s", name);
+	for(char* c = path; *c != 0; c++)
+		if(*c == '\\')
+			*c = '/';
+	if(path[0] == '/')
+	{
+		snprintf(out, outSize, "%s", path);
+		return;
+	}
+	char built[2048] = ".";
+	char* part = path;
+	while(part != NULL && *part != 0)
+	{
+		char* slash = strchr(part, '/');
+		if(slash != NULL)
+			*slash = 0;
+		char chosen[1024];
+		snprintf(chosen, sizeof(chosen), "%s", part);
+		DIR* dir = opendir(built);
+		if(dir != NULL)
+		{
+			struct dirent* entry;
+			while((entry = readdir(dir)) != NULL)
+			{
+				if(strcasecmp(entry->d_name, part) == 0)
+				{
+					snprintf(chosen, sizeof(chosen), "%s", entry->d_name);
+					break;
+				}
+			}
+			closedir(dir);
+		}
+		size_t len = strlen(built);
+		snprintf(built + len, sizeof(built) - len, "/%s", chosen);
+		part = slash != NULL ? slash + 1 : NULL;
+	}
+	snprintf(out, outSize, "%s", built);
+}

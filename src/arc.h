@@ -28,6 +28,9 @@
  * NULL when the archive or the file is not there.
  */
 uint8_t* Arc_ReadFile(const char* archive, const char* filename, size_t* outSize);
+// 0x00465460 / 0x00464030: a "DSC FORMAT 1.00" file becomes its plain contents (the
+// buffer is taken over); anything else is handed back as it is.
+uint8_t* Arc_Inflate(uint8_t* data, size_t size, size_t* outSize);
 
 /* Arc_FileExists answers the same lookup without reading the file. */
 int Arc_FileExists(const char* archive, const char* filename);

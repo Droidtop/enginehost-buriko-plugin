@@ -72,8 +72,8 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x2E  46 */ "--Unknown--",
 	/* 0x2F  47 */ "Unknown_47",
 	/* 0x30  48 */ "ReadFile",
-	/* 0x31  49 */ "Unknown_49",
-	/* 0x32  50 */ "Unknown_50",
+	/* 0x31  49 */ "LoadFile",
+	/* 0x32  50 */ "SaveFile",
 	/* 0x33  51 */ "DeleteFile",
 	/* 0x34  52 */ "FindFile",
 	/* 0x35  53 */ "GetFileSize",
@@ -331,8 +331,8 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x2E  46 */ NULL,
 	/* 0x2F  47 */ Opcode_Sys0_Unknown_47,
 	/* 0x30  48 */ Opcode_Sys0_ReadFile,
-	/* 0x31  49 */ Opcode_Sys0_Unknown_49,
-	/* 0x32  50 */ Opcode_Sys0_Unknown_50,
+	/* 0x31  49 */ Opcode_Sys0_LoadFile,
+	/* 0x32  50 */ Opcode_Sys0_SaveFile,
 	/* 0x33  51 */ Opcode_Sys0_DeleteFile,
 	/* 0x34  52 */ Opcode_Sys0_FindFile,
 	/* 0x35  53 */ Opcode_Sys0_GetFileSize,
@@ -1081,26 +1081,103 @@ uint32_t Opcode_Sys0_ReadFile(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_49(Thread_t* thread)
+/*
+ * Sys0 0x31 (0x00488910 -> 0x00465DB0): read a file, or part of it, into script
+ * memory. Popped: a length and an offset (both 0 for the whole file), then the name,
+ * an archive name (0 for none) and the destination. The name is looked for loose
+ * first (0x00465A50: as given when it is absolute, else in the game's folder, then
+ * each registered search path); when that fails the archive is tried (0x00465840),
+ * or with no archive the per-user folder 0x00517C08. The contents are then prepared
+ * by 0x004654A0: a DSC file is unpacked (0x00464030); a CompressedBG or other image
+ * would be decoded to pixels (0x004A0EF0, 0x00402030 - refused here by name); and
+ * the range [offset, offset + length) copied to the destination. Pushed: 0 done,
+ * 1 not found, 2 the range runs past the end, 3 a length of 0 or past the size,
+ * 5 a read or decode failed, 6 larger than 64 MB.
+ */
+uint32_t Opcode_Sys0_LoadFile(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint8_t* filename = Thread_PopAndResolveAddress(thread);
-	uint8_t* ptr2 = Thread_PopAndResolveAddress(thread);
-	uint8_t* memoryBuffer = Thread_PopAndResolveAddress(thread);
-
-	//uint32_t res = FUN_00439940(memoryBuffer, ptr2, filename, value2, value1);
-
-	printf("[Thread %d]: %sFUN_00439940(\"%s\", \"%s\", \"%s\", 0x%.8X, 0x%.8X)\n", thread->threadId, TLevel[thread->level],
-		memoryBuffer, ptr2, filename, value2, value1);
-	Thread_PushStack(thread, 1);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t length = Thread_PopStack(thread);
+	uint32_t offset = Thread_PopStack(thread);
+	uint32_t nameAddress = Thread_PopStack(thread);
+	uint32_t archiveAddress = Thread_PopStack(thread);
+	uint8_t* destination = Thread_PopAndResolveAddress(thread);
+	const char* name = nameAddress ? (const char*)Thread_ResolveAddr(thread, nameAddress) : NULL;
+	const char* archive = archiveAddress ? (const char*)Thread_ResolveAddr(thread, archiveAddress) : NULL;
+	uint32_t result = 1;
+	size_t size = 0;
+	uint8_t* data = name != NULL ? Engine_ReadLooseFile(name, &size) : NULL;
+	if(data == NULL && name != NULL && archive != NULL)
+		data = Arc_ReadFile(archive, name, &size);
+	if(data != NULL)
+	{
+		if(size > 0x4000000)
+			result = 6;
+		else if(size >= 16 && memcmp(data, "CompressedBG___", 15) == 0)
+		{
+			printf("[Thread %d]: %sError: reading a CompressedBG image into memory (0x004A0EF0) is not written yet\n",
+			       thread->threadId, TLevel[thread->level]);
+			result = 5;
+		}
+		else
+		{
+			data = Arc_Inflate(data, size, &size);
+			if(data == NULL)
+				result = 5;
+			else
+			{
+				// 0x004655FC: both 0 means the whole file.
+				if(offset == 0 && length == 0)
+					length = (uint32_t)size;
+				if(length == 0 || length > size)
+					result = 3;
+				else if((uint64_t)offset + length > size)
+					result = 2;
+				else
+				{
+					if(destination != NULL)
+						memcpy(destination, data + offset, length);
+					result = 0;
+				}
+			}
+		}
+		free(data);
+	}
+	Thread_PushStack(thread, result);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_50(Thread_t* thread)
+/*
+ * Sys0 0x32 (0x00488970 -> 0x00465FB0): write script memory to a file. Popped: the
+ * size, the data and the name. The name is used as it is when absolute (0x00464B00:
+ * a leading '\' or a drive letter), else joined to the game's folder ("%s%s",
+ * 0x00464B70); the file is created or truncated (CREATE_ALWAYS) and written in one
+ * go. Pushes 1 when every byte was written, else 0. The engine runs inside the game's
+ * folder, so a relative name is written there, beside the game, as the original
+ * writes it.
+ */
+uint32_t Opcode_Sys0_SaveFile(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t size = Thread_PopStack(thread);
+	const uint8_t* data = Thread_PopAndResolveAddress(thread);
+	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t result = 0;
+	if(name != NULL && data != NULL)
+	{
+		char path[1024];
+		Engine_ResolveWritePath(name, path, sizeof(path));
+		FILE* f = fopen(path, "wb");
+		if(f != NULL)
+		{
+			size_t written = size ? fwrite(data, 1, size, f) : 0;
+			fclose(f);
+			result = written == size ? 1 : 0;
+			printf("[Thread %d]: %sWrote \"%s\" (%u bytes)\n", thread->threadId, TLevel[thread->level], path, size);
+		}
+		else
+			printf("[Thread %d]: %sCould not write \"%s\"\n", thread->threadId, TLevel[thread->level], path);
+	}
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_DeleteFile(Thread_t* thread)

@@ -173,7 +173,7 @@ static uint32_t ReadU32(const uint8_t* p)
 }
 
 /* A DSC-compressed file becomes its plain contents; anything else is returned as is. */
-static uint8_t* Inflate(uint8_t* data, size_t size, size_t* outSize)
+uint8_t* Arc_Inflate(uint8_t* data, size_t size, size_t* outSize)
 {
 	if(size < DSC_HEADER_SIZE || memcmp(data, DSC_MAGIC, DSC_MAGIC_LENGTH) != 0)
 	{
@@ -330,7 +330,7 @@ static int Arc_FindInArchive(const char* archive, const char* filename, uint8_t*
 			free(data);
 			break;
 		}
-		*outData = Inflate(data, size, outSize);
+		*outData = Arc_Inflate(data, size, outSize);
 		if(*outData != NULL)
 			printf("[Arc]: Read \"%s\" from \"%s\" (%zu bytes)\n", name, path, *outSize);
 		break;
