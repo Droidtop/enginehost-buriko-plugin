@@ -119,6 +119,15 @@ struct DisplayObject
 	// +0xBC, which the parameter 0x7FFF0000 writes (0x0041C290) and 0x0041C2A0 reads
 	// back. What consumes it is not read yet; scrdrv sets it on the screen object.
 	uint32_t  fieldBC;
+	// A window's +0x3BC, which Grp0 0x87 writes (0x0042B480) before redrawing the
+	// window; what reads it is not established yet.
+	uint32_t  field3BC;
+	// A window's text layout: the client area (+0x1A0: left, top, right, bottom),
+	// the direction (+0x370: 0 across, 1 down) and the text cursor (+0x368, +0x36C).
+	int32_t   clientRect[4];
+	uint32_t  textDirection;
+	int32_t   textCursorX;
+	int32_t   textCursorY;
 	// +0x138, the second bitmap a sprite can be given. The sprite constructor
 	// (0x00425790) leaves it 0, and nothing in this engine sets it; the arms of the
 	// sprite's draw that read it (0x00425BB8 and the masked path at 0x00425ADC) are

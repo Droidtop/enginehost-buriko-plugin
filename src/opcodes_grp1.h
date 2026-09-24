@@ -43,7 +43,7 @@ uint32_t Opcode_Grp1_SetWindowGapCoefficient(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_138(Thread_t* thread);
 uint32_t Opcode_Grp1_SetWindowSwingingStyle(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_140(Thread_t* thread);
-uint32_t Opcode_Grp1_Unknown_141(Thread_t* thread);
+uint32_t Opcode_Grp1_GetTextCursor(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_142(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_144(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_145(Thread_t* thread);
@@ -63,4 +63,5 @@ uint32_t Opcode_Grp1_SetObjectHidden(Thread_t* thread);
 extern OpcodePtr_t OpcodesGrp1[256];
 extern char* OpcodesGrp1Mnemonics[256];
 
+uint32_t Opcode_Grp1_SetRubyStyle(Thread_t* thread);
 #endif

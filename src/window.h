@@ -36,4 +36,10 @@ void Window_Redraw(Renderer_t* renderer, DisplayObject_t* window, const Rect_t* 
 // 0x0042CAE0: the same over the whole of the window.
 void Window_RedrawAll(Renderer_t* renderer, DisplayObject_t* window);
 
+// 0x0042B9E0: the client area, where text goes, and the text cursor reset to it.
+// 1 when it was inside the window and was taken.
+int  Window_SetClientArea(Renderer_t* renderer, DisplayObject_t* window, int32_t left, int32_t top, int32_t right, int32_t bottom);
+// 0x0042C690.
+void Window_ResetTextCursor(DisplayObject_t* window);
+
 #endif // __WINDOW_H__

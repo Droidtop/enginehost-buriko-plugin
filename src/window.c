@@ -134,3 +134,35 @@ void Window_RedrawAll(Renderer_t* renderer, DisplayObject_t* window)
 	Rect_t whole = { 0, 0, pixels.width - 1, pixels.height - 1 };
 	Window_Redraw(renderer, window, &whole);
 }
+
+int Window_SetClientArea(Renderer_t* renderer, DisplayObject_t* window, int32_t left, int32_t top, int32_t right, int32_t bottom)
+{
+	// 0x0042B9E0: all four inside the window (+0x18C wide, +0x190 high), else nothing.
+	Bitmap_t pixels;
+	if(window == NULL || !Renderer_WindowBitmap(renderer, window->handle, &pixels))
+		return 0;
+	if(left < 0 || left >= pixels.width || right < 0 || right >= pixels.width
+	   || top < 0 || top >= pixels.height || bottom < 0 || bottom >= pixels.height)
+		return 0;
+	window->clientRect[0] = left;
+	window->clientRect[1] = top;
+	window->clientRect[2] = right;
+	window->clientRect[3] = bottom;
+	Window_ResetTextCursor(window);
+	return 1;
+}
+
+void Window_ResetTextCursor(DisplayObject_t* window)
+{
+	// 0x0042C690: across, the top-left of the client area; down, its top-right.
+	if(window->textDirection == 0)
+	{
+		window->textCursorX = window->clientRect[0];
+		window->textCursorY = window->clientRect[1];
+	}
+	else if(window->textDirection == 1)
+	{
+		window->textCursorX = window->clientRect[2];
+		window->textCursorY = window->clientRect[1];
+	}
+}

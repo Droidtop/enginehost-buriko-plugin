@@ -154,7 +154,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x8A 138 */ "Unknown_138",
     /* 0x8B 139 */ "SetWindowSwingingStyle",
     /* 0x8C 140 */ "Unknown_140",
-    /* 0x8D 141 */ "Unknown_141",
+    /* 0x8D 141 */ "GetTextCursor",
     /* 0x8E 142 */ "Unknown_142",
     /* 0x8F 143 */ "--Unknown--",
     /* 0x90 144 */ "Unknown_144",
@@ -165,7 +165,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x95 149 */ "Unknown_149",
     /* 0x96 150 */ "LoadNameTable",
     /* 0x97 151 */ "--Unknown--",
-    /* 0x98 152 */ "SetPhoneticMargin",
+    /* 0x98 152 */ "SetRubyStyle",
     /* 0x99 153 */ "--Unknown--",
     /* 0x9A 154 */ "SetFunctionParameter",
     /* 0x9B 155 */ "--Unknown--",
@@ -413,7 +413,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x8A 138 */ Opcode_Grp1_Unknown_138,
     /* 0x8B 139 */ Opcode_Grp1_SetWindowSwingingStyle,
     /* 0x8C 140 */ Opcode_Grp1_Unknown_140,
-    /* 0x8D 141 */ Opcode_Grp1_Unknown_141,
+    /* 0x8D 141 */ Opcode_Grp1_GetTextCursor,
     /* 0x8E 142 */ Opcode_Grp1_Unknown_142,
     /* 0x8F 143 */ NULL,
     /* 0x90 144 */ Opcode_Grp1_Unknown_144,
@@ -424,7 +424,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x95 149 */ Opcode_Grp1_Unknown_149,
     /* 0x96 150 */ Opcode_Grp1_LoadNameTable,
     /* 0x97 151 */ NULL,
-    /* 0x98 152 */ Opcode_Grp1_SetPhoneticMargin,
+    /* 0x98 152 */ Opcode_Grp1_SetRubyStyle,
     /* 0x99 153 */ NULL,
     /* 0x9A 154 */ Opcode_Grp1_SetFunctionParameter,
     /* 0x9B 155 */ NULL,
@@ -900,16 +900,29 @@ uint32_t Opcode_Grp1_Unknown_140(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_141(Thread_t* thread)
+/*
+ * Grp1 0x8D (0x00484520 -> 0x00463290 -> 0x004410F0 -> 0x0042C800): pops a window and
+ * pushes 1 (it exists), then its text cursor, +0x368 (x) and +0x36C (y), which
+ * 0x0042C690 puts at the client area's top-left (or top-right for vertical text) when
+ * the client area is set (Grp0 0x88). A handle that is not a window is fatal
+ * (0x004E9AC8). Net, the stack grows by two. The reference trace of the original
+ * shows 1, 0x12A, 0x58 after the message window's client area was set to
+ * (0x12A, 0x58).
+ */
+uint32_t Opcode_Grp1_GetTextCursor(Thread_t* thread)
 {
-    uint32_t value1 = Thread_PopStack(thread);
-    uint32_t value2 = Thread_PopStack(thread);
-    uint32_t value3 = Thread_PopStack(thread);
-    uint32_t value4 = Thread_PopStack(thread);
-    uint32_t value5 = Thread_PopStack(thread);
-    uint32_t value6 = Thread_PopStack(thread);
-    printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-    return 0;
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	Thread_PushStack(thread, 1);
+	Thread_PushStack(thread, (uint32_t)window->textCursorX);
+	Thread_PushStack(thread, (uint32_t)window->textCursorY);
+	return 0;
 }
 
 uint32_t Opcode_Grp1_Unknown_142(Thread_t* thread)
@@ -1074,5 +1087,46 @@ uint32_t Opcode_Grp1_SetObjectHidden(Thread_t* thread)
 	}
 
 	Object_ApplyHidden(object, (int)hidden);
+	return 0;
+}
+
+/*
+ * Grp1 0x98 (0x00484980 -> 0x00463470 -> 0x00434420): the text engine's ruby (reading
+ * aid) settings and the four values beside them. Popped, in order: a value kept at
+ * 0x00565CF0, the ruby margin (0x00565BDC; below 0 is fatal, "invalid margin size for
+ * the reading", 0x004EB2EC), the ruby size rate in percent (0x00507640; outside 25 to
+ * 100 is fatal, "invalid size rate for the reading", 0x004EB2B4), a value kept at
+ * 0x00565BB0, one kept at 0x0050763C (0 becomes 1) and one at 0x00507638. What reads
+ * the four unnamed ones belongs to the text drawing, which is not read yet; they are
+ * kept by address until it is.
+ */
+uint32_t gText565CF0 = 0, gRubyMargin = 0, gRubyRate = 0, gText565BB0 = 0, gText50763C = 0, gText507638 = 0;
+
+uint32_t Opcode_Grp1_SetRubyStyle(Thread_t* thread)
+{
+	uint32_t a = Thread_PopStack(thread);
+	int32_t margin = (int32_t)Thread_PopStack(thread);
+	uint32_t rate = Thread_PopStack(thread);
+	uint32_t b = Thread_PopStack(thread);
+	uint32_t c = Thread_PopStack(thread);
+	uint32_t d = Thread_PopStack(thread);
+	if(rate - 0x19u > 0x4Bu)
+	{
+		printf("[Thread %d]: %sError: an invalid size rate for the reading [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)rate);
+		return 0xFFFFFFFC;
+	}
+	if(margin < 0)
+	{
+		printf("[Thread %d]: %sError: an invalid margin size for the reading [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], margin);
+		return 0xFFFFFFFC;
+	}
+	gText507638 = d;
+	gText50763C = c == 0 ? 1 : c;
+	gRubyRate = rate;
+	gText565CF0 = a;
+	gText565BB0 = b;
+	gRubyMargin = (uint32_t)margin;
 	return 0;
 }

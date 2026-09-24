@@ -1392,7 +1392,9 @@ uint32_t Opcode_Sys0_Unknown_76(Thread_t* thread)
 uint32_t Opcode_Sys0_SetProcessesWait(Thread_t* thread)
 {
 	gProcessesWait = Thread_PopStack(thread);
-	return 0;
+	// 0x004891C0: the handler answers 1, the thread gives up the rest of its turn
+	// (the reference trace shows r=1 at every call).
+	return 1;
 }
 
 uint32_t Opcode_Sys0_Unknown_84(Thread_t* thread)

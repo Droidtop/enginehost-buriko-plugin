@@ -7,6 +7,7 @@
 #include "opcodes_grp0.h"
 #include "icon.h"
 #include "object.h"
+#include "window.h"
 #include "movie.h"
 #include "screen.h"
 #include "thread.h"
@@ -148,8 +149,8 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x84 132 */ "Unknown_132",
 	/* 0x85 133 */ "Unknown_133",
 	/* 0x86 134 */ "DrawBitmapToWindow",
-	/* 0x87 135 */ "Unknown_135",
-	/* 0x88 136 */ "Unknown_136",
+	/* 0x87 135 */ "SetWindowValue3BC",
+	/* 0x88 136 */ "SetWindowClientArea",
 	/* 0x89 137 */ "Unknown_137",
 	/* 0x8A 138 */ "Unknown_138",
 	/* 0x8B 139 */ "Unknown_139",
@@ -407,8 +408,8 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x84 132 */ Opcode_Grp0_Unknown_132,
 	/* 0x85 133 */ Opcode_Grp0_Unknown_133,
 	/* 0x86 134 */ Opcode_Grp0_DrawBitmapToWindow,
-	/* 0x87 135 */ Opcode_Grp0_Unknown_135,
-	/* 0x88 136 */ Opcode_Grp0_Unknown_136,
+	/* 0x87 135 */ Opcode_Grp0_SetWindowValue3BC,
+	/* 0x88 136 */ Opcode_Grp0_SetWindowClientArea,
 	/* 0x89 137 */ Opcode_Grp0_Unknown_137,
 	/* 0x8A 138 */ Opcode_Grp0_Unknown_138,
 	/* 0x8B 139 */ Opcode_Grp0_Unknown_139,
@@ -1984,29 +1985,53 @@ uint32_t Opcode_Grp0_DrawBitmapToWindow(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_135(Thread_t* thread)
+/*
+ * Grp0 0x87 (0x0047DFD0 -> 0x00462C90 -> 0x00440980 -> 0x0042B480): pops a value and
+ * a window, stores the value at the window's +0x3BC and redraws the whole window
+ * (0x0042CAE0). A handle that is not a window is fatal (0x004E9AC8). It pops two
+ * values; the dummy it replaces popped seven.
+ */
+uint32_t Opcode_Grp0_SetWindowValue3BC(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint32_t value3 = Thread_PopStack(thread);
-	uint32_t value4 = Thread_PopStack(thread);
-	uint32_t value5 = Thread_PopStack(thread);
-	uint32_t value6 = Thread_PopStack(thread);
-	uint32_t value7 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t value = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	window->field3BC = value;
+	Window_RedrawAll(thread->engine->renderer, window);
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_136(Thread_t* thread)
+/*
+ * Grp0 0x88 (0x0047E010 -> 0x00462CA0 -> 0x004409B0 -> 0x0042BA50 -> 0x0042B9E0):
+ * the window's client area, where its text goes. Popped: height, width, top, left,
+ * the window. The rectangle (left, top, left + width - 1, top + height - 1) must lie
+ * inside the window on both axes, or nothing changes and the answer is 4; on success
+ * it goes to +0x1A0..+0x1AC and the text cursor is reset to it (0x0042C690). A handle
+ * that is not a window answers 0xFF. The handler turns 1 into "the client area is
+ * outside the child window" (0x004E8214) and -1 into an invalid window, both fatal;
+ * 4 and 0 are not errors.
+ */
+uint32_t Opcode_Grp0_SetWindowClientArea(Thread_t* thread)
 {
-	// Seems to set the drawable area for button elements etc.
-	// Maybe it's SetAvailableAreaOfWindow?
-	uint32_t height = Thread_PopStack(thread);
-	uint32_t width = Thread_PopStack(thread);
-	uint32_t x = Thread_PopStack(thread);
-	uint32_t y = Thread_PopStack(thread);
-	uint32_t screenId = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	int32_t height = (int32_t)Thread_PopStack(thread);
+	int32_t width = (int32_t)Thread_PopStack(thread);
+	int32_t top = (int32_t)Thread_PopStack(thread);
+	int32_t left = (int32_t)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	Window_SetClientArea(thread->engine->renderer, window, left, top, left + width - 1, top + height - 1);
 	return 0;
 }
 
