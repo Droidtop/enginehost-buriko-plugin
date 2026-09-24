@@ -104,3 +104,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
 --------------------------------------------------------------------------------
+
+minimp3 (vendor/minimp3.h)
+MPEG audio decoder, https://github.com/lieff/minimp3
+To the extent possible under law, the author(s) have dedicated all copyright and
+related and neighboring rights to this software to the public domain worldwide
+(CC0 1.0, http://creativecommons.org/publicdomain/zero/1.0/).
+
+--------------------------------------------------------------------------------
