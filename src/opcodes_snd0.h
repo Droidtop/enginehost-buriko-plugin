@@ -1,43 +1,54 @@
 #ifndef OPCODES_SND0_H_
 #define OPCODES_SND0_H_
 
+#include <stdint.h>
+
 // ----------------------------------------------------------------------------------
-// Sound channels
+// SE records
 //
-// The engine keeps sixty-four of them (0x00497AE0 refuses a number of 0x40 or more,
-// by name) as a flat table of 0x40-byte records at 0x0055EF18. The fields inside a
-// record belong to the opcodes that fill them in, and none of those are written yet,
-// so a record is kept here as the sixteen words it is rather than as a shape guessed
-// from one opcode. The audio itself - decoding and mixing - does not exist in this
-// engine at all; where an opcode would reach it, it says so by name.
+// The engine keeps a 0x40-byte record per SE number, sixty-four of them
+// (0x00497AE0 refuses a number of 0x40 or more, by name), as a flat table at
+// 0x0055EF18. 0x00494490 fills one when an SE is registered: it is the member's own
+// 0x40-byte bw header with +0x3C overwritten by 65536 / speed, and 0x00494570 reads
+// the length in milliseconds back out of it (frames at +0x0C, rate at +0x10). Snd0
+// 0x22 clears one. The sound itself lives in the sound library (audio.c).
 // ----------------------------------------------------------------------------------
 #define SND0_CHANNEL_COUNT      0x40
 #define SND0_CHANNEL_RECORD_WORDS 16
 
 extern uint32_t gSoundChannels[SND0_CHANNEL_COUNT][SND0_CHANNEL_RECORD_WORDS];
 
-#include <stdint.h>
-
 typedef struct Thread Thread_t;
 
-uint32_t Opcode_Snd0_Unknown_0(Thread_t* thread);
-uint32_t Opcode_Snd0_SetChannelVolume(Thread_t* thread);
-uint32_t Opcode_Snd0_SetEffectVolume(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_16(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_17(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_18(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_20(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_21(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_22(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_23(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_24(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_25(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_32(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_33(Thread_t* thread);
-uint32_t Opcode_Snd0_ResetChannel(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_36(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_37(Thread_t* thread);
-uint32_t Opcode_Snd0_Unknown_38(Thread_t* thread);
+// 0x004945F0 / 0x00494640: silence every channel's master volume while the window
+// is inactive and give the scripts' values back after (called by 0x0049905F).
+void Snd0_Suspend(void);
+void Snd0_Resume(void);
+
+uint32_t Opcode_Snd0_Constant(Thread_t* thread);
+uint32_t Opcode_Snd0_SetMusicMasterVolume(Thread_t* thread);
+uint32_t Opcode_Snd0_SetSEMasterVolume(Thread_t* thread);
+uint32_t Opcode_Snd0_LoadMusicFile(Thread_t* thread);
+uint32_t Opcode_Snd0_LoadMusic(Thread_t* thread);
+uint32_t Opcode_Snd0_LoadMusicLoop(Thread_t* thread);
+uint32_t Opcode_Snd0_PlayMusic(Thread_t* thread);
+uint32_t Opcode_Snd0_GetMusicStatus(Thread_t* thread);
+uint32_t Opcode_Snd0_FadeMusicVolume(Thread_t* thread);
+uint32_t Opcode_Snd0_SetMusicPan(Thread_t* thread);
+uint32_t Opcode_Snd0_FadeInMusic(Thread_t* thread);
+uint32_t Opcode_Snd0_FadeOutMusic(Thread_t* thread);
+uint32_t Opcode_Snd0_SetMusicVolume(Thread_t* thread);
+uint32_t Opcode_Snd0_RegisterSE(Thread_t* thread);
+uint32_t Opcode_Snd0_RegisterSEEx(Thread_t* thread);
+uint32_t Opcode_Snd0_ResetSE(Thread_t* thread);
+uint32_t Opcode_Snd0_RegisterSEDouble(Thread_t* thread);
+uint32_t Opcode_Snd0_PlaySE(Thread_t* thread);
+uint32_t Opcode_Snd0_StopSE(Thread_t* thread);
+uint32_t Opcode_Snd0_FadeOutSE(Thread_t* thread);
+uint32_t Opcode_Snd0_RegisterSESpeed(Thread_t* thread);
+uint32_t Opcode_Snd0_Unknown_40(Thread_t* thread);
+uint32_t Opcode_Snd0_SetSEVolume(Thread_t* thread);
+uint32_t Opcode_Snd0_GetSEDuration(Thread_t* thread);
 uint32_t Opcode_Snd0_Unknown_128(Thread_t* thread);
 uint32_t Opcode_Snd0_Unknown_129(Thread_t* thread);
 uint32_t Opcode_Snd0_Unknown_132(Thread_t* thread);

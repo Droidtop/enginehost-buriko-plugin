@@ -2,15 +2,20 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include "engine.h"
 #include "opcodes.h"
 #include "opcodes_snd0.h"
 #include "thread.h"
+#include "process.h"
+#include "audio.h"
 
 uint32_t gSoundChannels[SND0_CHANNEL_COUNT][SND0_CHANNEL_RECORD_WORDS] = {{0}};
 
 char* OpcodesSnd0Mnemonics[256] = {
-	/* 0x00   0 */ "Unknown_0",
+	/* 0x00   0 */ "Constant",
 	/* 0x01   1 */ "--Unknown--",
 	/* 0x02   2 */ "--Unknown--",
 	/* 0x03   3 */ "--Unknown--",
@@ -18,46 +23,46 @@ char* OpcodesSnd0Mnemonics[256] = {
 	/* 0x05   5 */ "--Unknown--",
 	/* 0x06   6 */ "--Unknown--",
 	/* 0x07   7 */ "--Unknown--",
-	/* 0x08   8 */ "SetChannelVolume",
-	/* 0x09   9 */ "SetEffectVolume",
+	/* 0x08   8 */ "SetMusicMasterVolume",
+	/* 0x09   9 */ "SetSEMasterVolume",
 	/* 0x0A  10 */ "--Unknown--",
 	/* 0x0B  11 */ "--Unknown--",
 	/* 0x0C  12 */ "--Unknown--",
 	/* 0x0D  13 */ "--Unknown--",
 	/* 0x0E  14 */ "--Unknown--",
 	/* 0x0F  15 */ "--Unknown--",
-	/* 0x10  16 */ "Unknown_16",
-	/* 0x11  17 */ "Unknown_17",
-	/* 0x12  18 */ "Unknown_18",
+	/* 0x10  16 */ "LoadMusicFile",
+	/* 0x11  17 */ "LoadMusic",
+	/* 0x12  18 */ "LoadMusicLoop",
 	/* 0x13  19 */ "--Unknown--",
-	/* 0x14  20 */ "Unknown_20",
-	/* 0x15  21 */ "Unknown_21",
-	/* 0x16  22 */ "Unknown_22",
-	/* 0x17  23 */ "Unknown_23",
-	/* 0x18  24 */ "Unknown_24",
-	/* 0x19  25 */ "Unknown_25",
+	/* 0x14  20 */ "PlayMusic",
+	/* 0x15  21 */ "GetMusicStatus",
+	/* 0x16  22 */ "FadeMusicVolume",
+	/* 0x17  23 */ "SetMusicPan",
+	/* 0x18  24 */ "FadeInMusic",
+	/* 0x19  25 */ "FadeOutMusic",
 	/* 0x1A  26 */ "--Unknown--",
 	/* 0x1B  27 */ "--Unknown--",
-	/* 0x1C  28 */ "--Unknown--",
+	/* 0x1C  28 */ "SetMusicVolume",
 	/* 0x1D  29 */ "--Unknown--",
 	/* 0x1E  30 */ "--Unknown--",
 	/* 0x1F  31 */ "--Unknown--",
-	/* 0x20  32 */ "Unknown_32",
-	/* 0x21  33 */ "Unknown_33",
-	/* 0x22  34 */ "ResetChannel",
-	/* 0x23  35 */ "--Unknown--",
-	/* 0x24  36 */ "Unknown_36",
-	/* 0x25  37 */ "Unknown_37",
-	/* 0x26  38 */ "Unknown_38",
-	/* 0x27  39 */ "--Unknown--",
-	/* 0x28  40 */ "--Unknown--",
+	/* 0x20  32 */ "RegisterSE",
+	/* 0x21  33 */ "RegisterSEEx",
+	/* 0x22  34 */ "ResetSE",
+	/* 0x23  35 */ "RegisterSEDouble",
+	/* 0x24  36 */ "PlaySE",
+	/* 0x25  37 */ "StopSE",
+	/* 0x26  38 */ "FadeOutSE",
+	/* 0x27  39 */ "RegisterSESpeed",
+	/* 0x28  40 */ "Unknown_40",
 	/* 0x29  41 */ "--Unknown--",
 	/* 0x2A  42 */ "--Unknown--",
 	/* 0x2B  43 */ "--Unknown--",
-	/* 0x2C  44 */ "--Unknown--",
+	/* 0x2C  44 */ "SetSEVolume",
 	/* 0x2D  45 */ "--Unknown--",
 	/* 0x2E  46 */ "--Unknown--",
-	/* 0x2F  47 */ "--Unknown--",
+	/* 0x2F  47 */ "GetSEDuration",
 	/* 0x30  48 */ "--Unknown--",
 	/* 0x31  49 */ "--Unknown--",
 	/* 0x32  50 */ "--Unknown--",
@@ -269,7 +274,7 @@ char* OpcodesSnd0Mnemonics[256] = {
 };
 
 OpcodePtr_t OpcodesSnd0[256] = {
-	/* 0x00   0 */ Opcode_Snd0_Unknown_0,
+	/* 0x00   0 */ Opcode_Snd0_Constant,
 	/* 0x01   1 */ NULL,
 	/* 0x02   2 */ NULL,
 	/* 0x03   3 */ NULL,
@@ -277,46 +282,46 @@ OpcodePtr_t OpcodesSnd0[256] = {
 	/* 0x05   5 */ NULL,
 	/* 0x06   6 */ NULL,
 	/* 0x07   7 */ NULL,
-	/* 0x08   8 */ Opcode_Snd0_SetChannelVolume,
-	/* 0x09   9 */ Opcode_Snd0_SetEffectVolume,
+	/* 0x08   8 */ Opcode_Snd0_SetMusicMasterVolume,
+	/* 0x09   9 */ Opcode_Snd0_SetSEMasterVolume,
 	/* 0x0A  10 */ NULL,
 	/* 0x0B  11 */ NULL,
 	/* 0x0C  12 */ NULL,
 	/* 0x0D  13 */ NULL,
 	/* 0x0E  14 */ NULL,
 	/* 0x0F  15 */ NULL,
-	/* 0x10  16 */ Opcode_Snd0_Unknown_16,
-	/* 0x11  17 */ Opcode_Snd0_Unknown_17,
-	/* 0x12  18 */ Opcode_Snd0_Unknown_18,
+	/* 0x10  16 */ Opcode_Snd0_LoadMusicFile,
+	/* 0x11  17 */ Opcode_Snd0_LoadMusic,
+	/* 0x12  18 */ Opcode_Snd0_LoadMusicLoop,
 	/* 0x13  19 */ NULL,
-	/* 0x14  20 */ Opcode_Snd0_Unknown_20,
-	/* 0x15  21 */ Opcode_Snd0_Unknown_21,
-	/* 0x16  22 */ Opcode_Snd0_Unknown_22,
-	/* 0x17  23 */ Opcode_Snd0_Unknown_23,
-	/* 0x18  24 */ Opcode_Snd0_Unknown_24,
-	/* 0x19  25 */ Opcode_Snd0_Unknown_25,
+	/* 0x14  20 */ Opcode_Snd0_PlayMusic,
+	/* 0x15  21 */ Opcode_Snd0_GetMusicStatus,
+	/* 0x16  22 */ Opcode_Snd0_FadeMusicVolume,
+	/* 0x17  23 */ Opcode_Snd0_SetMusicPan,
+	/* 0x18  24 */ Opcode_Snd0_FadeInMusic,
+	/* 0x19  25 */ Opcode_Snd0_FadeOutMusic,
 	/* 0x1A  26 */ NULL,
 	/* 0x1B  27 */ NULL,
-	/* 0x1C  28 */ NULL,
+	/* 0x1C  28 */ Opcode_Snd0_SetMusicVolume,
 	/* 0x1D  29 */ NULL,
 	/* 0x1E  30 */ NULL,
 	/* 0x1F  31 */ NULL,
-	/* 0x20  32 */ Opcode_Snd0_Unknown_32,
-	/* 0x21  33 */ Opcode_Snd0_Unknown_33,
-	/* 0x22  34 */ Opcode_Snd0_ResetChannel,
-	/* 0x23  35 */ NULL,
-	/* 0x24  36 */ Opcode_Snd0_Unknown_36,
-	/* 0x25  37 */ Opcode_Snd0_Unknown_37,
-	/* 0x26  38 */ Opcode_Snd0_Unknown_38,
-	/* 0x27  39 */ NULL,
-	/* 0x28  40 */ NULL,
+	/* 0x20  32 */ Opcode_Snd0_RegisterSE,
+	/* 0x21  33 */ Opcode_Snd0_RegisterSEEx,
+	/* 0x22  34 */ Opcode_Snd0_ResetSE,
+	/* 0x23  35 */ Opcode_Snd0_RegisterSEDouble,
+	/* 0x24  36 */ Opcode_Snd0_PlaySE,
+	/* 0x25  37 */ Opcode_Snd0_StopSE,
+	/* 0x26  38 */ Opcode_Snd0_FadeOutSE,
+	/* 0x27  39 */ Opcode_Snd0_RegisterSESpeed,
+	/* 0x28  40 */ Opcode_Snd0_Unknown_40,
 	/* 0x29  41 */ NULL,
 	/* 0x2A  42 */ NULL,
 	/* 0x2B  43 */ NULL,
-	/* 0x2C  44 */ NULL,
+	/* 0x2C  44 */ Opcode_Snd0_SetSEVolume,
 	/* 0x2D  45 */ NULL,
 	/* 0x2E  46 */ NULL,
-	/* 0x2F  47 */ NULL,
+	/* 0x2F  47 */ Opcode_Snd0_GetSEDuration,
 	/* 0x30  48 */ NULL,
 	/* 0x31  49 */ NULL,
 	/* 0x32  50 */ NULL,
@@ -527,176 +532,869 @@ OpcodePtr_t OpcodesSnd0[256] = {
 	/* 0xFF 255 */ NULL,
 };
 
-uint32_t Opcode_Snd0_Unknown_0(Thread_t* thread)
+/* ------------------------------------------------------------------------- */
+/* The engine's side of the sound library                                    */
+/* ------------------------------------------------------------------------- */
+
+/*
+ * The master volumes the scripts set are remembered here as well as handed to
+ * the library: 16 music words at 0x0055FF18 and 64 SE words at 0x0055EE18
+ * (0x00493CF0 / 0x00493D20). While the flag at 0x00566994 is set they are only
+ * remembered; 0x004945F0 sets it and turns every library master to 0, and
+ * 0x00494640 clears it and hands the remembered words back (0x00493D50). Both
+ * are called from 0x0049905F, the window's activation handling.
+ */
+static uint32_t gMusicMasterTable[AUDIO_MUSIC_CHANNELS];
+static uint32_t gSEMasterTable[AUDIO_SE_CHANNELS];
+static int      gSoundSuspended = 0;
+
+void Snd0_Suspend(void)
 {
-	return 0xFFFFFFFF;
+	/* 0x004945F0 */
+	if(gSoundSuspended)
+		return;
+	gSoundSuspended = 1;
+	Audio_Init();
+	for(uint32_t i = 0; i < AUDIO_MUSIC_CHANNELS; i++)
+		Audio_MusicSetMaster(i, 0);
+	for(uint32_t i = 0; i < AUDIO_SE_CHANNELS; i++)
+		Audio_SESetMaster(i, 0);
 }
 
-uint32_t Opcode_Snd0_SetChannelVolume(Thread_t* thread)
+void Snd0_Resume(void)
 {
-	uint32_t volume = Thread_PopStack(thread);
-	uint32_t channel = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-	return 0;
-}
-
-uint32_t Opcode_Snd0_SetEffectVolume(Thread_t* thread)
-{
-	uint32_t volume = Thread_PopStack(thread);
-	uint32_t effect = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-	return 0;
-}
-
-uint32_t Opcode_Snd0_Unknown_16(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Snd0_Unknown_17(Thread_t* thread)
-{
-	// Load music?
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint8_t* ptr1 = Thread_PopAndResolveAddress(thread);
-	uint8_t* ptr2 = Thread_PopAndResolveAddress(thread);
-	uint32_t value5 = Thread_PopStack(thread);
-	printf("[Thread %d]: %s(%s, %s)\n", thread->threadId, TLevel[thread->level], ptr1, ptr2);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-	return 0;
-}
-
-uint32_t Opcode_Snd0_Unknown_18(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Snd0_Unknown_20(Thread_t* thread)
-{
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-	return 0;
-}
-
-uint32_t Opcode_Snd0_Unknown_21(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Snd0_Unknown_22(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Snd0_Unknown_23(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Snd0_Unknown_24(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Snd0_Unknown_25(Thread_t* thread)
-{
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-	return 0;
-}
-
-uint32_t Opcode_Snd0_Unknown_32(Thread_t* thread)
-{
-	// Load sound? Prepare sound? Play sound? Seems to be effects?
-	uint8_t* ptr1 = Thread_PopAndResolveAddress(thread);
-	uint8_t* ptr2 = Thread_PopAndResolveAddress(thread);
-	uint32_t value1 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sLoad sound? [%s : %s] (%d)\n", thread->threadId, TLevel[thread->level], ptr1, ptr2, value1);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-	return 0;
-}
-
-uint32_t Opcode_Snd0_Unknown_33(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
+	/* 0x00494640 -> 0x00493D50 */
+	if(!gSoundSuspended)
+		return;
+	Audio_Init();
+	for(uint32_t i = 0; i < AUDIO_MUSIC_CHANNELS; i++)
+		Audio_MusicSetMaster(i, gMusicMasterTable[i]);
+	for(uint32_t i = 0; i < AUDIO_SE_CHANNELS; i++)
+		Audio_SESetMaster(i, gSEMasterTable[i]);
+	gSoundSuspended = 0;
 }
 
 /*
- * Snd0 0x22 (0x004878C0 -> 0x00494510) resets one sound channel: it pops the
- * channel number, refuses 0x40 or more (0x00497AE0, which reports it and does
- * not return), clears the channel's whole 0x40-byte record and then stops
- * whatever that channel was playing (0x004A28A0). Nothing is pushed back.
+ * The four range checks every handler makes before it does anything. Each
+ * formats its message and hands it to 0x00464870, which does not come back:
  *
- * The stop has nothing to stop here: this engine has no audio. The record is
- * cleared because it is the engine's own state and the opcodes that fill it in
- * will find it as the original leaves it.
+ *   0x00497AE0  SE number below 0x40     無効な効果音番号 [ %d ] が指定されました
+ *   0x00497B30  pan 0..0x80 (signed)     無効なパンポット（定位） [ %d ] が指定されました
+ *   0x00497B80  volume 0..0x80 (signed)  無効なボリューム（音量） [ %d ] が指定されました
+ *   0x00497BD0  music channel below 0x10 無効な音楽チャンネル番号 [ %d ] が指定されました
  */
-uint32_t Opcode_Snd0_ResetChannel(Thread_t* thread)
+static int Snd0_CheckSE(Thread_t* thread, uint32_t se)
 {
-	uint32_t channel = Thread_PopStack(thread);
-	if(channel >= SND0_CHANNEL_COUNT)
+	if(se < AUDIO_SE_CHANNELS)
+		return 1;
+	printf("[Thread %d]: %sError: an invalid sound effect number [ %d ] was specified\n",
+	       thread->threadId, TLevel[thread->level], (int32_t)se);
+	return 0;
+}
+
+static int Snd0_CheckPan(Thread_t* thread, uint32_t pan)
+{
+	if((int32_t)pan >= 0 && (int32_t)pan <= 0x80)
+		return 1;
+	printf("[Thread %d]: %sError: an invalid pan position [ %d ] was specified\n",
+	       thread->threadId, TLevel[thread->level], (int32_t)pan);
+	return 0;
+}
+
+static int Snd0_CheckVolume(Thread_t* thread, uint32_t volume)
+{
+	if((int32_t)volume >= 0 && (int32_t)volume <= 0x80)
+		return 1;
+	printf("[Thread %d]: %sError: an invalid volume [ %d ] was specified\n",
+	       thread->threadId, TLevel[thread->level], (int32_t)volume);
+	return 0;
+}
+
+static int Snd0_CheckMusic(Thread_t* thread, uint32_t ch)
+{
+	if(ch < AUDIO_MUSIC_CHANNELS)
+		return 1;
+	printf("[Thread %d]: %sError: an invalid music channel number [ %d ] was specified\n",
+	       thread->threadId, TLevel[thread->level], (int32_t)ch);
+	return 0;
+}
+
+/*
+ * A script string. 0x0048E0E0 answers NULL for the address 0 (0x0048DF7A),
+ * which is how the loaders are told there is no archive; any other address
+ * resolves as usual.
+ */
+static const char* Snd0_PopString(Thread_t* thread, int* ok)
+{
+	uint32_t address = Thread_PopStack(thread);
+	if(address == 0)
+		return NULL;
+	const char* s = (const char*)Thread_ResolveAddr(thread, address);
+	if(s == NULL)
+		*ok = 0;
+	return s;
+}
+
+/*
+ * A file the game directory holds loose, as the loaders try before any
+ * archive: the directory at 0x00517F18 and the name joined by 0x00464B70 ("%s%s",
+ * 0x004E5EA8) and opened as a file. Names use backslashes and Windows matches
+ * them without regard to case, so each part is looked up that way.
+ */
+static uint8_t* Snd0_ReadLoose(const char* name, size_t* size)
+{
+	char path[1024];
+	char part[256];
+	strcpy(path, ".");
+	const char* p = name;
+	while(*p != '\0')
 	{
-		printf("[Thread %d]: %sError: an invalid sound channel [ %u ] was specified\n",
-		       thread->threadId, TLevel[thread->level], channel);
+		size_t n = 0;
+		while(*p == '\\' || *p == '/')
+			p++;
+		while(*p != '\0' && *p != '\\' && *p != '/' && n + 1 < sizeof(part))
+			part[n++] = *p++;
+		part[n] = '\0';
+		if(n == 0)
+			break;
+		DIR* dir = opendir(path);
+		if(dir == NULL)
+			return NULL;
+		struct dirent* entry;
+		int found = 0;
+		while((entry = readdir(dir)) != NULL)
+		{
+			if(strcasecmp(entry->d_name, part) == 0)
+			{
+				size_t len = strlen(path);
+				if(len + 1 + strlen(entry->d_name) + 1 > sizeof(path))
+					break;
+				path[len] = '/';
+				strcpy(path + len + 1, entry->d_name);
+				found = 1;
+				break;
+			}
+		}
+		closedir(dir);
+		if(!found)
+			return NULL;
+	}
+	struct stat info;
+	if(stat(path, &info) != 0 || !S_ISREG(info.st_mode))
+		return NULL;
+	FILE* f = fopen(path, "rb");
+	if(f == NULL)
+		return NULL;
+	uint8_t* data = (uint8_t*)malloc(info.st_size > 0 ? (size_t)info.st_size : 1);
+	if(data == NULL || fread(data, 1, (size_t)info.st_size, f) != (size_t)info.st_size)
+	{
+		free(data);
+		fclose(f);
+		return NULL;
+	}
+	fclose(f);
+	*size = (size_t)info.st_size;
+	printf("[Snd0]: Read \"%s\" (%zu bytes)\n", path, *size);
+	return data;
+}
+
+/*
+ * The candidate directories 0x00493E40 and 0x00494100 try in turn while the
+ * answer is "no file": the game directory, then - when the flag at 0x00506BE0
+ * is set - each directory on the list at 0x00566630, as "%s%s\%s" (0x004E6E4C).
+ * The alternate directory at 0x00517C08 that 0x00493D90 and the retry loops
+ * fall back to is empty in this engine (nothing sets it), so 0x00464D00 refuses
+ * it and those fall-backs never run.
+ */
+static int Snd0_Candidate(int index, char* out, size_t outSize, const char* name)
+{
+	if(index == 0)
+	{
+		snprintf(out, outSize, "%s", name);
+		return 1;
+	}
+	if(!gEnableSearchPaths)
+		return 0;
+	SearchPathNode_t* node = gSearchPaths;
+	for(int i = 1; node != NULL && i < index; i++)
+		node = node->next;
+	if(node == NULL)
+		return 0;
+	snprintf(out, outSize, "%s\\%s", node->path, name);
+	return 1;
+}
+
+/* 0x004A4920 / 0x004A4120: a loose music file into a channel, 0x0C when absent. */
+static uint32_t Snd0_LoadMusicLoose(uint32_t ch, const char* path, uint32_t volume, uint32_t pan)
+{
+	size_t size = 0;
+	uint8_t* data = Snd0_ReadLoose(path, &size);
+	if(data == NULL)
+		return AUDIO_NO_FILE;
+	return Audio_MusicLoad(ch, data, size, volume, pan, 0);
+}
+
+/* 0x004A4A70 / 0x004A43A0: the same two names are one stream (flags 1, or 3
+   with the loop flag); two names are an intro and a loop part (0x004A39A0). */
+static uint32_t Snd0_LoadMusicPair(uint32_t ch, uint8_t* a, size_t aSize, uint8_t* b, size_t bSize,
+                                   int same, uint32_t loopFlag, uint32_t volume, uint32_t pan)
+{
+	if(same)
+	{
+		free(b);
+		return Audio_MusicLoad(ch, a, aSize, volume, pan, loopFlag ? 3 : 1);
+	}
+	return Audio_MusicLoadPair(ch, a, aSize, b, bSize, loopFlag, volume, pan);
+}
+
+static uint32_t Snd0_LoadMusicPairLoose(uint32_t ch, const char* pathA, const char* pathB,
+                                        uint32_t loopFlag, uint32_t volume, uint32_t pan)
+{
+	size_t aSize = 0, bSize = 0;
+	int same = strcmp(pathA, pathB) == 0;
+	uint8_t* a = Snd0_ReadLoose(pathA, &aSize);
+	if(a == NULL)
+		return AUDIO_NO_FILE;
+	uint8_t* b = NULL;
+	if(!same)
+	{
+		b = Snd0_ReadLoose(pathB, &bSize);
+		if(b == NULL)
+		{
+			free(a);
+			return AUDIO_NO_FILE;
+		}
+	}
+	return Snd0_LoadMusicPair(ch, a, aSize, b, bSize, same, loopFlag, volume, pan);
+}
+
+/* The archive route: 0x004069D0 opens the archive the script named and
+   0x004A4F40 the member in it. */
+static uint8_t* Snd0_ReadMember(Thread_t* thread, const char* archive, const char* member, size_t* size)
+{
+	return Engine_ReadFile(thread->engine, archive, member, size);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Opcodes                                                                   */
+/* ------------------------------------------------------------------------- */
+
+/* Snd0 0x00 (0x00487190) pushes 0x14 and nothing else. */
+uint32_t Opcode_Snd0_Constant(Thread_t* thread)
+{
+	Thread_PushStack(thread, 0x14);
+	return 0;
+}
+
+/*
+ * Snd0 0x08 (0x004871B0): pops the volume, then the music channel; checks them
+ * (0x00497B80, 0x00497BD0) and hands them to 0x00493CF0, which remembers the
+ * value and, unless sound is suspended, sets the channel's master volume
+ * (0x004A3400 -> 0x004A2CE0, stored unclamped). Pushes nothing.
+ */
+uint32_t Opcode_Snd0_SetMusicMasterVolume(Thread_t* thread)
+{
+	uint32_t volume = Thread_PopStack(thread);
+	uint32_t ch = Thread_PopStack(thread);
+	if(!Snd0_CheckVolume(thread, volume) || !Snd0_CheckMusic(thread, ch))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	gMusicMasterTable[ch] = volume;
+	if(!gSoundSuspended)
+		Audio_MusicSetMaster(ch, volume);
+	return 0;
+}
+
+/* Snd0 0x09 (0x004871F0): the same for an SE: 0x00493D20 -> 0x004A2F80 ->
+   0x004A29B0, which clamps to 0x80. */
+uint32_t Opcode_Snd0_SetSEMasterVolume(Thread_t* thread)
+{
+	uint32_t volume = Thread_PopStack(thread);
+	uint32_t se = Thread_PopStack(thread);
+	if(!Snd0_CheckVolume(thread, volume) || !Snd0_CheckSE(thread, se))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	gSEMasterTable[se] = volume;
+	if(!gSoundSuspended)
+		Audio_SESetMaster(se, volume);
+	return 0;
+}
+
+/*
+ * Snd0 0x10 (0x00487230): pops the volume, the file name and the music channel.
+ * 0x00493D90 stops the channel (0x004A35B0), then loads the file from the game
+ * directory with the pan centred (0x40) - 0x004A4920 -> 0x004A4120 -> 0x004A3700,
+ * which leaves it loaded and stopped. "No file" (0x0C) and "not a BW file"
+ * (0x0E) are fatal here, the rest is discarded. Pushes nothing.
+ */
+uint32_t Opcode_Snd0_LoadMusicFile(Thread_t* thread)
+{
+	int ok = 1;
+	uint32_t volume = Thread_PopStack(thread);
+	const char* name = Snd0_PopString(thread, &ok);
+	uint32_t ch = Thread_PopStack(thread);
+	if(!Snd0_CheckVolume(thread, volume) || !Snd0_CheckMusic(thread, ch))
+		return 0xFFFFFFFF;
+	if(!ok || name == NULL)
+		return 0xFFFFFFFF;
+	Audio_Init();
+	Audio_MusicStop(ch);
+	uint32_t r = Snd0_LoadMusicLoose(ch, name, volume, 0x40);
+	if(r == AUDIO_NO_FILE)
+	{
+		/* 0x004EB6D8 指定されたBWファイル [ %s ] は存在しません */
+		printf("[Thread %d]: %sError: the specified BW file [ %s ] does not exist\n",
+		       thread->threadId, TLevel[thread->level], name);
 		return 0xFFFFFFFF;
 	}
-	memset(gSoundChannels[channel], 0, sizeof(gSoundChannels[channel]));
-	printf("[Thread %d]: %sSound channel %u reset\n",
-	       thread->threadId, TLevel[thread->level], channel);
+	if(r == AUDIO_NOT_BW)
+	{
+		/* 0x004EB704 指定されたファイル [ %s ] はBWファイルではないようです */
+		printf("[Thread %d]: %sError: the specified file [ %s ] does not seem to be a BW file\n",
+		       thread->threadId, TLevel[thread->level], name);
+		return 0xFFFFFFFF;
+	}
+	if(r == AUDIO_REFUSED)
+		return 0xFFFFFFFF;
+	printf("[Thread %d]: %sMusic channel %u loaded from \"%s\" (0x%X)\n",
+	       thread->threadId, TLevel[thread->level], ch, name, r);
 	return 0;
 }
 
-uint32_t Opcode_Snd0_Unknown_36(Thread_t* thread)
+/*
+ * Snd0 0x11 (0x00487300): pops the pan, the volume, the member name, the
+ * archive name (0 for none) and the music channel. 0x00493F40 stops the
+ * channel, tries the member as a loose file in each candidate directory
+ * (0x00493E40), and, if none holds it, reads it from the archive
+ * (0x004069D0, 0x004A49C0 -> 0x004A4260). A file found nowhere is fatal inside
+ * the loader (0x00465BA0 -> 0x004646A0, as no alternate directory is set);
+ * back in the handler 0x0E is fatal too, other answers are discarded.
+ */
+uint32_t Opcode_Snd0_LoadMusic(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint32_t value3 = Thread_PopStack(thread);
-	if(thread->ticks == 638)
-		Thread_PushStack(thread, 0x00000292);
-	else
-		Thread_PushStack(thread, 0x000008f3);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	int ok = 1;
+	uint32_t pan = Thread_PopStack(thread);
+	uint32_t volume = Thread_PopStack(thread);
+	const char* member = Snd0_PopString(thread, &ok);
+	const char* archive = Snd0_PopString(thread, &ok);
+	uint32_t ch = Thread_PopStack(thread);
+	if(!Snd0_CheckPan(thread, pan) || !Snd0_CheckVolume(thread, volume) || !Snd0_CheckMusic(thread, ch))
+		return 0xFFFFFFFF;
+	if(!ok || member == NULL)
+		return 0xFFFFFFFF;
+	Audio_Init();
+	Audio_MusicStop(ch);
+
+	uint32_t r = AUDIO_NO_FILE;
+	char path[1024];
+	for(int i = 0; r == AUDIO_NO_FILE && Snd0_Candidate(i, path, sizeof(path), member); i++)
+		r = Snd0_LoadMusicLoose(ch, path, volume, pan);
+	if(r == AUDIO_NO_FILE)
+	{
+		if(archive == NULL)
+		{
+			/* 0x004E6E54 指定されたファイル [ %s ] は存在しません */
+			printf("[Thread %d]: %sError: the specified file [ %s ] does not exist\n",
+			       thread->threadId, TLevel[thread->level], member);
+			return 0xFFFFFFFF;
+		}
+		size_t size = 0;
+		uint8_t* data = Snd0_ReadMember(thread, archive, member, &size);
+		if(data == NULL)
+		{
+			/* 0x004E6E80 指定されたファイル [ %s : %s ] は存在しません */
+			printf("[Thread %d]: %sError: the specified file [ %s : %s ] does not exist\n",
+			       thread->threadId, TLevel[thread->level], archive, member);
+			return 0xFFFFFFFF;
+		}
+		r = Audio_MusicLoad(ch, data, size, volume, pan, 0);
+	}
+	if(r == AUDIO_NOT_BW)
+	{
+		/* 0x004E57C4 指定されたファイル [ %s : %s ] はBWファイルではないようです */
+		printf("[Thread %d]: %sError: the specified file [ %s : %s ] does not seem to be a BW file\n",
+		       thread->threadId, TLevel[thread->level], archive ? archive : "", member);
+		return 0xFFFFFFFF;
+	}
+	if(r == AUDIO_REFUSED)
+		return 0xFFFFFFFF;
+	printf("[Thread %d]: %sMusic channel %u loaded from [ %s : %s ] (0x%X)\n",
+	       thread->threadId, TLevel[thread->level], ch, archive ? archive : "", member, r);
 	return 0;
 }
 
-uint32_t Opcode_Snd0_Unknown_37(Thread_t* thread)
+/*
+ * Snd0 0x12 (0x00487400): pops the pan, the volume, the loop flag, the loop
+ * part's name, the first part's name, the archive name (0 for none) and the
+ * music channel. 0x00494260 works as 0x11 does with two names: the same name
+ * twice is one stream whose header loop is overridden by the flag (0x004A86B0
+ * with flags 3 or 1), two names are an intro and a loop part (0x004A39A0).
+ */
+uint32_t Opcode_Snd0_LoadMusicLoop(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	int ok = 1;
+	uint32_t pan = Thread_PopStack(thread);
+	uint32_t volume = Thread_PopStack(thread);
+	uint32_t loopFlag = Thread_PopStack(thread);
+	const char* second = Snd0_PopString(thread, &ok);
+	const char* first = Snd0_PopString(thread, &ok);
+	const char* archive = Snd0_PopString(thread, &ok);
+	uint32_t ch = Thread_PopStack(thread);
+	if(!Snd0_CheckPan(thread, pan) || !Snd0_CheckVolume(thread, volume) || !Snd0_CheckMusic(thread, ch))
+		return 0xFFFFFFFF;
+	if(!ok || first == NULL || second == NULL)
+		return 0xFFFFFFFF;
+	Audio_Init();
+	Audio_MusicStop(ch);
+
+	uint32_t r = AUDIO_NO_FILE;
+	char pathA[1024], pathB[1024];
+	for(int i = 0; r == AUDIO_NO_FILE && Snd0_Candidate(i, pathA, sizeof(pathA), first); i++)
+	{
+		Snd0_Candidate(i, pathB, sizeof(pathB), second);
+		r = Snd0_LoadMusicPairLoose(ch, pathA, pathB, loopFlag, volume, pan);
+	}
+	if(r == AUDIO_NO_FILE)
+	{
+		if(archive == NULL)
+		{
+			/* 0x004EC24C 指定されたファイル [ %s / %s ] は存在しません */
+			printf("[Thread %d]: %sError: the specified file [ %s / %s ] does not exist\n",
+			       thread->threadId, TLevel[thread->level], first, second);
+			return 0xFFFFFFFF;
+		}
+		int same = strcmp(first, second) == 0;
+		size_t aSize = 0, bSize = 0;
+		uint8_t* a = Snd0_ReadMember(thread, archive, first, &aSize);
+		uint8_t* b = (a != NULL && !same) ? Snd0_ReadMember(thread, archive, second, &bSize) : NULL;
+		if(a == NULL || (!same && b == NULL))
+		{
+			free(a);
+			free(b);
+			/* 0x004EC27C 指定されたファイル [ %s : %s / %s ] は存在しません */
+			printf("[Thread %d]: %sError: the specified file [ %s : %s / %s ] does not exist\n",
+			       thread->threadId, TLevel[thread->level], archive, first, second);
+			return 0xFFFFFFFF;
+		}
+		r = Snd0_LoadMusicPair(ch, a, aSize, b, bSize, same, loopFlag, volume, pan);
+	}
+	if(r == AUDIO_NOT_BW)
+	{
+		/* 0x004EB7A8 指定されたファイル [ %s : %s / %s ] はBWファイルではないようです */
+		printf("[Thread %d]: %sError: the specified file [ %s : %s / %s ] does not seem to be a BW file\n",
+		       thread->threadId, TLevel[thread->level], archive ? archive : "", first, second);
+		return 0xFFFFFFFF;
+	}
+	if(r == AUDIO_REFUSED)
+		return 0xFFFFFFFF;
+	printf("[Thread %d]: %sMusic channel %u loaded from [ %s : %s / %s ], loop %u (0x%X)\n",
+	       thread->threadId, TLevel[thread->level], ch, archive ? archive : "", first, second, loopFlag, r);
 	return 0;
 }
 
-uint32_t Opcode_Snd0_Unknown_38(Thread_t* thread)
+/*
+ * Snd0 0x14 (0x00487540): pops a flag, then the music channel. 0x004A32E0 ->
+ * 0x004A2C40 hands the player's vtable +0x0C whether the flag is zero: a flag
+ * of 1 plays (or resumes where it paused), 0 pauses. Pushes nothing.
+ */
+uint32_t Opcode_Snd0_PlayMusic(Thread_t* thread)
 {
+	uint32_t play = Thread_PopStack(thread);
+	uint32_t ch = Thread_PopStack(thread);
+	if(!Snd0_CheckMusic(thread, ch))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	Audio_MusicPlay(ch, play == 0);
+	return 0;
+}
+
+/*
+ * Snd0 0x15 (0x00487580): pops an address, then the music channel. 0x00494440
+ * pushes whether the channel is playing (0x004A26F0; 0 when it is not loaded)
+ * and, when the address is not 0, stores there how many times the loop part of
+ * an intro-and-loop pair has come round (0x004A2730 -> 0x004A8670).
+ */
+uint32_t Opcode_Snd0_GetMusicStatus(Thread_t* thread)
+{
+	uint32_t address = Thread_PopStack(thread);
+	uint32_t ch = Thread_PopStack(thread);
+	if(!Snd0_CheckMusic(thread, ch))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	uint32_t playing = 0;
+	Audio_MusicStatus(ch, &playing);
+	if(address != 0)
+	{
+		uint8_t* p = Thread_ResolveAddr(thread, address);
+		uint32_t count = 0;
+		if(p == NULL)
+			return 0xFFFFFFFF;
+		if(Audio_MusicLoopCount(ch, &count) == AUDIO_OK)
+		{
+			p[0] = (uint8_t)count;
+			p[1] = (uint8_t)(count >> 8);
+			p[2] = (uint8_t)(count >> 16);
+			p[3] = (uint8_t)(count >> 24);
+		}
+	}
+	Thread_PushStack(thread, playing);
+	return 0;
+}
+
+/* Snd0 0x16 (0x004875D0): pops the time in milliseconds, the volume and the
+   music channel; 0x004A3370 -> 0x004A2C70 fades the channel's first fade from
+   where it is to the volume over the time. */
+uint32_t Opcode_Snd0_FadeMusicVolume(Thread_t* thread)
+{
+	uint32_t time = Thread_PopStack(thread);
+	uint32_t volume = Thread_PopStack(thread);
+	uint32_t ch = Thread_PopStack(thread);
+	if(!Snd0_CheckVolume(thread, volume) || !Snd0_CheckMusic(thread, ch))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	Audio_MusicFade(ch, volume, time);
+	return 0;
+}
+
+/* Snd0 0x17 (0x00487620): pops the pan and the music channel; 0x004A3520 ->
+   0x004A2DB0. */
+uint32_t Opcode_Snd0_SetMusicPan(Thread_t* thread)
+{
+	uint32_t pan = Thread_PopStack(thread);
+	uint32_t ch = Thread_PopStack(thread);
+	if(!Snd0_CheckPan(thread, pan) || !Snd0_CheckMusic(thread, ch))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	Audio_MusicSetPan(ch, (int32_t)pan);
+	return 0;
+}
+
+/* Snd0 0x18 (0x00487660): pops the time and the music channel; the second fade
+   goes to full over the time (0x004A31C0 -> 0x004A2B80). */
+uint32_t Opcode_Snd0_FadeInMusic(Thread_t* thread)
+{
+	uint32_t time = Thread_PopStack(thread);
+	uint32_t ch = Thread_PopStack(thread);
+	if(!Snd0_CheckMusic(thread, ch))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	Audio_MusicFadeIn(ch, time);
+	return 0;
+}
+
+/* Snd0 0x19 (0x004876A0): the second fade goes to 0 (0x004A3130 -> 0x004A2B20).
+   The channel keeps playing, silent. */
+uint32_t Opcode_Snd0_FadeOutMusic(Thread_t* thread)
+{
+	uint32_t time = Thread_PopStack(thread);
+	uint32_t ch = Thread_PopStack(thread);
+	if(!Snd0_CheckMusic(thread, ch))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	Audio_MusicFadeOut(ch, time);
+	return 0;
+}
+
+/* Snd0 0x1C (0x004876E0): pops the volume and the music channel; 0x004A3490 ->
+   0x004A2D40 sets the volume word, clamped to 0x80. */
+uint32_t Opcode_Snd0_SetMusicVolume(Thread_t* thread)
+{
+	uint32_t volume = Thread_PopStack(thread);
+	uint32_t ch = Thread_PopStack(thread);
+	if(!Snd0_CheckVolume(thread, volume) || !Snd0_CheckMusic(thread, ch))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	Audio_MusicSetVolume(ch, volume);
+	return 0;
+}
+
+/*
+ * SE registration, shared by 0x20, 0x21, 0x23 and 0x27. Each pops what it has,
+ * checks the SE number (0x00497AE0) and joins a 0x670-byte loader process
+ * (0x00439FD0, vtable 0x004E58A4) to the thread, returning 2; the process
+ * pushes nothing. The loader reads [ archive : file ] like every loader
+ * (0x00439BC0: +0x28 the archive, +0x334 the file) and its Run (0x0043A0E0)
+ * queues 0x00498290, whose worker (0x00498330) copies the member's 0x40-byte
+ * header into the SE's record, puts 65536 / speed in the record's +0x3C
+ * (0x00494490) and registers it (0x004A4880). The worker's answer is mapped
+ * (0x00498468): 0 and 0x14 are success, 0x0E is 0x80000001, 0x12 0x80000002,
+ * anything else 0x8FFFFFFF, and the Run makes each of those three fatal:
+ *
+ *   0x004E57C4  指定されたファイル [ %s : %s ] はBWファイルではないようです
+ *   0x004E5800  指定されたBWファイル [ %s : %s ] はモノラルではないので効果音として使用できません
+ *   0x004E5858  指定されたファイル [ %s : %s ] の登録中に致命的なエラーが発生しました
+ *
+ * Here the read and the checks happen at once, so those errors are reported by
+ * the opcode; only the decode runs while the thread waits.
+ */
+typedef struct Snd0Registration
+{
+	AudioSEJob_t* job;
+	uint32_t      se;
+} Snd0Registration_t;
+
+static int Snd0_RegistrationRun(void* context)
+{
+	Snd0Registration_t* reg = (Snd0Registration_t*)context;
+	uint32_t result = 0;
+	if(!Audio_SEPoll(reg->job, &result))
+		return 0;
+	reg->job = NULL;
+	return 1;
+}
+
+static void Snd0_RegistrationFree(void* context)
+{
+	Snd0Registration_t* reg = (Snd0Registration_t*)context;
+	if(reg->job != NULL)
+		Audio_SEFinish(reg->job);
+	free(reg);
+}
+
+static uint32_t Snd0_RegisterSE(Thread_t* thread, uint32_t se, const char* archive, const char* file,
+                                uint32_t rampMs, double gain, double speed)
+{
+	if(!Snd0_CheckSE(thread, se))
+		return 0xFFFFFFFF;
+	if(file == NULL)
+		return 0xFFFFFFFF;
+	Audio_Init();
+	const char* arc = archive != NULL ? archive : "";
+	size_t size = 0;
+	uint8_t* data = Engine_ReadFile(thread->engine, arc, file, &size);
+	if(data == NULL)
+	{
+		printf("[Thread %d]: %sError: the SE file [ %s : %s ] could not be read; what the loader "
+		       "(0x00439A70) does with a missing file is not traced, so it is refused\n",
+		       thread->threadId, TLevel[thread->level], arc, file);
+		return 0xFFFFFFFF;
+	}
+
+	/* 0x00494490: the record is the member's header, with the speed at +0x3C. */
+	memset(gSoundChannels[se], 0, sizeof(gSoundChannels[se]));
+	for(int i = 0; i < SND0_CHANNEL_RECORD_WORDS && (size_t)(i * 4 + 4) <= size; i++)
+		gSoundChannels[se][i] = (uint32_t)data[i * 4] | ((uint32_t)data[i * 4 + 1] << 8)
+		                      | ((uint32_t)data[i * 4 + 2] << 16) | ((uint32_t)data[i * 4 + 3] << 24);
+	gSoundChannels[se][15] = (uint32_t)(int64_t)(65536.0 / speed);
+
+	uint32_t result = AUDIO_OK;
+	AudioSEJob_t* job = Audio_SEBegin(se, data, size, rampMs, gain, speed, &result);
+	if(job == NULL)
+	{
+		if(result == AUDIO_OK || result == AUDIO_NO_DEVICE)
+			return 0;
+		if(result == AUDIO_REFUSED)
+			return 0xFFFFFFFF;
+		if(result == AUDIO_NOT_BW)
+			printf("[Thread %d]: %sError: the specified file [ %s : %s ] does not seem to be a BW file\n",
+			       thread->threadId, TLevel[thread->level], arc, file);
+		else if(result == AUDIO_NOT_MONO)
+			printf("[Thread %d]: %sError: the specified BW file [ %s : %s ] is not mono and cannot be used as a sound effect\n",
+			       thread->threadId, TLevel[thread->level], arc, file);
+		else
+			printf("[Thread %d]: %sError: a fatal error occurred while registering the specified file [ %s : %s ]\n",
+			       thread->threadId, TLevel[thread->level], arc, file);
+		return 0xFFFFFFFF;
+	}
+	printf("[Thread %d]: %sRegistering SE %u from [ %s : %s ] (fade-in %u ms, gain %.4f)\n",
+	       thread->threadId, TLevel[thread->level], se, arc, file, rampMs, gain);
+
+	Snd0Registration_t* reg = (Snd0Registration_t*)malloc(sizeof(Snd0Registration_t));
+	if(reg != NULL)
+	{
+		reg->job = job;
+		reg->se = se;
+		Process_t* process = Process_CreateCallback(thread, Snd0_RegistrationRun, Snd0_RegistrationFree, reg);
+		if(process != NULL)
+		{
+			Thread_SetProcess(thread, process);
+			return 2;
+		}
+		free(reg);
+	}
+	/* Out of memory for the process: the decode is waited for here. */
+	Audio_SEFinish(job);
+	return 0;
+}
+
+/* Snd0 0x20 (0x00487720): pops the file, the archive and the SE number;
+   no fade-in, gain 1.0, speed 1.0. */
+uint32_t Opcode_Snd0_RegisterSE(Thread_t* thread)
+{
+	int ok = 1;
+	const char* file = Snd0_PopString(thread, &ok);
+	const char* archive = Snd0_PopString(thread, &ok);
+	uint32_t se = Thread_PopStack(thread);
+	if(!ok)
+		return 0xFFFFFFFF;
+	return Snd0_RegisterSE(thread, se, archive, file, 0, 1.0, 1.0);
+}
+
+/* Snd0 0x21 (0x004877D0): pops the gain as 16.16 (times the double 1/65536 at
+   0x004EC930), the fade-in in milliseconds, the file, the archive and the SE
+   number; speed 1.0. */
+uint32_t Opcode_Snd0_RegisterSEEx(Thread_t* thread)
+{
+	int ok = 1;
+	double gain = (double)(int32_t)Thread_PopStack(thread) * (1.0 / 65536.0);
+	uint32_t rampMs = Thread_PopStack(thread);
+	const char* file = Snd0_PopString(thread, &ok);
+	const char* archive = Snd0_PopString(thread, &ok);
+	uint32_t se = Thread_PopStack(thread);
+	if(!ok)
+		return 0xFFFFFFFF;
+	return Snd0_RegisterSE(thread, se, archive, file, rampMs, gain, 1.0);
+}
+
+/* Snd0 0x23 (0x004878F0): 0x21 at speed 2.0 (the double at 0x004EC8B8). */
+uint32_t Opcode_Snd0_RegisterSEDouble(Thread_t* thread)
+{
+	int ok = 1;
+	double gain = (double)(int32_t)Thread_PopStack(thread) * (1.0 / 65536.0);
+	uint32_t rampMs = Thread_PopStack(thread);
+	const char* file = Snd0_PopString(thread, &ok);
+	const char* archive = Snd0_PopString(thread, &ok);
+	uint32_t se = Thread_PopStack(thread);
+	if(!ok)
+		return 0xFFFFFFFF;
+	return Snd0_RegisterSE(thread, se, archive, file, rampMs, gain, 2.0);
+}
+
+/* Snd0 0x27 (0x00487AE0): pops the speed and the gain, both 16.16, then the
+   fade-in, the file, the archive and the SE number. */
+uint32_t Opcode_Snd0_RegisterSESpeed(Thread_t* thread)
+{
+	int ok = 1;
+	double speed = (double)(int32_t)Thread_PopStack(thread) * (1.0 / 65536.0);
+	double gain = (double)(int32_t)Thread_PopStack(thread) * (1.0 / 65536.0);
+	uint32_t rampMs = Thread_PopStack(thread);
+	const char* file = Snd0_PopString(thread, &ok);
+	const char* archive = Snd0_PopString(thread, &ok);
+	uint32_t se = Thread_PopStack(thread);
+	if(!ok)
+		return 0xFFFFFFFF;
+	return Snd0_RegisterSE(thread, se, archive, file, rampMs, gain, speed);
+}
+
+/*
+ * Snd0 0x22 (0x004878C0 -> 0x00494510): pops the SE number, clears its 0x40-byte
+ * record and unloads the channel (0x004A28A0 -> 0x004A2170). Pushes nothing.
+ */
+uint32_t Opcode_Snd0_ResetSE(Thread_t* thread)
+{
+	uint32_t se = Thread_PopStack(thread);
+	if(!Snd0_CheckSE(thread, se))
+		return 0xFFFFFFFF;
+	memset(gSoundChannels[se], 0, sizeof(gSoundChannels[se]));
+	Audio_Init();
+	Audio_SEUnload(se);
+	return 0;
+}
+
+/*
+ * 0x00494570: an SE's length in milliseconds, from its record: frames * 1000 /
+ * rate, times the 16.16 speed word, the 64-bit result's low word shifted right
+ * 16; 0 when the rate is 0.
+ */
+static uint32_t Snd0_SEDuration(uint32_t se)
+{
+	uint32_t rate = gSoundChannels[se][4];
+	if(rate == 0)
+		return 0;
+	double ms = (double)gSoundChannels[se][3] * 1000.0 / (double)rate * (double)gSoundChannels[se][15];
+	return (uint32_t)(int64_t)ms >> 16;
+}
+
+/*
+ * Snd0 0x24 (0x004879E0): pops the pan, the volume and the SE number, plays it
+ * (0x00494530 -> 0x004A3F40 -> 0x004A3670) and pushes its length in
+ * milliseconds when that answered 0 or 0x14, and 0 otherwise.
+ */
+uint32_t Opcode_Snd0_PlaySE(Thread_t* thread)
+{
+	uint32_t pan = Thread_PopStack(thread);
+	uint32_t volume = Thread_PopStack(thread);
+	uint32_t se = Thread_PopStack(thread);
+	if(!Snd0_CheckPan(thread, pan) || !Snd0_CheckVolume(thread, volume) || !Snd0_CheckSE(thread, se))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	uint32_t r = Audio_SEPlay(se, volume, pan);
+	Thread_PushStack(thread, (r == AUDIO_OK || r == AUDIO_NO_DEVICE) ? Snd0_SEDuration(se) : 0);
+	return 0;
+}
+
+/* Snd0 0x25 (0x00487A70): pops the SE number and stops it (0x00494550 ->
+   0x004A30A0 -> 0x004A2AF0). */
+uint32_t Opcode_Snd0_StopSE(Thread_t* thread)
+{
+	uint32_t se = Thread_PopStack(thread);
+	if(!Snd0_CheckSE(thread, se))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	Audio_SEStop(se);
+	return 0;
+}
+
+/* Snd0 0x26 (0x00487AA0): pops the time and the SE number; the second fade
+   goes to 0 over the time (0x00494560 -> 0x004A3250 -> 0x004A2BE0). */
+uint32_t Opcode_Snd0_FadeOutSE(Thread_t* thread)
+{
+	uint32_t time = Thread_PopStack(thread);
+	uint32_t se = Thread_PopStack(thread);
+	if(!Snd0_CheckSE(thread, se))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	Audio_SEFadeOut(se, time);
+	return 0;
+}
+
+/* Snd0 0x28 (0x00487BF0) joins a 0x48-byte process made by 0x00452610 with a
+   name, an SE number and two 16.16 values. Neither is read; no script uses it. */
+uint32_t Opcode_Snd0_Unknown_40(Thread_t* thread)
+{
+	printf("[Thread %d]: %sError: Snd0 0x28 (0x00487BF0, the process at 0x00452610) is not written\n",
+	       thread->threadId, TLevel[thread->level]);
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Snd0_Unknown_128(Thread_t* thread)
+/* Snd0 0x2C (0x00487CE0): pops the volume and the SE number; 0x004A3010 ->
+   0x004A2A20 sets the volume word, clamped to 0x80. */
+uint32_t Opcode_Snd0_SetSEVolume(Thread_t* thread)
 {
+	uint32_t volume = Thread_PopStack(thread);
+	uint32_t se = Thread_PopStack(thread);
+	if(!Snd0_CheckVolume(thread, volume) || !Snd0_CheckSE(thread, se))
+		return 0xFFFFFFFF;
+	Audio_Init();
+	Audio_SESetVolume(se, volume);
+	return 0;
+}
+
+/* Snd0 0x2F (0x00487D20): pops the SE number and pushes its length
+   (0x00494570). */
+uint32_t Opcode_Snd0_GetSEDuration(Thread_t* thread)
+{
+	uint32_t se = Thread_PopStack(thread);
+	if(!Snd0_CheckSE(thread, se))
+		return 0xFFFFFFFF;
+	Thread_PushStack(thread, Snd0_SEDuration(se));
+	return 0;
+}
+
+/* Snd0 0x80, 0x81, 0x84, 0x85 and 0x86 call 0x0048D7D0, 0x0048D950, 0x0048D9E0,
+   0x0048DA80 and 0x0048DAA0. None of those is read and no script uses them. */
+static uint32_t Snd0_Unread(Thread_t* thread, uint32_t op, uint32_t target)
+{
+	printf("[Thread %d]: %sError: Snd0 0x%02X (-> 0x%08X) is not written\n",
+	       thread->threadId, TLevel[thread->level], op, target);
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Snd0_Unknown_129(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Snd0_Unknown_132(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Snd0_Unknown_133(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Snd0_Unknown_134(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
+uint32_t Opcode_Snd0_Unknown_128(Thread_t* thread) { return Snd0_Unread(thread, 0x80, 0x0048D7D0); }
+uint32_t Opcode_Snd0_Unknown_129(Thread_t* thread) { return Snd0_Unread(thread, 0x81, 0x0048D950); }
+uint32_t Opcode_Snd0_Unknown_132(Thread_t* thread) { return Snd0_Unread(thread, 0x84, 0x0048D9E0); }
+uint32_t Opcode_Snd0_Unknown_133(Thread_t* thread) { return Snd0_Unread(thread, 0x85, 0x0048DA80); }
+uint32_t Opcode_Snd0_Unknown_134(Thread_t* thread) { return Snd0_Unread(thread, 0x86, 0x0048DAA0); }
 
 uint32_t Opcode_Snd0_PlaySound(Thread_t* thread)
 {
@@ -705,4 +1403,3 @@ uint32_t Opcode_Snd0_PlaySound(Thread_t* thread)
 	Thread_PushStack(thread, res);
 	return 0;
 }
-

@@ -9,6 +9,7 @@
 #include <time.h>
 #include "engine.h"
 #include "gdb.h"
+#include "audio.h"
 #include "nametable.h"
 #include "icon.h"
 #include "object.h"
@@ -2304,6 +2305,7 @@ void Engine_Free(Engine_t* engine)
 
 	Renderer_Free(engine->renderer);
 	GDB_FreeAll();
+	Audio_Free();
 
 	Engine_FreeUserInstructions();
 	Icon_FreeAll();
