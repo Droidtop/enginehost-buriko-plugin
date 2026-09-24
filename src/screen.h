@@ -21,9 +21,9 @@ uint32_t Screen_Class(void);
 // 0x0043E270: the screen becomes an object of class `cls`, a new one unless it
 // already is one. 0 on success.
 uint32_t Screen_Replace(uint32_t cls);
-// 0x0043E570 (Grp0 0x4C): whether the screen is enabled, and whether its content
+// 0x0043E570 (Grp0 0x4C): whether the screen is visible, and whether its content
 // is drawn (vtable+0x04, vtable+0x78).
-void Screen_SetShown(uint32_t enabled, uint32_t content);
+void Screen_SetShown(uint32_t visible, uint32_t content);
 
 // 0x0043D830 (Grp0 0x43): class 4. Returns 0, or the handler's error number: 1 the
 // image, 2 the previous image, 3 the rule, 4 a rule that is not 8-bit, 5 other.

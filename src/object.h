@@ -39,11 +39,13 @@
 #define GROUP_SLOT_COUNT    0x008
 // The screen object, which the display root builds at root+0x50 (0x0041E960, vtable
 // 0x004E4854) and immediately puts at the head of its display list through
-// 0x004307D0. It is a plain display object with the type 1 and no class of its own,
-// and it is what the handle 0 names: 0x00443350 answers 0 with root+0x50 before it
-// looks at any table.
+// 0x004307D0. Every screen class is built on 0x0041C2F0, which passes the base
+// (0x0041A4D0) the type 0 and puts the class number at +0x134 (the root's is 1), and
+// it is what the handle 0 names: 0x00443350 answers 0 with root+0x50 before it looks
+// at any table. Type 0 is also what exempts it from the list's draw priority
+// (0x00431630 asks 0x0041B180, which reads +0x18).
 #define OBJECT_HANDLE_SCREEN 0u
-#define OBJECT_TYPE_SCREEN  1
+#define OBJECT_TYPE_SCREEN  0
 #define OBJECT_TYPE_SPRITE  2
 #define OBJECT_TYPE_WINDOW  3
 // The filter (0x00420B00, vtable 0x004E4BA4): a plain display object sized to the

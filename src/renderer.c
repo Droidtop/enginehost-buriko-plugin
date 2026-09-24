@@ -1284,9 +1284,32 @@ int Renderer_SaveScreenPng(Renderer_t* renderer, const char* path)
 	Rect_t whole = { 0, 0, back->width - 1, back->height - 1 };
 	Object_DrawList(renderer, back, &whole);
 
+	if(Renderer_ModePixelBytes(back->mode) != 4)
+		return 4;
 	FILE* file = fopen(path, "wb");
 	if(file == NULL)
 		return 2;
+
+	// The back buffer is the original's DIB order, B, G, R and an unused fourth byte,
+	// so the PNG is written as RGB from it.
+	size_t size = (size_t)back->width * (size_t)back->height * 3;
+	uint8_t* rgb = (uint8_t*)malloc(size);
+	if(rgb == NULL)
+	{
+		fclose(file);
+		return 3;
+	}
+	for(int row = 0; row < back->height; row++)
+	{
+		const uint8_t* in = back->bitmap + (size_t)row * back->stride;
+		uint8_t* out = rgb + (size_t)row * back->width * 3;
+		for(int column = 0; column < back->width; column++, in += 4, out += 3)
+		{
+			out[0] = in[2];
+			out[1] = in[1];
+			out[2] = in[0];
+		}
+	}
 
 	int result = 0;
 	spng_ctx* ctx = spng_ctx_new(SPNG_CTX_ENCODER);
@@ -1295,18 +1318,17 @@ int Renderer_SaveScreenPng(Renderer_t* renderer, const char* path)
 	ihdr.width = (uint32_t)back->width;
 	ihdr.height = (uint32_t)back->height;
 	ihdr.bit_depth = 8;
-	ihdr.color_type = SPNG_COLOR_TYPE_TRUECOLOR_ALPHA;
+	ihdr.color_type = SPNG_COLOR_TYPE_TRUECOLOR;
 
 	if(ctx == NULL
 	   || spng_set_png_file(ctx, file) != 0
 	   || spng_set_ihdr(ctx, &ihdr) != 0
-	   || spng_encode_image(ctx, back->bitmap,
-	                        (size_t)back->stride * (size_t)back->height,
-	                        SPNG_FMT_PNG, SPNG_ENCODE_FINALIZE) != 0)
+	   || spng_encode_image(ctx, rgb, size, SPNG_FMT_PNG, SPNG_ENCODE_FINALIZE) != 0)
 		result = 3;
 
 	if(ctx != NULL)
 		spng_ctx_free(ctx);
+	free(rgb);
 	fclose(file);
 	return result;
 }

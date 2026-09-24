@@ -6,6 +6,7 @@
 #include "object.h"
 #include "screen.h"
 #include "renderer.h"
+#include "engine.h"
 
 // ----------------------------------------------------------------------------------
 // Display objects
@@ -238,12 +239,20 @@ static DisplayObject_t* Object_Screen(void)
 		gScreenObject = (DisplayObject_t*)malloc(sizeof(DisplayObject_t));
 		if(gScreenObject == NULL)
 			return NULL;
-		// 0x0041E960 passes the base the type 1 and no serial of its own: it is not
-		// in any of the ten tables, so nothing hands it one.
+		// 0x0041E960 -> 0x0041C2F0 passes the base the type 0 and no serial of its
+		// own: it is not in any of the ten tables, so nothing hands it one.
 		Object_ConstructBase(gScreenObject, OBJECT_TYPE_SCREEN, 0);
 		gScreenObject->handle = OBJECT_HANDLE_SCREEN;
 		// The class the root builds (0x0041E960): 1, drawing nothing of its own.
 		gScreenObject->kind = 1;
+		// 0x0041C2F0 ends with vtable+0x04 (0x0041AED0) with 1: every screen class is
+		// built visible.
+		gScreenObject->visible = 1;
+		// 0x0041C2F0 -> 0x0041C460: the surface is matched to the drawing device
+		// (0x0041C170) through vtable+0x74, so the screen covers the whole of it.
+		Bitmap_t* device = gEngine != NULL && gEngine->renderer != NULL ? Renderer_BackBuffer(gEngine->renderer) : NULL;
+		if(device != NULL)
+			Object_SetSurfaceSize(gEngine->renderer, gScreenObject, device->width, device->height);
 		// The display root puts it into the list the moment it has built it
 		// (0x004429F9), before any other object exists.
 		Object_ListInsert(gScreenObject);
@@ -1359,7 +1368,7 @@ void Object_DrawListOf(ObjectList_t* list, Renderer_t* renderer, Bitmap_t* targe
 		// the original then draws those from the second list at list+0x20, which
 		// nothing builds yet - list+0x24, the flag that would enable it, is never
 		// set, and 0x00431530 returns on that flag before it looks at anything.
-		if(list->priority > node->key && node->object->type != 0)
+		if(list->priority > node->key && node->object->type != OBJECT_TYPE_SCREEN)
 		{
 			if(gLogDraws)
 				printf("[Draws]:   [ 0x%08X ] held back: key 0x%08X is below the"

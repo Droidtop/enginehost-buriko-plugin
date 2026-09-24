@@ -1508,10 +1508,10 @@ uint32_t Opcode_Grp0_Unknown_74(Thread_t* thread)
 uint32_t Opcode_Grp0_ShowScreen(Thread_t* thread)
 {
 	// 0x0047C210 -> 0x004624B0 -> 0x0043E570: whether the screen's content is
-	// drawn, then whether the screen is enabled (root+0x58 and root+0x54).
+	// drawn, then whether the screen is visible (root+0x58 and root+0x54).
 	uint32_t content = Thread_PopStack(thread);
-	uint32_t enabled = Thread_PopStack(thread);
-	Screen_SetShown(enabled, content);
+	uint32_t visible = Thread_PopStack(thread);
+	Screen_SetShown(visible, content);
 	return 0;
 }
 

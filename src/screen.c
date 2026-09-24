@@ -92,12 +92,14 @@ uint32_t Screen_Replace(uint32_t cls)
 	return 0;
 }
 
-void Screen_SetShown(uint32_t enabled, uint32_t content)
+void Screen_SetShown(uint32_t visible, uint32_t content)
 {
 	DisplayObject_t* screen = Object_Resolve(OBJECT_HANDLE_SCREEN);
 	if(screen == NULL)
 		return;
-	Object_SetEnabled(screen, (int)enabled);
+	// 0x0043E570: root+0x54 and vtable+0x04 (0x0041AED0, the visible flag at +0x14),
+	// then root+0x58 and vtable+0x78 (0x0041C3F0, +0x138).
+	Object_ApplyVisible(screen, (int)visible);
 	screen->screenContent = content;
 }
 
