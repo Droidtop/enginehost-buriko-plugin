@@ -763,23 +763,6 @@ uint32_t Engine_SetDisplayFlagUnknown98(uint32_t value)
 	return 1;
 }
 
-// Grp0 0x06 (fureraba.exe 0x004796B0 -> 0x00461FB0 -> 0x00442F50) moves the mouse
-// cursor. It writes x and y into the input object at +0x40 and +0x44 and raises the
-// pending flag at +0x4C of its child object, so the move is applied by the input
-// pump rather than immediately. The reader at 0x00442F70 only hands the position
-// back when both coordinates are inside the client area, which is what pins +0x40
-// as x and +0x44 as y. The original stores the request unclamped; the clamp is on
-// the read side, so this does the same.
-int gMousePosX = 0;
-int gMousePosY = 0;
-int gMousePosPending = 0;
-void Engine_SetMousePosition(int x, int y)
-{
-	gMousePosX = x;
-	gMousePosY = y;
-	gMousePosPending = 1;
-}
-
 // Grp1 0x0D (fureraba.exe 0x004808D0 -> 0x00469100 -> 0x0042DD10) pops one value
 // into the global at 0x00565B60 and pushes nothing. The single reader, at
 // 0x0042E1F2, is a gate: when the global is zero the routine keeps the value it has

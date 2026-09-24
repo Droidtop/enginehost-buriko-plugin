@@ -96,10 +96,6 @@ uint32_t Engine_ScreenHeight(void);
 extern uint32_t gDisplayFlagUnknown98;
 uint32_t Engine_SetDisplayFlagUnknown98(uint32_t value);
 
-extern int gMousePosX;
-extern int gMousePosY;
-extern int gMousePosPending;
-void Engine_SetMousePosition(int x, int y);
 
 extern uint32_t gGrp1FlagUnknown13;
 void Engine_SetGrp1FlagUnknown13(uint32_t value);

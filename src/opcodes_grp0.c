@@ -5,6 +5,7 @@
 #include "renderer.h"
 #include "opcodes.h"
 #include "opcodes_grp0.h"
+#include "sprite5.h"
 #include "icon.h"
 #include "object.h"
 #include "window.h"
@@ -20,7 +21,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x03   3 */ "SetFileCacheSize",
 	/* 0x04   4 */ "Unknown_4",
 	/* 0x05   5 */ "CaptureScreen",
-	/* 0x06   6 */ "SetMousePosition",
+	/* 0x06   6 */ "SetProjectionCentre",
 	/* 0x07   7 */ "SetLoadWaitTimeout",
 	/* 0x08   8 */ "SetDisplayValue5076AC",
 	/* 0x09   9 */ "SetDrawPriority",
@@ -279,7 +280,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x03   3 */ Opcode_Grp0_SetFileCacheSize,
 	/* 0x04   4 */ Opcode_Grp0_Unknown_4,
 	/* 0x05   5 */ Opcode_Grp0_CaptureScreen,
-	/* 0x06   6 */ Opcode_Grp0_SetMousePosition,
+	/* 0x06   6 */ Opcode_Grp0_SetProjectionCentre,
 	/* 0x07   7 */ Opcode_Grp0_SetLoadWaitTimeout,
 	/* 0x08   8 */ Opcode_Grp0_SetDisplayValue5076AC,
 	/* 0x09   9 */ Opcode_Grp0_SetDrawPriority,
@@ -553,11 +554,18 @@ uint32_t Opcode_Grp0_StopRendering(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_SetMousePosition(Thread_t* thread)
+/*
+ * Grp0 0x06 (0x004796B0 -> 0x00461FB0 -> 0x00442F50): pops y, then x, into the
+ * display root's projection centre (root+0x40/+0x44) and marks the scene as needing
+ * to be put in order again (0x00430DF0). The only reader is 0x00442F70, the centre
+ * a table sprite of kind 5 is projected about while it lies on the device.
+ */
+uint32_t Opcode_Grp0_SetProjectionCentre(Thread_t* thread)
 {
-	int y = (int)Thread_PopStack(thread);
-	int x = (int)Thread_PopStack(thread);
-	Engine_SetMousePosition(x, y);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	Sprite5_SetProjectionCentre(x, y);
+	gObjectDamage++;
 	return 0;
 }
 

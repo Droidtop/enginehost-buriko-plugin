@@ -7,7 +7,7 @@ typedef struct Thread Thread_t;
 
 uint32_t Opcode_Grp0_RequestRedraw(Thread_t* thread);
 uint32_t Opcode_Grp0_StopRendering(Thread_t* thread);
-uint32_t Opcode_Grp0_SetMousePosition(Thread_t* thread);
+uint32_t Opcode_Grp0_SetProjectionCentre(Thread_t* thread);
 uint32_t Opcode_Grp0_SetFramerate(Thread_t* thread);
 uint32_t Opcode_Grp0_SetFileCacheSize(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_4(Thread_t* thread);

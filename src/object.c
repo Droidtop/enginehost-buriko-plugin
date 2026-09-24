@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "object.h"
+#include "sprite5.h"
 #include "screen.h"
 #include "renderer.h"
 #include "engine.h"
@@ -137,6 +138,11 @@ struct ObjectNode
 
 ObjectList_t gRootList = { NULL, 0 };
 
+static Renderer_t* Object_Renderer(void)
+{
+	return gEngine != NULL ? gEngine->renderer : NULL;
+}
+
 uint32_t Object_DrawKey(const DisplayObject_t* object)
 {
 	uint32_t type = object->type;
@@ -144,10 +150,11 @@ uint32_t Object_DrawKey(const DisplayObject_t* object)
 		type = 7;
 
 	// 0x0041B190 takes the depth out of the accumulated position vector's third
-	// component, and nothing in this engine has a Z, so it is the constant the
-	// original computes for a flat scene. The serial is used instead when the
-	// object asks for it.
-	uint32_t depth = object->depthFromSerial != 0 ? object->serial : 0xFFF;
+	// component (0x0041B590), which only a sprite with 3D state has; for everything
+	// else it is 0 and the term the constant 0xFFF. The serial is used instead when
+	// the object asks for it (+0x7C).
+	uint32_t depth = object->depthFromSerial != 0 ? object->serial
+	               : Sprite5_DepthTerm((DisplayObject_t*)object);
 
 	return (((object->layer * 8) + type) << 13) + object->orderBase + (depth & 0x1FFF);
 }
@@ -340,6 +347,7 @@ void Object_Destroy(uint32_t handle)
 		return;
 
 	Object_ListRemove(kind->slots[index]);
+	Sprite5_Free(kind->slots[index]);
 	free(kind->slots[index]->backgroundPixels);
 	free(kind->slots[index]);
 	kind->slots[index] = NULL;
@@ -522,10 +530,14 @@ uint32_t Object_SetParameter(DisplayObject_t* object, uint32_t number, uint32_t 
 	if(object->type == OBJECT_TYPE_SCREEN && Screen_SetParameter(object, number, value1, value2, &screenResult))
 		return screenResult;
 
-	// The sprite's own arms, which only a sprite has: a group's vtable+0x5C is the
-	// base itself (0x0041B9B0), so a group answers none of these. None can be
-	// honoured until a sprite can hold an image anyway: they either call a function
-	// that is still unread or write a field of the content its kind (+0x134) selects.
+	// The sprite's own arms (0x00428670), which only a sprite has: a group's
+	// vtable+0x5C is the base itself (0x0041B9B0), so a group answers none of these.
+	// sprite5.c answers the ones it has ported (0x40-0x42, 0x60, 0x80-0x82, 0x8F);
+	// the rest are named.
+	uint32_t spriteResult;
+	if(object->type == OBJECT_TYPE_SPRITE
+	   && Sprite5_SetParameter(Object_Renderer(), object, number, value1, value2, &spriteResult, unread))
+		return spriteResult;
 	switch(object->type == OBJECT_TYPE_SPRITE ? number : 0xFFFFFFFFu)
 	{
 	case 0x10:
@@ -681,9 +693,18 @@ static const char* Object_SetEffectLevel(DisplayObject_t* object, uint32_t level
 			return "0x00409F40, on a sprite of kind 4";
 		return Object_SetEffectLevelBase(object, level);
 	case 1:
+		// +0x240 and the rebuild, without the base.
+		if(Sprite5_SetEffectLevel(Object_Renderer(), object, level))
+			return NULL;
 		return "+0x240 and 0x00428F50/0x004290E0, on a sprite of content kind 1";
 	case 2:
+	{
+		// The base, then +0x240 and the rebuild.
+		const char* unread = Object_SetEffectLevelBase(object, level);
+		if(Sprite5_SetEffectLevel(Object_Renderer(), object, level))
+			return unread;
 		return "+0x240 and 0x00428F50/0x004290E0, on a sprite of content kind 2";
+	}
 	default:
 		// Content kind 4 and up: the original falls off the end of the switch and
 		// does nothing at all, not even the base. Faithfully nothing.
@@ -1007,8 +1028,9 @@ uint32_t Object_SetContentBitmapKind0(Renderer_t* renderer, DisplayObject_t* spr
 
 	// The five teardown calls (0x00429090, 0x004291D0, 0x00429220, 0x00429240 and
 	// 0x00429290) each free one buffer of the content the sprite used to hold and
-	// clear the fields beside it (+0x220, +0x30C, +0x330, +0x340 and +0x2E4). No
-	// content this engine can build owns any of those, so there is nothing to free.
+	// clear the fields beside it (+0x220, +0x30C, +0x330, +0x340 and +0x2E4). Of
+	// those only the crossfade and the wave (kind 5's) are built by this engine.
+	Sprite5_Teardown(sprite);
 
 	sprite->kind         = 0;
 	sprite->bitmapId     = number;
@@ -1036,8 +1058,9 @@ uint32_t Object_SetContentBitmap(Renderer_t* renderer, DisplayObject_t* sprite, 
 		*unread = "0x00427680, the content of a sprite of kind 2";
 		return OBJECT_CONTENT_UNREAD;
 	case 5:
-		*unread = "0x00427B70, the content of a sprite of kind 5";
-		return OBJECT_CONTENT_UNREAD;
+		// 0x00427424: 0x00427B70 with the sprite's own anchor, angle and settings.
+		return Sprite5_SetContentBitmap(renderer, sprite, number) == 0
+		     ? OBJECT_CONTENT_OK : OBJECT_CONTENT_BAD_BITMAP;
 	case 6:
 		*unread = "0x00427E60, the content of a sprite of kind 6";
 		return OBJECT_CONTENT_UNREAD;
@@ -1086,15 +1109,20 @@ static void Object_LocalBounds(const DisplayObject_t* object, Rect_t* rect)
 
 // vtable+0x34 (0x0041B330): where the object sits on the screen. The original adds
 // three pairs together - the base position its owner gave it (+0x30/+0x34, read by
-// 0x0041B310), its own (+0x38/+0x3C, read by 0x0041B3E0) and a third at +0x40/+0x44
-// (read by 0x0041B430) - and then a fourth contribution from 0x0041C1B0 when that
-// answers yes. The third pair is written only by vtable+0x44 (0x0041B3F0), which
-// nothing in this engine calls, and 0x0041C1B0's is a scroll this engine has not
-// read; both are therefore zero and the sum is the first two.
+// 0x0041B310), its own (+0x38/+0x3C, read by 0x0041B3E0) and the origin at
+// +0x40/+0x44 (read by 0x0041B430, written by Object_SetOrigin) - and then a fourth
+// contribution from 0x0041C1B0 when that answers yes, a scroll this engine has not
+// read and takes as zero. A sprite's own (0x004282B0) is Sprite5_ScreenPosition,
+// which also takes kinds 2 and 5 back by where the anchor sits in their box.
 static void Object_ScreenPosition(const DisplayObject_t* object, int32_t* x, int32_t* y)
 {
-	*x = object->baseX + object->x;
-	*y = object->baseY + object->y;
+	if(object->type == OBJECT_TYPE_SPRITE)
+	{
+		Sprite5_ScreenPosition((DisplayObject_t*)object, x, y);
+		return;
+	}
+	*x = object->baseX + object->x + object->originX;
+	*y = object->baseY + object->y + object->originY;
 }
 
 // vtable+0x24: the object's surface in screen coordinates. The base (0x0041C450)
@@ -1182,7 +1210,13 @@ static void Object_Draw(Renderer_t* renderer, DisplayObject_t* object,
 		{
 			// 0x004259A0. The sprite dispatches on its kind (+0x134) through the
 			// table at 0x00427000; a sprite that has only been given a bitmap is
-			// kind 0, the arm at 0x00425A7B.
+			// kind 0, the arm at 0x00425A7B. Kind 5 (a window's content, and the
+			// transformed sprites) is sprite5.c's.
+			if(object->kind == 5)
+			{
+				Sprite5_Draw(renderer, object, target, rect);
+				return;
+			}
 			if(object->kind != 0)
 			{
 				printf("[Renderer]: Warning: the draw of a sprite of kind %u"
@@ -1400,6 +1434,11 @@ void Object_FreeAll(void)
 	{
 		for(uint32_t slot = 0; slot < gKinds[i].slotCount; slot++)
 		{
+			if(gKinds[i].slots[slot] != NULL)
+			{
+				Sprite5_Free(gKinds[i].slots[slot]);
+				free(gKinds[i].slots[slot]->backgroundPixels);
+			}
 			free(gKinds[i].slots[slot]);
 			gKinds[i].slots[slot] = NULL;
 		}
@@ -1455,9 +1494,9 @@ const char* Object_SetEffect2(DisplayObject_t* object, uint32_t mode, uint32_t v
 	case 2:
 		return "0x00429960, a kind 2 sprite's second effect parameter";
 	case 5:
-		if(object->contentKind == 3)
-			object->field240 = Object_GetEffect2(object);
-		return "0x00429A80 / 0x00428F50 / 0x004290E0, a kind 5 sprite's second effect parameter";
+		// 0x00428540's kind 5 arm: +0x240 for content kind 3, then the rebuild.
+		Sprite5_Effect2Changed(Object_Renderer(), object);
+		break;
 	case 6:
 		if(object->contentKind == 3)
 			object->field240 = Object_GetEffect2(object);
