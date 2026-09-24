@@ -17,6 +17,7 @@
 #include "os.h"
 #include "thread.h"
 #include "gdb.h"
+#include "input.h"
 
 static uint32_t Sys0_FlagResult(uint32_t r);
 
@@ -37,21 +38,21 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x0D  13 */ "GetPhysicalMemory",
 	/* 0x0E  14 */ "Unknown_14",
 	/* 0x0F  15 */ "IsWindowActive",
-	/* 0x10  16 */ "Unknown_16",
+	/* 0x10  16 */ "SetInputEnabled",
 	/* 0x11  17 */ "IsKeyDown",
-	/* 0x12  18 */ "Unknown_18",
-	/* 0x13  19 */ "Unknown_19",
-	/* 0x14  20 */ "Unknown_20",
-	/* 0x15  21 */ "Unknown_21",
-	/* 0x16  22 */ "Unknown_22",
-	/* 0x17  23 */ "Unknown_23",
+	/* 0x12  18 */ "CountKeyPresses",
+	/* 0x13  19 */ "InputActivity",
+	/* 0x14  20 */ "SetSkipAllowed",
+	/* 0x15  21 */ "SetSkipLatch",
+	/* 0x16  22 */ "SkipToggle",
+	/* 0x17  23 */ "IsSkipping",
 	/* 0x18  24 */ "AddRegion",
 	/* 0x19  25 */ "RemoveRegion",
-	/* 0x1A  26 */ "Unknown_26",
-	/* 0x1B  27 */ "Unknown_0x1B",
-	/* 0x1C  28 */ "Unknown_28",
-	/* 0x1D  29 */ "Unknown_29",
-	/* 0x1E  30 */ "Unknown_30",
+	/* 0x1A  26 */ "TakeRegionInput",
+	/* 0x1B  27 */ "SetButtonKeys",
+	/* 0x1C  28 */ "CountButtonPresses",
+	/* 0x1D  29 */ "TakeRegionKey",
+	/* 0x1E  30 */ "SetSwapButtons",
 	/* 0x1F  31 */ "Unknown_31",
 	/* 0x20  32 */ "AllocAuxMem",
 	/* 0x21  33 */ "FreeAuxMem",
@@ -101,7 +102,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x4D  77 */ "--Unknown--",
 	/* 0x4E  78 */ "--Unknown--",
 	/* 0x4F  79 */ "--Unknown--",
-	/* 0x50  80 */ "SetObjectsHeldBack",
+	/* 0x50  80 */ "SetProcessesWait",
 	/* 0x51  81 */ "--Unknown--",
 	/* 0x52  82 */ "SetIdleWaitTime",
 	/* 0x53  83 */ "--Unknown--",
@@ -296,21 +297,21 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x0D  13 */ Opcode_Sys0_GetPhysicalMemory,
 	/* 0x0E  14 */ Opcode_Sys0_Unknown_14,
 	/* 0x0F  15 */ Opcode_Sys0_IsWindowActive,
-	/* 0x10  16 */ Opcode_Sys0_Unknown_16,
+	/* 0x10  16 */ Opcode_Sys0_SetInputEnabled,
 	/* 0x11  17 */ Opcode_Sys0_IsKeyDown,
-	/* 0x12  18 */ Opcode_Sys0_Unknown_18,
-	/* 0x13  19 */ Opcode_Sys0_Unknown_19,
-	/* 0x14  20 */ Opcode_Sys0_Unknown_20,
-	/* 0x15  21 */ Opcode_Sys0_Unknown_21,
-	/* 0x16  22 */ Opcode_Sys0_Unknown_22,
-	/* 0x17  23 */ Opcode_Sys0_Unknown_23,
+	/* 0x12  18 */ Opcode_Sys0_CountKeyPresses,
+	/* 0x13  19 */ Opcode_Sys0_InputActivity,
+	/* 0x14  20 */ Opcode_Sys0_SetSkipAllowed,
+	/* 0x15  21 */ Opcode_Sys0_SetSkipLatch,
+	/* 0x16  22 */ Opcode_Sys0_SkipToggle,
+	/* 0x17  23 */ Opcode_Sys0_IsSkipping,
 	/* 0x18  24 */ Opcode_Sys0_AddRegion,
 	/* 0x19  25 */ Opcode_Sys0_RemoveRegion,
-	/* 0x1A  26 */ Opcode_Sys0_Unknown_26,
-	/* 0x1B  27 */ Opcode_Sys0_Unknown_0x1B,
-	/* 0x1C  28 */ Opcode_Sys0_Unknown_28,
-	/* 0x1D  29 */ Opcode_Sys0_Unknown_29,
-	/* 0x1E  30 */ Opcode_Sys0_Unknown_30,
+	/* 0x1A  26 */ Opcode_Sys0_TakeRegionInput,
+	/* 0x1B  27 */ Opcode_Sys0_SetButtonKeys,
+	/* 0x1C  28 */ Opcode_Sys0_CountButtonPresses,
+	/* 0x1D  29 */ Opcode_Sys0_TakeRegionKey,
+	/* 0x1E  30 */ Opcode_Sys0_SetSwapButtons,
 	/* 0x1F  31 */ Opcode_Sys0_Unknown_31,
 	/* 0x20  32 */ Opcode_Sys0_AllocAuxMem,
 	/* 0x21  33 */ Opcode_Sys0_FreeAuxMem,
@@ -360,7 +361,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x4D  77 */ NULL,
 	/* 0x4E  78 */ NULL,
 	/* 0x4F  79 */ NULL,
-	/* 0x50  80 */ Opcode_Sys0_SetObjectsHeldBack,
+	/* 0x50  80 */ Opcode_Sys0_SetProcessesWait,
 	/* 0x51  81 */ NULL,
 	/* 0x52  82 */ Opcode_Sys0_SetIdleWaitTime,
 	/* 0x53  83 */ NULL,
@@ -636,9 +637,12 @@ uint32_t Opcode_Sys0_IsWindowActive(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_16(Thread_t* thread)
+uint32_t Opcode_Sys0_SetInputEnabled(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x00488170: whether input reaches the scripts at all (0x0046DAF0), and every
+	// key's presses forgotten (0x0046DBA0).
+	Input_SetEnabled(Thread_PopStack(thread));
+	return 0;
 }
 
 /*
@@ -648,116 +652,140 @@ uint32_t Opcode_Sys0_Unknown_16(Thread_t* thread)
  */
 uint32_t Opcode_Sys0_IsKeyDown(Thread_t* thread)
 {
+	// 0x00488190 -> 0x0046D6E0: bit 15 of the key's state, 1 while it is held.
 	uint32_t vk = Thread_PopStack(thread);
-	int down = OS_IsKeyDown(vk);
-	printf("[Thread %d]: %sVirtual key 0x%.2X is %s\n",
-	       thread->threadId, TLevel[thread->level], vk, down ? "down" : "up");
-	Thread_PushStack(thread, down ? 1 : 0);
+	Thread_PushStack(thread, OS_IsKeyDown(vk) ? 1 : 0);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_18(Thread_t* thread)
+uint32_t Opcode_Sys0_CountKeyPresses(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Sys0_Unknown_19(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Sys0_Unknown_20(Thread_t* thread)
-{
-	uint32_t data = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	// 0x004881C0: every press there has been of the keys in a zero-terminated
+	// list (0x0046DDF0 each), added up.
+	const uint32_t* keys = (const uint32_t*)Thread_PopAndResolveAddress(thread);
+	Thread_PushStack(thread, keys ? Input_ListTotals(keys) : 0);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_21(Thread_t* thread)
+uint32_t Opcode_Sys0_InputActivity(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x00488200 -> 0x0046E740: a counter every key, button and wheel message
+	// the window receives steps (0x0046E730).
+	Thread_PushStack(thread, Input_Activity());
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_22(Thread_t* thread)
+uint32_t Opcode_Sys0_SetSkipAllowed(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x00488220 -> 0x0046DB00: whether the skip keys may skip (0x00506A48).
+	Input_SetSkipAllowed(Thread_PopStack(thread));
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_23(Thread_t* thread)
+uint32_t Opcode_Sys0_SetSkipLatch(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x00488240 -> 0x0046DB10: skip as if the keys were held (0x00566828).
+	Input_SetSkipLatch(Thread_PopStack(thread));
+	return 0;
 }
 
-// Sys0 0x18 (0x00488290): the whole plane goes into the first list and an empty
-// rectangle into the second, both under this number's key, with no owner.
+uint32_t Opcode_Sys0_SkipToggle(Thread_t* thread)
+{
+	// 0x00488260 -> 0x0046DB20: skip keys toggle from now until they are let go.
+	Input_SkipToggle();
+	return 0;
+}
+
+uint32_t Opcode_Sys0_IsSkipping(Thread_t* thread)
+{
+	// 0x00488270 -> 0x0046DFB0: 1 while skipping.
+	Thread_PushStack(thread, Input_SkipQuery());
+	return 0;
+}
+
 uint32_t Opcode_Sys0_AddRegion(Thread_t* thread)
 {
+	// 0x00488290: the region goes into the pointer list with the whole plane
+	// (0x00506A4C) and into the keyboard list, and 0x0046E080 is run for it,
+	// which takes whatever the new region can now see.
 	uint32_t number = Thread_PopStack(thread);
 	uint32_t key = REGION_KEY(number);
-
-	printf("[Thread %d]: %sAdd the region %d (key 0x%.8X)\n", thread->threadId, TLevel[thread->level], number, key);
-
-	// The rectangle at 0x00506A4C, the whole plane.
 	Region_Add(0, key, (int32_t)0x80000000, (int32_t)0x80000000, (int32_t)0x7FFFFFFF, (int32_t)0x7FFFFFFF, 0);
 	Region_Add(1, key, 0, 0, 0, 0, 0);
-
-	const char* unread = Region_Recompute(key);
-	if(unread != NULL)
-	{
-		printf("[Thread %d]: %sError: this needs %s, which is not read yet\n", thread->threadId, TLevel[thread->level], unread);
-		return 0xFFFFFFFF;
-	}
+	Input_RegionState(key);
 	return 0;
 }
 
-// Sys0 0x19 (0x004882D0): the same number out of both lists again.
 uint32_t Opcode_Sys0_RemoveRegion(Thread_t* thread)
 {
+	// 0x004882D0: 0x0046E080 for the region first, then out of both lists.
 	uint32_t number = Thread_PopStack(thread);
 	uint32_t key = REGION_KEY(number);
+	Input_RegionState(key);
+	Region_RemoveByKey(0, key);
+	Region_RemoveByKey(1, key);
+	return 0;
+}
 
-	const char* unread = Region_Recompute(key);
-	if(unread != NULL)
+uint32_t Opcode_Sys0_TakeRegionInput(Thread_t* thread)
+{
+	// 0x00488310 -> 0x0046E080: the logical buttons pressed since the last take,
+	// when the region has the keyboard (bit 31 while skipping), and the mouse
+	// bits when it has the pointer.
+	uint32_t number = Thread_PopStack(thread);
+	Thread_PushStack(thread, Input_RegionState(REGION_KEY(number)));
+	return 0;
+}
+
+
+uint32_t Opcode_Sys0_SetButtonKeys(Thread_t* thread)
+{
+	// 0x00488340 -> 0x0046E120: the keys (zero-terminated, fewer than 16), then
+	// the logical button they become. Only ten buttons can be replaced; any other
+	// is fatal (0x004EB81C), as is a list of 16 or more (0x004EB850).
+	const uint32_t* keys = (const uint32_t*)Thread_PopAndResolveAddress(thread);
+	uint32_t bit = Thread_PopStack(thread);
+	uint32_t r = keys ? Input_SetButtonKeys(keys, bit) : 0x80000001u;
+	if(r == 0x80000001u)
 	{
-		printf("[Thread %d]: %sError: this needs %s, which is not read yet\n", thread->threadId, TLevel[thread->level], unread);
-		return 0xFFFFFFFF;
+		printf("[Thread %d]: %sError: 0x%X is not a button whose keys can be set\n", thread->threadId, TLevel[thread->level], bit);
+		return 0xFFFFFFFC;
 	}
-
-	int removed = Region_RemoveByKey(0, key) + Region_RemoveByKey(1, key);
-	printf("[Thread %d]: %sRemove the region %d (key 0x%.8X): %d of 2\n", thread->threadId, TLevel[thread->level], number, key, removed);
+	if(r == 0x80000002u)
+	{
+		printf("[Thread %d]: %sError: a button takes at most 15 keys\n", thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFC;
+	}
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_26(Thread_t* thread)
+uint32_t Opcode_Sys0_CountButtonPresses(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
-}
-
-
-uint32_t Opcode_Sys0_Unknown_0x1B(Thread_t* thread)
-{
-	uint8_t* ptr = Thread_PopAndResolveAddress(thread);
-	uint32_t data = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	// 0x004883E0 -> 0x0046E1F0: every press there has been of every key of every
+	// logical button (and mouse bit) in the mask, added up.
+	uint32_t mask = Thread_PopStack(thread);
+	Thread_PushStack(thread, Input_ButtonTotals(mask));
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_28(Thread_t* thread)
+uint32_t Opcode_Sys0_TakeRegionKey(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	Thread_PushStack(thread, 0);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	// 0x00488410: a virtual key, then the region. The presses of that key since
+	// the last take (0x0046DCC0) when the region has the pointer (for the left and
+	// right buttons) or the keyboard (for anything else); 0 otherwise.
+	uint32_t vk = Thread_PopStack(thread);
+	uint32_t number = Thread_PopStack(thread);
+	Thread_PushStack(thread, Input_RegionTake(vk, REGION_KEY(number)));
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_29(Thread_t* thread)
+uint32_t Opcode_Sys0_SetSwapButtons(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
-}
-
-uint32_t Opcode_Sys0_Unknown_30(Thread_t* thread)
-{
-	return 0xFFFFFFFF;
+	// 0x00488470 -> 0x0048EFE0: exchange the left and right buttons (0 or 1);
+	// pushes 1 when the value was taken.
+	uint32_t v = Thread_PopStack(thread);
+	Thread_PushStack(thread, Input_SetSwapButtons(v));
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_31(Thread_t* thread)
@@ -1330,22 +1358,14 @@ uint32_t Opcode_Sys0_Unknown_76(Thread_t* thread)
 }
 
 /*
- * Sys0 0x50 (0x004891B0) pops one value into the global at 0x00507688 and does
- * nothing else at all.
- *
- * What reads it is 0x00431AA0, which answers yes for an object when the global
- * is set AND the object's +0x10 - the flag this engine calls propagateHidden -
- * is clear; eleven places in the display code call it and take a shorter path
- * when it answers yes, so the global holds objects back unless they are marked
- * to survive it. Those eleven are not read yet, so nothing in this engine
- * consults gObjectsHeldBack; the value is kept because the opcode's whole job
- * is to keep it, and the day one of those paths is written it is already here.
+ * Sys0 0x50 (0x004891B0 -> 0x00431A90) pops one value into the global at 0x00507688.
+ * 0x00431AA0 reads it for a PROCESS (its +0x10 is the process's aborted flag): while
+ * it is 0 every wait and animation a thread is held by ends at its next pass. The
+ * scripts clear it around work that must not wait and set it again after.
  */
-uint32_t Opcode_Sys0_SetObjectsHeldBack(Thread_t* thread)
+uint32_t Opcode_Sys0_SetProcessesWait(Thread_t* thread)
 {
-	gObjectsHeldBack = Thread_PopStack(thread);
-	printf("[Thread %d]: %sObjects are %sheld back\n", thread->threadId,
-	       TLevel[thread->level], gObjectsHeldBack ? "" : "not ");
+	gProcessesWait = Thread_PopStack(thread);
 	return 0;
 }
 
@@ -1730,11 +1750,11 @@ uint32_t Opcode_Sys0_SetFlagRange(Thread_t* thread)
 
 uint32_t Opcode_Sys0_GetFlag(Thread_t* thread)
 {
-	// 0x00489D00 -> 0x0046B630 -> 0x00446EC0: the bit, where to put it (a
-	// dword, 0 or 1), then the name.
+	// 0x00489D00 -> 0x0046B630 -> 0x00446EC0: the bit, the name, then where to
+	// put it (a dword, 0 or 1).
 	uint32_t index = Thread_PopStack(thread);
-	uint8_t* out = Thread_PopAndResolveAddress(thread);
 	const char* name = (const char*)Thread_PopAndResolveAddress(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
 	uint32_t value = 0;
 	uint32_t r = name ? Flags_Get(name, index, &value) : 0x80000002u;
 	if(r == 0 && out)

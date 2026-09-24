@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "object.h"
+#include "screen.h"
 #include "renderer.h"
 
 // ----------------------------------------------------------------------------------
@@ -241,12 +242,27 @@ static DisplayObject_t* Object_Screen(void)
 		// in any of the ten tables, so nothing hands it one.
 		Object_ConstructBase(gScreenObject, OBJECT_TYPE_SCREEN, 0);
 		gScreenObject->handle = OBJECT_HANDLE_SCREEN;
+		// The class the root builds (0x0041E960): 1, drawing nothing of its own.
+		gScreenObject->kind = 1;
 		// The display root puts it into the list the moment it has built it
 		// (0x004429F9), before any other object exists.
 		Object_ListInsert(gScreenObject);
 	}
 
 	return gScreenObject;
+}
+
+DisplayObject_t* Object_ReplaceScreen(void)
+{
+	DisplayObject_t* old = Object_Screen();
+	if(old != NULL)
+	{
+		Object_ListRemove(old);
+		Screen_FreeData(old);
+		free(old);
+	}
+	gScreenObject = NULL;
+	return Object_Screen();
 }
 
 uint32_t Object_Create(uint32_t tag)
@@ -456,24 +472,27 @@ static uint32_t Object_SetParameterBase(DisplayObject_t* object, uint32_t number
 		object->fieldBC = value1;
 		return OBJECT_PARAM_OK;
 
-	case 0x00:
-		*unread = "the pair set through vtable+0x2C (0x0041B280)";
-		return OBJECT_PARAM_UNREAD;
-	case 0x02:
-		*unread = "the value set through vtable+0x48 (0x00428450)";
-		return OBJECT_PARAM_UNREAD;
-	case 0x8000:
-		*unread = "0x0041BF80";
-		return OBJECT_PARAM_UNREAD;
-	case 0x8001:
-		*unread = "0x0041BFC0";
-		return OBJECT_PARAM_UNREAD;
-	case 0x8100:
-		*unread = "0x0041BFE0";
-		return OBJECT_PARAM_UNREAD;
-	case 0x7FFFFFFF:
-		*unread = "0x0041C2B0";
-		return OBJECT_PARAM_UNREAD;
+	case 0x00:                              // vtable+0x2C
+		Object_SetPosition(object, (int32_t)value1, (int32_t)value2);
+		return OBJECT_PARAM_OK;
+	case 0x02:                              // vtable+0x48
+		Object_ApplyEffectLevel(object, value1);
+		return OBJECT_PARAM_OK;
+	case 0x8000:                            // 0x0041BF80
+		object->snap = value1;
+		object->snapValue = value2;
+		return OBJECT_PARAM_OK;
+	case 0x8001:                            // 0x0041BFC0
+		object->field88 = value1;
+		return OBJECT_PARAM_OK;
+	case 0x8100:                            // 0x0041BFE0: +0x24, the key's third term
+		object->orderBase = value1;
+		return OBJECT_PARAM_OK;
+	case 0x7FFFFFFF:                        // 0x0041C2B0: user word value1 = value2
+		if(value1 >= 16)
+			return 0xFFFF0002u;
+		object->userData[value1] = value2;
+		return OBJECT_PARAM_OK;
 	}
 
 	return OBJECT_PARAM_UNSUPPORTED;
@@ -488,6 +507,10 @@ uint32_t Object_SetParameter(DisplayObject_t* object, uint32_t number, uint32_t 
 
 	if(object == NULL)
 		return OBJECT_PARAM_UNSUPPORTED;
+
+	uint32_t screenResult;
+	if(object->type == OBJECT_TYPE_SCREEN && Screen_SetParameter(object, number, value1, value2, &screenResult))
+		return screenResult;
 
 	// The sprite's own arms, which only a sprite has: a group's vtable+0x5C is the
 	// base itself (0x0041B9B0), so a group answers none of these. None can be
@@ -629,6 +652,8 @@ static const char* Object_SetEffectLevel(DisplayObject_t* object, uint32_t level
 	if(object == NULL)
 		return NULL;
 
+	if(object->type == OBJECT_TYPE_SCREEN && Screen_SetEffectLevel(object, level))
+		return NULL;
 	if(object->type != OBJECT_TYPE_SPRITE)
 		return Object_SetEffectLevelBase(object, level);
 
@@ -671,6 +696,8 @@ static void Object_SetTransparency(DisplayObject_t* object, uint32_t transparenc
 // how a group moves everything under it.
 void Object_SetPosition(DisplayObject_t* object, int32_t x, int32_t y)
 {
+	// Every screen class keeps the base's own here (0x0041B3A0 in each vtable); their
+	// overrides are vtable+0x2C, Object_Move.
 	object->x = x;
 	object->y = y;
 	for(ObjectChild_t* node = object->children; node != NULL; node = node->next)
@@ -1109,18 +1136,31 @@ static uint32_t Object_DrawTransparency(const DisplayObject_t* object)
 // 0x00440650 - which the display root's own constructor calls with 0, so windows are
 // invisible until the opcode behind 0x00462AA0 turns them on. That opcode is not
 // wired up yet, so the flag stays where the constructor leaves it.
-// 0x00507688, written by Sys0 0x50 and read by 0x00431AA0. See the opcode.
-uint32_t gObjectsHeldBack = 0;
+// 0x00507688, written by Sys0 0x50 (through 0x00431A90) and read by 0x00431AA0: while
+// it is 0 every process a thread waits on ends at its next pass. The image starts it
+// at 1. See the opcode.
+uint32_t gProcessesWait = 1;
 
 int gLogDraws = 0;
 
 uint32_t gWindowsVisible = 0;
 uint32_t gWindowTransparency = 0;
 
+uint32_t Object_Weight(const DisplayObject_t* object)
+{
+	return Object_DrawTransparency(object);
+}
+
 static void Object_Draw(Renderer_t* renderer, DisplayObject_t* object,
                         Bitmap_t* target, const Rect_t* rect)
 {
 	uint32_t transparency = Object_DrawTransparency(object);
+
+	if(object->type == OBJECT_TYPE_SCREEN)
+	{
+		Screen_Draw(renderer, object, target, rect);
+		return;
+	}
 
 	switch(object->type)
 	{
@@ -1341,6 +1381,8 @@ void Object_FreeAll(void)
 {
 	Object_ListClear(&gRootList);
 	gRootList.priority = 0;
+	if(gScreenObject)
+		Screen_FreeData(gScreenObject);
 	free(gScreenObject);
 	gScreenObject = NULL;
 
@@ -1353,4 +1395,118 @@ void Object_FreeAll(void)
 		}
 		*gKinds[i].count = 0;
 	}
+}
+
+// 0x00430E10: every object of the root list whose draw-order key is at most
+// `key`, drawn onto `target` over the whole of it, in list order (0x0041B0A0 for
+// each). The list's own draw priority does not hold anything back here, and the
+// second list (0x00431530) holds nothing, as in Object_DrawListOf.
+void Object_DrawListBelow(Renderer_t* renderer, Bitmap_t* target, uint32_t key)
+{
+	Rect_t whole = { 0, 0, target->width - 1, target->height - 1 };
+	for(ObjectNode_t* node = gRootList.head; node != NULL; node = node->next)
+		if(node->key <= key)
+			Object_DrawTo(renderer, node->object, target, &whole, &whole);
+}
+
+// 0x0041B7C0, the base: the value in its mode, then every child through the
+// child's own virtual.
+static const char* Object_SetEffect2Base(DisplayObject_t* object, uint32_t mode, uint32_t value)
+{
+	object->fieldB8 = mode == 1 ? value : value << 16;
+	const char* unread = NULL;
+	for(ObjectChild_t* node = object->children; node != NULL; node = node->next)
+	{
+		const char* childUnread = Object_SetEffect2(node->child, mode, value);
+		if(unread == NULL)
+			unread = childUnread;
+	}
+	return unread;
+}
+
+// vtable+0x50. A sprite answers at 0x00428540: the base first, then an arm per kind
+// (+0x134, the table at 0x004285F8). Kinds 1 and 5 keep the value (0x0041B810) in
+// +0x240 when their content kind is 3; kinds 3 and 4 do nothing more; kinds 2, 5 and 6
+// rebuild their content (0x00429960; 0x00429A80, 0x00428F50, 0x004290E0, 0x0042A170),
+// which is not written and is named instead.
+const char* Object_SetEffect2(DisplayObject_t* object, uint32_t mode, uint32_t value)
+{
+	if(object == NULL)
+		return NULL;
+	const char* unread = Object_SetEffect2Base(object, mode, value);
+	if(object->type != OBJECT_TYPE_SPRITE)
+		return unread;
+	switch(object->kind)
+	{
+	case 1:
+		if(object->contentKind == 3)
+			object->field240 = Object_GetEffect2(object);
+		break;
+	case 2:
+		return "0x00429960, a kind 2 sprite's second effect parameter";
+	case 5:
+		if(object->contentKind == 3)
+			object->field240 = Object_GetEffect2(object);
+		return "0x00429A80 / 0x00428F50 / 0x004290E0, a kind 5 sprite's second effect parameter";
+	case 6:
+		if(object->contentKind == 3)
+			object->field240 = Object_GetEffect2(object);
+		return "0x00428F50 / 0x004290E0 / 0x0042A170, a kind 6 sprite's second effect parameter";
+	default:
+		break;
+	}
+	return unread;
+}
+
+// 0x0041B810: the upper half of +0xB8 (the word at +0xBA).
+uint32_t Object_GetEffect2(const DisplayObject_t* object)
+{
+	return (object->fieldB8 >> 16) & 0xFFFF;
+}
+
+// vtable+0x30: the base answers +0x30 / +0x34 (0x0041B310); the screen's classes 4
+// and 12 answer their own (0x0041D400, 0x0041E0B0).
+void Object_GetPosition(DisplayObject_t* object, int32_t* x, int32_t* y)
+{
+	if(object->type == OBJECT_TYPE_SCREEN && Screen_GetPosition(object, x, y))
+		return;
+	*x = object->baseX;
+	*y = object->baseY;
+}
+
+// vtable+0x2C, what an animation moves an object with. The base (0x0041B280) is
+// vtable+0x28 with both flags set: the owner re-offsets the object and every child
+// follows. The screen's class 1 does nothing (0x0041EC50); classes 4 and 12 have
+// their own (0x0041D3E0, 0x0041E0A0).
+void Object_Move(DisplayObject_t* object, int32_t x, int32_t y)
+{
+	if(object->type == OBJECT_TYPE_SCREEN)
+	{
+		if(!Screen_SetPosition(object, x, y) && object->kind != 1)
+			printf("[Object]: Warning: moving a screen of class %u (vtable+0x2C) is not written yet\n", object->kind);
+		return;
+	}
+	Object_SetBasePosition(object, x, y, 1, 1);
+}
+
+// vtable+0x4C: the base answers +0xAC (0x0041B720); the screen's class 12 its current
+// layer's level (0x0041E110); a sprite (0x00428500) answers +0x240 for content kind 1
+// and the base for content kinds -1, 0, 2 and 3. For any other content kind the
+// original returns an uninitialised local; this answers the base.
+uint32_t Object_GetEffectLevel(DisplayObject_t* object)
+{
+	uint32_t level;
+	if(object->type == OBJECT_TYPE_SCREEN && Screen_GetEffectLevel(object, &level))
+		return level;
+	if(object->type == OBJECT_TYPE_SPRITE && object->contentKind == 1)
+		return object->field240;
+	return object->unknownAC;
+}
+
+void Object_SetOrigin(DisplayObject_t* object, int32_t x, int32_t y)
+{
+	object->originX = x;
+	object->originY = y;
+	for(ObjectChild_t* node = object->children; node != NULL; node = node->next)
+		Object_SetOrigin(node->child, x, y);
 }

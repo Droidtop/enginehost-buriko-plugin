@@ -22,5 +22,10 @@ void OS_GetPhysicalMemory(uint64_t* total, uint64_t* available);
 // keys throughout - they are what the scripts' own key settings hold - so the
 // mapping onto whatever the host uses lives here and nowhere else.
 int OS_IsKeyDown(uint32_t vk);
+// The host's input marks a virtual key held or not (keyboard, mouse, touch and
+// the controller all report here).
+void OS_SetVkHeld(uint32_t vk, int held);
+// Shows a composed frame, scaled to the display with its aspect kept.
+void OS_Present(const uint8_t* pixels, int width, int height, int stride);
 
 #endif

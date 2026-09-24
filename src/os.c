@@ -3,6 +3,7 @@
 #include "os.h"
 #include "version.h"
 #include "engine.h"
+#include "input.h"
 
 Engine_t* osEngine = NULL;
 
@@ -18,6 +19,58 @@ int gReadKeysWhenInactive = 0;
 // VK_RBUTTON. Only Windows swaps them, and SDL reports the buttons already
 // swapped, so this stays 0 and the engine reads what SDL gives it.
 int gSwapMouseButtons = 0;
+
+// Which virtual keys are held, as the host's events say. The original asks the
+// system (GetAsyncKeyState); here every source of input - keyboard, mouse, touch
+// and the controller - reports into this one table, which is what OS_IsKeyDown
+// answers from, so a key a controller holds is as held as a key on a keyboard.
+static uint8_t gVkHeld[256];
+
+// The window shows the composed frame through a renderer whose logical size is
+// the game's screen: the frame is scaled to fit with its aspect kept, and SDL
+// maps pointer positions back into the game's own pixels.
+static SDL_Renderer* gRenderer = NULL;
+static SDL_Texture* gFrameTexture = NULL;
+static int gFrameWidth = 0, gFrameHeight = 0;
+
+// Scancode to virtual key, built once from OS_ScancodeForVk below.
+static uint8_t gVkOfScancode[SDL_NUM_SCANCODES];
+static SDL_Scancode OS_ScancodeForVk(uint32_t vk);
+static void OS_BuildKeyTable(void)
+{
+	for(uint32_t vk = 1; vk < 256; vk++)
+	{
+		SDL_Scancode sc = OS_ScancodeForVk(vk);
+		if(sc != SDL_SCANCODE_UNKNOWN && sc < SDL_NUM_SCANCODES && gVkOfScancode[sc] == 0)
+			gVkOfScancode[sc] = (uint8_t)vk;
+	}
+	// A keyboard message names the modifier, not its half (VK_SHIFT, VK_CONTROL,
+	// VK_MENU); the halves are what OS_IsKeyDown's table below also answers for.
+	gVkOfScancode[SDL_SCANCODE_LSHIFT] = gVkOfScancode[SDL_SCANCODE_RSHIFT] = 0x10;
+	gVkOfScancode[SDL_SCANCODE_LCTRL]  = gVkOfScancode[SDL_SCANCODE_RCTRL]  = 0x11;
+	gVkOfScancode[SDL_SCANCODE_LALT]   = gVkOfScancode[SDL_SCANCODE_RALT]   = 0x12;
+	// The console's Back key is the window's Escape.
+	gVkOfScancode[SDL_SCANCODE_AC_BACK] = 0x1B;
+}
+
+static uint32_t OS_HalfOf(SDL_Scancode sc)
+{
+	switch(sc)
+	{
+		case SDL_SCANCODE_LSHIFT: return 0xA0;
+		case SDL_SCANCODE_RSHIFT: return 0xA1;
+		case SDL_SCANCODE_LCTRL:  return 0xA2;
+		case SDL_SCANCODE_RCTRL:  return 0xA3;
+		case SDL_SCANCODE_LALT:   return 0xA4;
+		case SDL_SCANCODE_RALT:   return 0xA5;
+		default: return 0;
+	}
+}
+
+void OS_SetVkHeld(uint32_t vk, int held)
+{
+	gVkHeld[vk & 0xFF] = held ? 1 : 0;
+}
 
 
 uint32_t OS_GetTicks()
@@ -51,6 +104,11 @@ int OS_Init(Engine_t* engine)
     }
     engine->window = window;
     gAppActive = (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    OS_BuildKeyTable();
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+    gRenderer = SDL_CreateRenderer(window, -1, 0);
+    if(gRenderer == NULL)
+        gRenderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     return 0;
 }
 
@@ -81,6 +139,53 @@ int OS_Poll()
         		gAppActive = 1;
         	else if(event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
         		gAppActive = 0;
+        }
+        else if(event.type == SDL_KEYDOWN || event.type == SDL_KEYUP)
+        {
+        	SDL_Scancode sc = event.key.keysym.scancode;
+        	uint32_t vk = sc < SDL_NUM_SCANCODES ? gVkOfScancode[sc] : 0;
+        	uint32_t half = OS_HalfOf(sc);
+        	int down = event.type == SDL_KEYDOWN;
+        	if(half)
+        		OS_SetVkHeld(half, down);
+        	if(vk)
+        	{
+        		OS_SetVkHeld(vk, down);
+        		if(down)
+        			Input_KeyDown(vk);
+        		else
+        			Input_KeyUp(vk);
+        	}
+        }
+        else if(event.type == SDL_MOUSEMOTION)
+        {
+        	Input_MouseMove(event.motion.x, event.motion.y);
+        }
+        else if(event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP)
+        {
+        	int button = -1;
+        	switch(event.button.button)
+        	{
+        		case SDL_BUTTON_LEFT:   button = 0; break;
+        		case SDL_BUTTON_RIGHT:  button = 1; break;
+        		case SDL_BUTTON_MIDDLE: button = 2; break;
+        		case SDL_BUTTON_X1:     button = 3; break;
+        		case SDL_BUTTON_X2:     button = 4; break;
+        	}
+        	if(button >= 0)
+        	{
+        		static const uint32_t vks[5] = { 0x01, 0x02, 0x04, 0x05, 0x06 };
+        		int down = event.type == SDL_MOUSEBUTTONDOWN;
+        		OS_SetVkHeld(vks[button], down);
+        		Input_MouseButton(button, down, event.button.x, event.button.y);
+        	}
+        }
+        else if(event.type == SDL_MOUSEWHEEL)
+        {
+        	int dy = event.wheel.y;
+        	if(event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED)
+        		dy = -dy;
+        	Input_MouseWheel(dy);
         }
     }
 }
@@ -145,43 +250,35 @@ int OS_IsKeyDown(uint32_t vk)
 	// the engine has been told to read them anyway.
 	if(!gAppActive && !gReadKeysWhenInactive)
 		return 0;
+	vk &= 0xFF;
+	// VK_SHIFT, VK_CONTROL and VK_MENU are held when either half is.
+	if(vk == 0x10) return gVkHeld[0x10] || gVkHeld[0xA0] || gVkHeld[0xA1];
+	if(vk == 0x11) return gVkHeld[0x11] || gVkHeld[0xA2] || gVkHeld[0xA3];
+	if(vk == 0x12) return gVkHeld[0x12] || gVkHeld[0xA4] || gVkHeld[0xA5];
+	return gVkHeld[vk] != 0;
+}
 
-	uint32_t buttons = SDL_GetMouseState(NULL, NULL);
-	switch(vk)
+void OS_Present(const uint8_t* pixels, int width, int height, int stride)
+{
+	if(gRenderer == NULL)
+		return;
+	if(gFrameTexture == NULL || gFrameWidth != width || gFrameHeight != height)
 	{
-		case 0x01:  // VK_LBUTTON
-			return (buttons & SDL_BUTTON(gSwapMouseButtons ? SDL_BUTTON_RIGHT
-			                                               : SDL_BUTTON_LEFT)) != 0;
-		case 0x02:  // VK_RBUTTON
-			return (buttons & SDL_BUTTON(gSwapMouseButtons ? SDL_BUTTON_LEFT
-			                                               : SDL_BUTTON_RIGHT)) != 0;
-		case 0x04:  // VK_MBUTTON
-			return (buttons & SDL_BUTTON(SDL_BUTTON_MIDDLE)) != 0;
-		case 0x05:  // VK_XBUTTON1
-			return (buttons & SDL_BUTTON(SDL_BUTTON_X1)) != 0;
-		case 0x06:  // VK_XBUTTON2
-			return (buttons & SDL_BUTTON(SDL_BUTTON_X2)) != 0;
-		default:
-			break;
+		if(gFrameTexture)
+			SDL_DestroyTexture(gFrameTexture);
+		gFrameTexture = SDL_CreateTexture(gRenderer, SDL_PIXELFORMAT_BGRA32,
+		                                  SDL_TEXTUREACCESS_STREAMING, width, height);
+		gFrameWidth = width;
+		gFrameHeight = height;
+		SDL_RenderSetLogicalSize(gRenderer, width, height);
 	}
-
-	int count = 0;
-	const Uint8* keys = SDL_GetKeyboardState(&count);
-	if(keys == NULL)
-		return 0;
-
-	// VK_SHIFT, VK_CONTROL and VK_MENU ask about either half.
-	SDL_Scancode left = SDL_SCANCODE_UNKNOWN, right = SDL_SCANCODE_UNKNOWN;
-	if(vk == 0x10)      { left = SDL_SCANCODE_LSHIFT; right = SDL_SCANCODE_RSHIFT; }
-	else if(vk == 0x11) { left = SDL_SCANCODE_LCTRL;  right = SDL_SCANCODE_RCTRL;  }
-	else if(vk == 0x12) { left = SDL_SCANCODE_LALT;   right = SDL_SCANCODE_RALT;   }
-	if(left != SDL_SCANCODE_UNKNOWN)
-		return (left < count && keys[left]) || (right < count && keys[right]);
-
-	SDL_Scancode code = OS_ScancodeForVk(vk);
-	if(code == SDL_SCANCODE_UNKNOWN || code >= count)
-		return 0;
-	return keys[code] != 0;
+	if(gFrameTexture == NULL)
+		return;
+	SDL_UpdateTexture(gFrameTexture, NULL, pixels, stride);
+	SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, 255);
+	SDL_RenderClear(gRenderer);
+	SDL_RenderCopy(gRenderer, gFrameTexture, NULL, NULL);
+	SDL_RenderPresent(gRenderer);
 }
 
 int OS_Quit()

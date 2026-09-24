@@ -20,7 +20,7 @@ uint32_t Opcode_Grp1_ScaleBitmap(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_30(Thread_t* thread);
 uint32_t Opcode_Grp1_DuplicateBitmap(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_51(Thread_t* thread);
-uint32_t Opcode_Grp1_Unknown_64(Thread_t* thread);
+uint32_t Opcode_Grp1_SetScreenLayered(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_65(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_66(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_67(Thread_t* thread);

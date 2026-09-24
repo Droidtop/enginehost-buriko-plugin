@@ -128,6 +128,9 @@ struct DisplayObject
 	// but the dispatch is written out, so the day content exists it is already
 	// the original's dispatch and not a special case.
 	int32_t   contentKind;        // +0x244
+	// +0x240, a sprite's own level: what its vtable+0x4C answers for content kind 1,
+	// and where kinds 1, 5 and 6 keep the second effect parameter (0x00428540).
+	uint32_t  field240;
 	// +0x134. A sprite's kind, and a filter's content family: 0 is a colour and 1
 	// a bitmap-backed filter (0x00420C00's first switch).
 	uint32_t  kind;               // +0x134
@@ -190,6 +193,25 @@ struct DisplayObject
 	// window's list to 0x00430850). This engine's Object_Destroy does not, so the
 	// object remembers where it went in.
 	struct ObjectList* list;
+	// +0x138 on the screen object: whether its class draws its content
+	// (vtable+0x78, 0x0041C3F0), and the class's own fields (screen.c).
+	uint32_t          screenContent;
+	struct ScreenData* screen;
+	// +0xB8, a second effect parameter: vtable+0x50 (0x0041B7C0) writes the value
+	// shifted into the upper half (+0xBA, which 0x0041B810 reads back) or, in its
+	// mode 1, whole (which 0x0041B820 reads back as a dword).
+	uint32_t          fieldB8;
+	// +0x40 and +0x44, the object's origin, which vtable+0x40's neighbour
+	// 0x0041B3F0 writes down through the children and 0x0041B430 reads back.
+	int32_t           originX;
+	int32_t           originY;
+	// +0x80 and +0x84: whether positions snap to whole pixels (0x0041BF80, read by
+	// 0x0041BFA0), and +0x88 (0x0041BFC0).
+	uint32_t          snap;
+	uint32_t          snapValue;
+	uint32_t          field88;
+	// +0xC0: sixteen words a script keeps on the object (0x0041C2B0, 0x0041C2D0).
+	uint32_t          userData[16];
 };
 
 // ----------------------------------------------------------------------------------
@@ -251,6 +273,25 @@ uint32_t Object_Create(uint32_t tag);
 // NULL for anything that is not a live object handle: a tag byte of no kind that is
 // built, an index past that kind's table, or a slot that has been freed.
 DisplayObject_t* Object_Resolve(uint32_t handle);
+// 0x0043E270's half that belongs to the list: the screen object is taken out and
+// destroyed, and a new base screen object (type 1) is built and filed in its place.
+DisplayObject_t* Object_ReplaceScreen(void);
+// 0x0041B840: the weight an object's blend mode draws it with.
+uint32_t Object_Weight(const DisplayObject_t* object);
+// vtable+0x50 (the base 0x0041B7C0, a sprite 0x00428540): the second effect
+// parameter, on the object and every child through the child's own virtual. Answers
+// the name of unwritten work a sprite's kind needs, or NULL.
+const char* Object_SetEffect2(DisplayObject_t* object, uint32_t mode, uint32_t value);
+// 0x0041B810: the second effect parameter as mode 0 wrote it.
+uint32_t Object_GetEffect2(const DisplayObject_t* object);
+// vtable+0x30 and vtable+0x4C: where the object is, and its effect level.
+void     Object_GetPosition(DisplayObject_t* object, int32_t* x, int32_t* y);
+// vtable+0x2C, the position an animation moves (the base's is vtable+0x28 with both
+// flags, so it is the owner-given position +0x30/+0x34, not vtable+0x38's +0x38).
+void     Object_Move(DisplayObject_t* object, int32_t x, int32_t y);
+uint32_t Object_GetEffectLevel(DisplayObject_t* object);
+// 0x0041B3F0: the origin, on the object and every child.
+void Object_SetOrigin(DisplayObject_t* object, int32_t x, int32_t y);
 // Free the object a handle names and give its slot back, so the next object of
 // that kind takes it - which is what the original does and a counter cannot.
 void Object_Destroy(uint32_t handle);
@@ -367,7 +408,7 @@ extern int gLogDraws;
 // own constructor calls it with both zero, so windows start invisible.
 // 0x00507688. Set, the display code holds back every object whose
 // propagateHidden is clear (0x00431AA0). Sys0 0x50 writes it.
-extern uint32_t gObjectsHeldBack;
+extern uint32_t gProcessesWait;   // 0x00507688
 
 extern uint32_t gWindowsVisible;
 extern uint32_t gWindowTransparency;
@@ -386,6 +427,8 @@ void Object_ListResort(DisplayObject_t* object);
 void Object_DrawListOf(ObjectList_t* list, Renderer_t* renderer, Bitmap_t* target, const Rect_t* clip);
 // The same on the root's list: the frame.
 void Object_DrawList(Renderer_t* renderer, Bitmap_t* target, const Rect_t* clip);
+// 0x00430E10: the root list's objects up to a draw-order key, onto a bitmap.
+void Object_DrawListBelow(Renderer_t* renderer, Bitmap_t* target, uint32_t key);
 // Every node out of a list, without touching the objects themselves - a window's
 // list owns no object in it, and neither does the root's.
 void Object_ListClear(ObjectList_t* list);

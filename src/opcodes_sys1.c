@@ -7,6 +7,9 @@
 #include "opcodes_sys1.h"
 #include "thread.h"
 
+// process.c: 0x00507690.
+extern uint32_t gProcessKeyButtons;
+
 // The 0x81 group is the engine's second system-control group. Its dispatch table
 // lives at 0x00503F00 in fureraba.exe and is reached from 0x0048CAB0; an entry the
 // engine does not define reports "undefined system control instruction $81xx".
@@ -46,7 +49,7 @@ char* OpcodesSys1Mnemonics[256] = {
 	/* 0x1C  28 */ "--Unknown--",
 	/* 0x1D  29 */ "Unknown_29",
 	/* 0x1E  30 */ "Unknown_30",
-	/* 0x1F  31 */ "Unknown_31",
+	/* 0x1F  31 */ "SetSkipButtons",
 	/* 0x20  32 */ "--Unknown--",
 	/* 0x21  33 */ "--Unknown--",
 	/* 0x22  34 */ "--Unknown--",
@@ -305,7 +308,7 @@ OpcodePtr_t OpcodesSys1[256] = {
 	/* 0x1C  28 */ NULL,
 	/* 0x1D  29 */ Opcode_Sys1_Unknown_29,
 	/* 0x1E  30 */ Opcode_Sys1_Unknown_30,
-	/* 0x1F  31 */ Opcode_Sys1_Unknown_31,
+	/* 0x1F  31 */ Opcode_Sys1_SetSkipButtons,
 	/* 0x20  32 */ NULL,
 	/* 0x21  33 */ NULL,
 	/* 0x22  34 */ NULL,
@@ -632,9 +635,14 @@ uint32_t Opcode_Sys1_Unknown_30(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys1_Unknown_31(Thread_t* thread)
+/*
+ * Sys1 0x1F (0x0048B960 -> 0x0046E720 -> 0x00431AD0): the logical buttons a key press
+ * on an animation's region is counted over (0x00507690, 0x2000 at start).
+ */
+uint32_t Opcode_Sys1_SetSkipButtons(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	gProcessKeyButtons = Thread_PopStack(thread);
+	return 0;
 }
 
 uint32_t Opcode_Sys1_Unknown_40(Thread_t* thread)

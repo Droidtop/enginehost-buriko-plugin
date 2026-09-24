@@ -165,6 +165,11 @@ int Renderer_CopyBitmap(Renderer_t* renderer, int destination, int source, int o
 #define BITMAP_BLEND_ALPHA_TRANS  0x01
 #define BITMAP_BLEND_ALPHA_TRANS2 0x20
 #define BITMAP_BLEND_COPY         0x80
+// The source darkened towards black by the weight (0x0040DBA0), which 0x05 and
+// 0xC0 share, and lightened towards white (0x0040AC16).
+#define BITMAP_BLEND_FADE_BLACK   0x05
+#define BITMAP_BLEND_FADE_BLACK2  0xC0
+#define BITMAP_BLEND_FADE_WHITE   0xC1
 // Draws the source onto the destination with its top left corner at (x, y)
 // (0x00402720). 0 on success, 1 no destination, 2 no source, 3 incompatible
 // pixel modes, 4 nothing left after clipping (success to the caller), 5 a blend
@@ -204,6 +209,11 @@ int Renderer_FillView(Bitmap_t* view, uint32_t colour, uint32_t weight);
 // 0x0040A9E0: the blend of one view onto another, corner to corner. The results are
 // Renderer_BlitBitmap's.
 int Renderer_BlitView(Bitmap_t* destination, Bitmap_t* source, int mode, int transparency);
+// 0x0040A530: one view onto another with its corner at (x, y) of the destination,
+// with a blend mode and a weight. The results are Renderer_BlitBitmap's.
+int Renderer_BlitAt(Bitmap_t* destination, int x, int y, Bitmap_t* source, int mode, int weight);
+// 0x0040A710: a view filled with one colour.
+void Renderer_FillSolid(Bitmap_t* view, uint32_t colour);
 // The frame buffer, made on first use at the display mode's size.
 Bitmap_t* Renderer_BackBuffer(Renderer_t* renderer);
 // Composes a frame and writes it to a PNG. 0 on success.

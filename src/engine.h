@@ -240,10 +240,10 @@ void Engine_SetFlagUnknown10(int value);
 extern uint32_t gClockBase;
 void Engine_SetClockBase(uint32_t base);
 
-extern int gMasterVolume;
-extern int gMasterVolumeAttenuation;
-extern int gMasterVolumeMuted;
-uint32_t Engine_SetMasterVolume(uint32_t volume);
+extern int gMovieVolume;
+extern int gMovieVolumeAttenuation;
+extern int gMovieVolumeMuted;
+uint32_t Engine_SetMovieVolume(uint32_t volume);
 
 typedef struct SearchPathNode SearchPathNode_t;
 struct SearchPathNode

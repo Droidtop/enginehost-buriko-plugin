@@ -7,6 +7,7 @@
 #include "opcodes.h"
 #include "nametable.h"
 #include "object.h"
+#include "screen.h"
 #include "opcodes_grp1.h"
 #include "renderer.h"
 #include "thread.h"
@@ -76,7 +77,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x3D  61 */ "--Unknown--",
     /* 0x3E  62 */ "--Unknown--",
     /* 0x3F  63 */ "--Unknown--",
-    /* 0x40  64 */ "Unknown_64",
+    /* 0x40  64 */ "SetScreenLayered",
     /* 0x41  65 */ "Unknown_65",
     /* 0x42  66 */ "Unknown_66",
     /* 0x43  67 */ "Unknown_67",
@@ -335,7 +336,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x3D  61 */ NULL,
     /* 0x3E  62 */ NULL,
     /* 0x3F  63 */ NULL,
-    /* 0x40  64 */ Opcode_Grp1_Unknown_64,
+    /* 0x40  64 */ Opcode_Grp1_SetScreenLayered,
     /* 0x41  65 */ Opcode_Grp1_Unknown_65,
     /* 0x42  66 */ Opcode_Grp1_Unknown_66,
     /* 0x43  67 */ Opcode_Grp1_Unknown_67,
@@ -695,9 +696,30 @@ uint32_t Opcode_Grp1_Unknown_51(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_64(Thread_t* thread)
+uint32_t Opcode_Grp1_SetScreenLayered(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x00481F10 -> 0x004623D0 -> 0x0043DD90: the screen becomes class 12 and its
+	// layer 0 shows an image. Popped: a flag (+0x190), the y and x scales (16.16),
+	// the angle, the anchor's y and x inside the image (16.16), the image, then the
+	// y and x (16.16) the anchor goes to. A bad image (0x004E8DC4) or a scale of
+	// zero (0x004E9530) is fatal.
+	uint32_t flag = Thread_PopStack(thread);
+	uint32_t scaleY = Thread_PopStack(thread);
+	uint32_t scaleX = Thread_PopStack(thread);
+	uint32_t angle = Thread_PopStack(thread);
+	int32_t anchorY = (int32_t)Thread_PopStack(thread);
+	int32_t anchorX = (int32_t)Thread_PopStack(thread);
+	int32_t bitmap = (int32_t)Thread_PopStack(thread);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	uint32_t r = Screen_SetLayered(x, y, bitmap, anchorX, anchorY, angle, scaleX, scaleY, flag);
+	if(r != 0)
+	{
+		printf("[Thread %d]: %sError: the layered screen failed (%u): image %d, scale %u x %u\n",
+		       thread->threadId, TLevel[thread->level], r, bitmap, scaleX, scaleY);
+		return 0xFFFFFFFC;
+	}
+	return 0;
 }
 
 uint32_t Opcode_Grp1_Unknown_65(Thread_t* thread)

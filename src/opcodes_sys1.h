@@ -28,7 +28,7 @@ uint32_t Opcode_Sys1_Unknown_25(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_27(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_29(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_30(Thread_t* thread);
-uint32_t Opcode_Sys1_Unknown_31(Thread_t* thread);
+uint32_t Opcode_Sys1_SetSkipButtons(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_40(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_41(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_42(Thread_t* thread);

@@ -7,6 +7,7 @@
 #include "opcodes_grp0.h"
 #include "icon.h"
 #include "object.h"
+#include "screen.h"
 #include "thread.h"
 #include "process.h"
 
@@ -16,7 +17,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x02   2 */ "SetFramerate",
 	/* 0x03   3 */ "Unknown_0x03",
 	/* 0x04   4 */ "Unknown_4",
-	/* 0x05   5 */ "Unknown_5",
+	/* 0x05   5 */ "CaptureScreen",
 	/* 0x06   6 */ "SetMousePosition",
 	/* 0x07   7 */ "SetLoadWaitTimeout",
 	/* 0x08   8 */ "Unknown_8",
@@ -34,7 +35,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x14  20 */ "Unknown_20",
 	/* 0x15  21 */ "Unknown_21",
 	/* 0x16  22 */ "GetBitmapInfo",
-	/* 0x17  23 */ "--Unknown--",
+	/* 0x17  23 */ "SetBitmapMode",
 	/* 0x18  24 */ "BlitBitmap",
 	/* 0x19  25 */ "Unknown_25",
 	/* 0x1A  26 */ "Unknown_26",
@@ -44,14 +45,14 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x1E  30 */ "Unknown_30",
 	/* 0x1F  31 */ "CopyBitmap",
 	/* 0x20  32 */ "AnimateObject",
-	/* 0x21  33 */ "Unknown_33",
-	/* 0x22  34 */ "Unknown_34",
-	/* 0x23  35 */ "Unknown_35",
+	/* 0x21  33 */ "AnimateObjectStepped",
+	/* 0x22  34 */ "MoveObject",
+	/* 0x23  35 */ "MoveObjectStepped",
 	/* 0x24  36 */ "Unknown_36",
 	/* 0x25  37 */ "--Unknown--",
 	/* 0x26  38 */ "--Unknown--",
 	/* 0x27  39 */ "--Unknown--",
-	/* 0x28  40 */ "Unknown_40",
+	/* 0x28  40 */ "AnimateObjectFull",
 	/* 0x29  41 */ "Unknown_41",
 	/* 0x2A  42 */ "--Unknown--",
 	/* 0x2B  43 */ "--Unknown--",
@@ -64,8 +65,8 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x32  50 */ "SetObjectEffectLevel",
 	/* 0x33  51 */ "Unknown_51",
 	/* 0x34  52 */ "SetObjectTransparency",
-	/* 0x35  53 */ "Unknown_53",
-	/* 0x36  54 */ "--Unknown--",
+	/* 0x35  53 */ "SetObjectEffect2",
+	/* 0x36  54 */ "SetObjectOrigin",
 	/* 0x37  55 */ "SetObjectPosition",
 	/* 0x38  56 */ "SetObjectParameter",
 	/* 0x39  57 */ "--Unknown--",
@@ -78,7 +79,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x40  64 */ "Unknown_64",
 	/* 0x41  65 */ "Unknown_65",
 	/* 0x42  66 */ "Unknown_66",
-	/* 0x43  67 */ "Unknown_67",
+	/* 0x43  67 */ "SetScreenTransition",
 	/* 0x44  68 */ "Unknown_68",
 	/* 0x45  69 */ "Unknown_69",
 	/* 0x46  70 */ "Unknown_70",
@@ -87,8 +88,8 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x49  73 */ "Unknown_73",
 	/* 0x4A  74 */ "Unknown_74",
 	/* 0x4B  75 */ "--Unknown--",
-	/* 0x4C  76 */ "Unknown_76",
-	/* 0x4D  77 */ "Unknown_77",
+	/* 0x4C  76 */ "ShowScreen",
+	/* 0x4D  77 */ "GetScreenClass",
 	/* 0x4E  78 */ "--Unknown--",
 	/* 0x4F  79 */ "--Unknown--",
 	/* 0x50  80 */ "CreateSpriteObject",
@@ -254,7 +255,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xF0 240 */ "Unknown_240",
 	/* 0xF1 241 */ "Unknown_241",
 	/* 0xF2 242 */ "Unknown_242",
-	/* 0xF3 243 */ "SetMasterVolume",
+	/* 0xF3 243 */ "SetMovieVolume",
 	/* 0xF4 244 */ "--Unknown--",
 	/* 0xF5 245 */ "--Unknown--",
 	/* 0xF6 246 */ "--Unknown--",
@@ -275,7 +276,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x02   2 */ Opcode_Grp0_SetFramerate,
 	/* 0x03   3 */ Opcode_Grp0_Unknown_0x03,
 	/* 0x04   4 */ Opcode_Grp0_Unknown_4,
-	/* 0x05   5 */ Opcode_Grp0_Unknown_5,
+	/* 0x05   5 */ Opcode_Grp0_CaptureScreen,
 	/* 0x06   6 */ Opcode_Grp0_SetMousePosition,
 	/* 0x07   7 */ Opcode_Grp0_SetLoadWaitTimeout,
 	/* 0x08   8 */ Opcode_Grp0_Unknown_8,
@@ -293,7 +294,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x14  20 */ Opcode_Grp0_Unknown_20,
 	/* 0x15  21 */ Opcode_Grp0_Unknown_21,
 	/* 0x16  22 */ Opcode_Grp0_GetBitmapInfo,
-	/* 0x17  23 */ NULL,
+	/* 0x17  23 */ Opcode_Grp0_SetBitmapMode,
 	/* 0x18  24 */ Opcode_Grp0_BlitBitmap,
 	/* 0x19  25 */ Opcode_Grp0_Unknown_25,
 	/* 0x1A  26 */ Opcode_Grp0_Unknown_26,
@@ -303,14 +304,14 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x1E  30 */ Opcode_Grp0_Unknown_30,
 	/* 0x1F  31 */ Opcode_Grp0_CopyBitmap,
 	/* 0x20  32 */ Opcode_Grp0_AnimateObject,
-	/* 0x21  33 */ Opcode_Grp0_Unknown_33,
-	/* 0x22  34 */ Opcode_Grp0_Unknown_34,
-	/* 0x23  35 */ Opcode_Grp0_Unknown_35,
+	/* 0x21  33 */ Opcode_Grp0_AnimateObjectStepped,
+	/* 0x22  34 */ Opcode_Grp0_MoveObject,
+	/* 0x23  35 */ Opcode_Grp0_MoveObjectStepped,
 	/* 0x24  36 */ Opcode_Grp0_Unknown_36,
 	/* 0x25  37 */ NULL,
 	/* 0x26  38 */ NULL,
 	/* 0x27  39 */ NULL,
-	/* 0x28  40 */ Opcode_Grp0_Unknown_40,
+	/* 0x28  40 */ Opcode_Grp0_AnimateObjectFull,
 	/* 0x29  41 */ Opcode_Grp0_Unknown_41,
 	/* 0x2A  42 */ NULL,
 	/* 0x2B  43 */ NULL,
@@ -323,8 +324,8 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x32  50 */ Opcode_Grp0_SetObjectEffectLevel,
 	/* 0x33  51 */ Opcode_Grp0_Unknown_51,
 	/* 0x34  52 */ Opcode_Grp0_SetObjectTransparency,
-	/* 0x35  53 */ Opcode_Grp0_Unknown_53,
-	/* 0x36  54 */ NULL,
+	/* 0x35  53 */ Opcode_Grp0_SetObjectEffect2,
+	/* 0x36  54 */ Opcode_Grp0_SetObjectOrigin,
 	/* 0x37  55 */ Opcode_Grp0_SetObjectPosition,
 	/* 0x38  56 */ Opcode_Grp0_SetObjectParameter,
 	/* 0x39  57 */ NULL,
@@ -337,7 +338,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x40  64 */ Opcode_Grp0_Unknown_64,
 	/* 0x41  65 */ Opcode_Grp0_Unknown_65,
 	/* 0x42  66 */ Opcode_Grp0_Unknown_66,
-	/* 0x43  67 */ Opcode_Grp0_Unknown_67,
+	/* 0x43  67 */ Opcode_Grp0_SetScreenTransition,
 	/* 0x44  68 */ Opcode_Grp0_Unknown_68,
 	/* 0x45  69 */ Opcode_Grp0_Unknown_69,
 	/* 0x46  70 */ Opcode_Grp0_Unknown_70,
@@ -346,8 +347,8 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x49  73 */ Opcode_Grp0_Unknown_73,
 	/* 0x4A  74 */ Opcode_Grp0_Unknown_74,
 	/* 0x4B  75 */ NULL,
-	/* 0x4C  76 */ Opcode_Grp0_Unknown_76,
-	/* 0x4D  77 */ Opcode_Grp0_Unknown_77,
+	/* 0x4C  76 */ Opcode_Grp0_ShowScreen,
+	/* 0x4D  77 */ Opcode_Grp0_GetScreenClass,
 	/* 0x4E  78 */ NULL,
 	/* 0x4F  79 */ NULL,
 	/* 0x50  80 */ Opcode_Grp0_CreateSpriteObject,
@@ -513,7 +514,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xF0 240 */ Opcode_Grp0_Unknown_240,
 	/* 0xF1 241 */ Opcode_Grp0_Unknown_241,
 	/* 0xF2 242 */ Opcode_Grp0_Unknown_242,
-	/* 0xF3 243 */ Opcode_Grp0_SetMasterVolume,
+	/* 0xF3 243 */ Opcode_Grp0_SetMovieVolume,
 	/* 0xF4 244 */ NULL,
 	/* 0xF5 245 */ NULL,
 	/* 0xF6 246 */ NULL,
@@ -570,9 +571,31 @@ uint32_t Opcode_Grp0_Unknown_4(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_5(Thread_t* thread)
+uint32_t Opcode_Grp0_CaptureScreen(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x00479670 -> 0x00461FF0 -> 0x00443060: a priority, then a bitmap slot. The
+	// slot is made anew at the screen's size and pixel mode (0x00407DA0) and every
+	// object at or below the priority is drawn into it (0x00430E10) - the screen
+	// as it stands under that layer, which is what a transition starts from. A
+	// priority of 0x10000 or more (0x00497D40) or a slot of 0x4000 or more
+	// (0x00497CF0) is fatal. Nothing is pushed.
+	uint32_t priority = Thread_PopStack(thread);
+	uint32_t slot = Thread_PopStack(thread);
+	if(priority >= 0x10000 || slot >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: Grp0 0x05 with priority 0x%X and bitmap 0x%X is out of range\n",
+		       thread->threadId, TLevel[thread->level], priority, slot);
+		return 0xFFFFFFFC;
+	}
+	Renderer_t* renderer = thread->engine->renderer;
+	Bitmap_t* back = Renderer_BackBuffer(renderer);
+	if(back == NULL)
+		return 0;
+	Bitmap_t* target = Renderer_CreateBitmap(renderer, (int)slot, back->width, back->height, Renderer_ScreenMode(renderer));
+	if(target == NULL)
+		return 0;
+	Object_DrawListBelow(renderer, target, (priority << 16) | 0xFFFFu);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_8(Thread_t* thread)
@@ -807,14 +830,14 @@ uint32_t Opcode_Grp0_Unknown_21(Thread_t* thread)
  */
 uint32_t Opcode_Grp0_GetBitmapInfo(Thread_t* thread)
 {
+	// 0x00479D80: a bitmap slot, then where to put its six-dword descriptor
+	// (0x00402710 -> 0x00407F20). The pixel pointer in the first dword is always
+	// cleared - a script has no use for it - and 1 is pushed when the slot held a
+	// bitmap, 0 when it did not.
 	int id = (int)Thread_PopStack(thread);
 	uint32_t* out = (uint32_t*)Thread_PopAndResolveAddress(thread);
-	if(out == NULL)
-		return 1;
-
-	Engine_t* engine = thread->engine;
-	Bitmap_t* bitmap = Renderer_ResolveBitmap(engine->renderer, id);
-	if(bitmap != NULL)
+	Bitmap_t* bitmap = Renderer_ResolveBitmap(thread->engine->renderer, id);
+	if(bitmap != NULL && out != NULL)
 	{
 		out[1] = (uint32_t)bitmap->stride;
 		out[2] = (uint32_t)bitmap->width;
@@ -822,7 +845,9 @@ uint32_t Opcode_Grp0_GetBitmapInfo(Thread_t* thread)
 		out[4] = (uint32_t)bitmap->mode;
 		out[5] = (uint32_t)Renderer_ModePixelBytes(bitmap->mode);
 	}
-	out[0] = 0;
+	if(out != NULL)
+		out[0] = 0;
+	Thread_PushStack(thread, bitmap != NULL ? 1 : 0);
 	return 0;
 }
 
@@ -951,6 +976,64 @@ uint32_t Opcode_Grp0_CopyBitmap(Thread_t* thread)
 }
 
 /*
+ * What 0x00491CD0 and 0x00491EF0 share once their handler has popped and checked the
+ * values: a frame rate below 1 answers 0x80000001, which every handler turns into
+ * the fatal "invalid frame rate" (0x004E7F3C); a handle that names nothing answers
+ * -1, the fatal "invalid object handle" (0x004E8BD0). Otherwise the animation is
+ * joined to the thread (0x004452A0) and the handler answers 2, the thread waits;
+ * the animation pushes its own two values when it ends (0x0043215B).
+ */
+static uint32_t Grp0_StartAnimation(Thread_t* thread, uint32_t handle, const ObjectAnimation_t* animation,
+                                    uint32_t allowSkip, uint32_t priority)
+{
+	if(animation->fps < 1)
+	{
+		printf("[Thread %d]: %sError: an invalid frame rate [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)animation->fps);
+		return 0xFFFFFFFC;
+	}
+	Process_t* process = Process_CreateObjectAnimation(thread, handle, animation, allowSkip, priority);
+	if(process == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid object handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	Thread_SetProcess(thread, process);
+	return 2;
+}
+
+// 0x00497D40: a priority of 0x10000 or more is fatal (0x004E9CCC).
+static int Grp0_CheckPriority(Thread_t* thread, uint32_t priority)
+{
+	if(priority < 0x10000)
+		return 1;
+	printf("[Thread %d]: %sError: an invalid priority [ %d ] was specified\n",
+	       thread->threadId, TLevel[thread->level], (int32_t)priority);
+	return 0;
+}
+
+// 0x00497F40: a level above 0x100 (unsigned) is fatal (0x004EC550).
+static int Grp0_CheckLevel(Thread_t* thread, uint32_t level)
+{
+	if(level <= 0x100)
+		return 1;
+	printf("[Thread %d]: %sError: an invalid effect level / transparency / opacity / addition level [ %d ] was specified\n",
+	       thread->threadId, TLevel[thread->level], (int32_t)level);
+	return 0;
+}
+
+// 0x00497EE0: an addition level outside -1 to 0x100 (signed) is fatal (0x004EC51C).
+static int Grp0_CheckAddition(Thread_t* thread, int32_t level)
+{
+	if(level >= -1 && level <= 0x100)
+		return 1;
+	printf("[Thread %d]: %sError: an invalid addition level [ %d ] was specified\n",
+	       thread->threadId, TLevel[thread->level], level);
+	return 0;
+}
+
+/*
  * Grp0 0x20 (0x0047A820 -> 0x00491CD0): fade one display object's effect level to
  * a target over a duration, and hold the thread that asked until it is there.
  *
@@ -965,69 +1048,123 @@ uint32_t Opcode_Grp0_CopyBitmap(Thread_t* thread)
  * pushes its own two values when it finishes, as the original does at
  * 0x0043215B.
  */
+/*
+ * Grp0 0x20 (0x0047A820 -> 0x00491CD0 -> 0x00431DF0): the effect level of one object
+ * to a target over a duration, the position left where it is (0x00431DF0 passes the
+ * current one as the target) and no frame step. Popped: the priority and whether a
+ * press may cut it short (0x00431F60), the frame rate, the duration, the level, the
+ * object.
+ */
 uint32_t Opcode_Grp0_AnimateObject(Thread_t* thread)
 {
-	uint32_t keyMask = Thread_PopStack(thread);
-	uint32_t allowKey = Thread_PopStack(thread);
-	uint32_t field38 = Thread_PopStack(thread);
+	uint32_t priority = Thread_PopStack(thread);
+	uint32_t allowSkip = Thread_PopStack(thread);
+	uint32_t fps = Thread_PopStack(thread);
 	uint32_t duration = Thread_PopStack(thread);
-	uint32_t targetEffect = Thread_PopStack(thread);
+	uint32_t level = Thread_PopStack(thread);
 	uint32_t handle = Thread_PopStack(thread);
-
-	if(targetEffect > 0x100)
-	{
-		/* 0x00497F40. */
-		printf("[Thread %d]: %sError: the effect level 0x%.8X is out of range\n",
-		       thread->threadId, TLevel[thread->level], targetEffect);
-		return 0xFFFFFFFF;
-	}
-	if(allowKey != 0 || keyMask != 0)
-	{
-		/* 0x00431F60 registers the animation with the key and mouse handling at
-		   0x0046D840 / 0x0046D8A0 so a press can cut it short. None of that is
-		   written, and the boot never asks for it. */
-		printf("[Thread %d]: %sError: an animation a key may cut short (0x00431F60, mask 0x%.8X) is not written yet\n",
-		       thread->threadId, TLevel[thread->level], keyMask);
-		return 0xFFFFFFFF;
-	}
-
-	Process_t* process = Process_CreateObjectAnimation(thread, handle, targetEffect, duration);
-	if(process == NULL)
-	{
-		/* 0x00491DBA answers -1 for a handle the display root cannot resolve. */
-		printf("[Thread %d]: %sError: the specified object [ 0x%.8X ] is invalid\n",
-		       thread->threadId, TLevel[thread->level], handle);
-		return 0xFFFFFFFF;
-	}
-	Thread_SetProcess(thread, process);
-	printf("[Thread %d]: %sAnimating the effect level of object 0x%.8X to 0x%.2X over %u ms (+0x38 = 0x%.8X)\n",
-	       thread->threadId, TLevel[thread->level], handle, targetEffect, duration, field38);
-	return 2;
+	if(!Grp0_CheckPriority(thread, priority) || !Grp0_CheckLevel(thread, level))
+		return 0xFFFFFFFC;
+	DisplayObject_t* object = Object_Resolve(handle);
+	ObjectAnimation_t a = { 0 };
+	if(object != NULL)
+		Object_GetPosition(object, &a.x, &a.y);
+	a.level = (int32_t)level;
+	a.effect2 = object != NULL ? (int32_t)Object_GetEffect2(object) : 0;
+	a.duration = duration;
+	a.fps = fps;
+	return Grp0_StartAnimation(thread, handle, &a, allowSkip, priority);
 }
 
-uint32_t Opcode_Grp0_Unknown_33(Thread_t* thread)
+/*
+ * Grp0 0x21 (0x0047A910): 0x20 with a frame step. Popped: the priority, whether a
+ * press may cut it short, the frame step, the frame rate, the duration, the level,
+ * the object.
+ */
+uint32_t Opcode_Grp0_AnimateObjectStepped(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t priority = Thread_PopStack(thread);
+	uint32_t allowSkip = Thread_PopStack(thread);
+	uint32_t frameStep = Thread_PopStack(thread);
+	uint32_t fps = Thread_PopStack(thread);
+	uint32_t duration = Thread_PopStack(thread);
+	uint32_t level = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	if(!Grp0_CheckPriority(thread, priority) || !Grp0_CheckLevel(thread, level))
+		return 0xFFFFFFFC;
+	DisplayObject_t* object = Object_Resolve(handle);
+	ObjectAnimation_t a = { 0 };
+	if(object != NULL)
+		Object_GetPosition(object, &a.x, &a.y);
+	a.level = (int32_t)level;
+	a.effect2 = object != NULL ? (int32_t)Object_GetEffect2(object) : 0;
+	a.duration = duration;
+	a.fps = fps;
+	a.frameStep = frameStep;
+	return Grp0_StartAnimation(thread, handle, &a, allowSkip, priority);
 }
 
-uint32_t Opcode_Grp0_Unknown_34(Thread_t* thread)
+/*
+ * Grp0 0x22 (0x0047AA10 -> 0x00491CD0 -> 0x00431E30): position and effect level
+ * together, the position over a curve (0x0041A760), no frame step. Popped: the
+ * priority, whether a press may cut it short, the frame rate, the duration, the
+ * level, the curve, y, x, the object.
+ */
+uint32_t Opcode_Grp0_MoveObject(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint32_t value3 = Thread_PopStack(thread);
-	uint32_t value4 = Thread_PopStack(thread);
-	uint32_t value5 = Thread_PopStack(thread);
-	uint32_t value6 = Thread_PopStack(thread);
-	uint32_t value7 = Thread_PopStack(thread);
-	Thread_SchedulePush(thread, 0x00000000);
-	Thread_SchedulePush(thread, 0x00000078);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-	return 2;
+	uint32_t priority = Thread_PopStack(thread);
+	uint32_t allowSkip = Thread_PopStack(thread);
+	uint32_t fps = Thread_PopStack(thread);
+	uint32_t duration = Thread_PopStack(thread);
+	uint32_t level = Thread_PopStack(thread);
+	uint32_t curve = Thread_PopStack(thread);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	if(!Grp0_CheckPriority(thread, priority) || !Grp0_CheckLevel(thread, level))
+		return 0xFFFFFFFC;
+	DisplayObject_t* object = Object_Resolve(handle);
+	ObjectAnimation_t a = { 0 };
+	a.x = x;
+	a.y = y;
+	a.positionCurve = curve;
+	a.level = (int32_t)level;
+	a.effect2 = object != NULL ? (int32_t)Object_GetEffect2(object) : 0;
+	a.duration = duration;
+	a.fps = fps;
+	return Grp0_StartAnimation(thread, handle, &a, allowSkip, priority);
 }
 
-uint32_t Opcode_Grp0_Unknown_35(Thread_t* thread)
+/*
+ * Grp0 0x23 (0x0047AB30): 0x22 with a frame step. Popped: the priority, whether a
+ * press may cut it short, the frame step, the frame rate, the duration, the level,
+ * the curve, y, x, the object.
+ */
+uint32_t Opcode_Grp0_MoveObjectStepped(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t priority = Thread_PopStack(thread);
+	uint32_t allowSkip = Thread_PopStack(thread);
+	uint32_t frameStep = Thread_PopStack(thread);
+	uint32_t fps = Thread_PopStack(thread);
+	uint32_t duration = Thread_PopStack(thread);
+	uint32_t level = Thread_PopStack(thread);
+	uint32_t curve = Thread_PopStack(thread);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	if(!Grp0_CheckPriority(thread, priority) || !Grp0_CheckLevel(thread, level))
+		return 0xFFFFFFFC;
+	DisplayObject_t* object = Object_Resolve(handle);
+	ObjectAnimation_t a = { 0 };
+	a.x = x;
+	a.y = y;
+	a.positionCurve = curve;
+	a.level = (int32_t)level;
+	a.effect2 = object != NULL ? (int32_t)Object_GetEffect2(object) : 0;
+	a.duration = duration;
+	a.fps = fps;
+	a.frameStep = frameStep;
+	return Grp0_StartAnimation(thread, handle, &a, allowSkip, priority);
 }
 
 uint32_t Opcode_Grp0_Unknown_36(Thread_t* thread)
@@ -1035,9 +1172,39 @@ uint32_t Opcode_Grp0_Unknown_36(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_40(Thread_t* thread)
+/*
+ * Grp0 0x28 (0x0047AE00 -> 0x00491EF0 -> 0x00431E70): every channel with its own
+ * curve. Popped: the priority, whether a press may cut it short, the frame step, the
+ * frame rate, the duration, the addition level (the second effect parameter; -1
+ * leaves it), the level's curve, the level, the position's curve, y, x, the object.
+ */
+uint32_t Opcode_Grp0_AnimateObjectFull(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t priority = Thread_PopStack(thread);
+	uint32_t allowSkip = Thread_PopStack(thread);
+	uint32_t frameStep = Thread_PopStack(thread);
+	uint32_t fps = Thread_PopStack(thread);
+	uint32_t duration = Thread_PopStack(thread);
+	int32_t addition = (int32_t)Thread_PopStack(thread);
+	uint32_t levelCurve = Thread_PopStack(thread);
+	uint32_t level = Thread_PopStack(thread);
+	uint32_t positionCurve = Thread_PopStack(thread);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	if(!Grp0_CheckPriority(thread, priority) || !Grp0_CheckAddition(thread, addition) || !Grp0_CheckLevel(thread, level))
+		return 0xFFFFFFFC;
+	ObjectAnimation_t a = { 0 };
+	a.x = x;
+	a.y = y;
+	a.positionCurve = positionCurve;
+	a.level = (int32_t)level;
+	a.levelCurve = levelCurve;
+	a.effect2 = addition;
+	a.duration = duration;
+	a.fps = fps;
+	a.frameStep = frameStep;
+	return Grp0_StartAnimation(thread, handle, &a, allowSkip, priority);
 }
 
 uint32_t Opcode_Grp0_Unknown_41(Thread_t* thread)
@@ -1145,9 +1312,27 @@ uint32_t Opcode_Grp0_SetObjectTransparency(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_53(Thread_t* thread)
+uint32_t Opcode_Grp0_SetObjectEffect2(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0047B3D0 -> 0x00462120 -> 0x00443750 -> 0x0041B7B0: a value of at most 0x100
+	// (0x00497F40, fatal otherwise), then the object; vtable+0x50 in its mode 0,
+	// which keeps the value in the upper half of +0xB8. An object handle that
+	// resolves to nothing is fatal (0x004E8BD0).
+	uint32_t value = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	if(value > 0x100)
+	{
+		printf("[Thread %d]: %sError: 0x%X is not an effect level (0 to 0x100)\n", thread->threadId, TLevel[thread->level], value);
+		return 0xFFFFFFFC;
+	}
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: 0x%.8X is not an object\n", thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	Object_SetEffect2(object, 0, value);
+	return 0;
 }
 
 // Grp0 0x37 (0x0047B470 -> 0x00462130 -> 0x004437B0) moves a display object. It
@@ -1257,9 +1442,32 @@ uint32_t Opcode_Grp0_Unknown_66(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_67(Thread_t* thread)
+uint32_t Opcode_Grp0_SetScreenTransition(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0047B940 -> 0x004622F0 -> 0x0043D830: the screen becomes class 4 - an image
+	// shown over a previous image or a colour, the effect level being how far the
+	// change has gone. Popped: the level, the rule's parameter, the rule (-1 for
+	// none), the previous image (or 0x7000 black, 0x7001 white, 0x7FFF / -1 none),
+	// its y and x, the image, its y and x. Any error is fatal: the image or the
+	// previous one does not exist (0x004E79AC), the rule does not (0x004E8658) or is
+	// not greyscale (0x004E8FD8).
+	uint32_t level = Thread_PopStack(thread);
+	uint32_t ruleParameter = Thread_PopStack(thread);
+	int32_t rule = (int32_t)Thread_PopStack(thread);
+	int32_t fromBitmap = (int32_t)Thread_PopStack(thread);
+	int32_t fromY = (int32_t)Thread_PopStack(thread);
+	int32_t fromX = (int32_t)Thread_PopStack(thread);
+	int32_t bitmap = (int32_t)Thread_PopStack(thread);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	uint32_t r = Screen_SetTransition(x, y, bitmap, fromX, fromY, fromBitmap, rule, ruleParameter, level);
+	if(r != 0)
+	{
+		printf("[Thread %d]: %sError: the screen transition failed (%u): image %d, previous %d, rule %d\n",
+		       thread->threadId, TLevel[thread->level], r, bitmap, fromBitmap, rule);
+		return 0xFFFFFFFC;
+	}
+	return 0;
 }
 
 uint32_t Opcode_Grp0_Unknown_68(Thread_t* thread)
@@ -1297,17 +1505,21 @@ uint32_t Opcode_Grp0_Unknown_74(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_76(Thread_t* thread)
+uint32_t Opcode_Grp0_ShowScreen(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	// 0x0047C210 -> 0x004624B0 -> 0x0043E570: whether the screen's content is
+	// drawn, then whether the screen is enabled (root+0x58 and root+0x54).
+	uint32_t content = Thread_PopStack(thread);
+	uint32_t enabled = Thread_PopStack(thread);
+	Screen_SetShown(enabled, content);
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_77(Thread_t* thread)
+uint32_t Opcode_Grp0_GetScreenClass(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	// 0x0047C240 -> 0x004624C0 -> 0x0043E5A0: the screen's class (+0x134).
+	Thread_PushStack(thread, Screen_Class());
+	return 0;
 }
 
 // Grp0 0x50 (0x0047C260 -> 0x004624D0 -> 0x0043E5F0) makes a sprite object and pushes
@@ -2568,10 +2780,10 @@ uint32_t Opcode_Grp0_Unknown_242(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_SetMasterVolume(Thread_t* thread)
+uint32_t Opcode_Grp0_SetMovieVolume(Thread_t* thread)
 {
 	uint32_t volume = Thread_PopStack(thread);
-	Engine_SetMasterVolume(volume);
+	Engine_SetMovieVolume(volume);
 	return 0;
 }
 
@@ -2606,5 +2818,49 @@ uint32_t Opcode_Grp0_SetLoadWaitTimeout(Thread_t* thread)
 {
 	uint32_t timeout = Thread_PopStack(thread);
 	Engine_SetLoadWaitTimeout(timeout);
+	return 0;
+}
+
+uint32_t Opcode_Grp0_SetBitmapMode(Thread_t* thread)
+{
+	// 0x00479DC0 -> 0x00402660 -> 0x004081B0: a pixel mode, then a bitmap slot.
+	// A bitmap already in that mode is left alone; the one change the original
+	// makes is 32-bit (mode 2) to 24-bit held in four bytes (mode 1), which drops
+	// the alpha by relabelling the same pixels, as it does. Pushes 0 done, 1 no
+	// such bitmap (0x0B), 2 a change it does not make (0x15).
+	uint32_t mode = Thread_PopStack(thread);
+	uint32_t slot = Thread_PopStack(thread);
+	Bitmap_t* bitmap = Renderer_ResolveBitmap(thread->engine->renderer, (int)slot);
+	uint32_t result;
+	if(bitmap == NULL)
+		result = 1;
+	else if((uint32_t)bitmap->mode == mode)
+		result = 0;
+	else if(bitmap->mode == BITMAP_MODE_32 && mode == 1)
+	{
+		bitmap->mode = 1;
+		result = 0;
+	}
+	else
+		result = 2;
+	Thread_PushStack(thread, result);
+	return 0;
+}
+
+uint32_t Opcode_Grp0_SetObjectOrigin(Thread_t* thread)
+{
+	// 0x0047B420 -> 0x00462140 -> 0x00443810 -> 0x0041B3F0: y, x, then the object;
+	// the origin (+0x40, +0x44) on it and every child. An object handle that
+	// resolves to nothing is fatal (0x004E8BD0).
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: 0x%.8X is not an object\n", thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	Object_SetOrigin(object, x, y);
 	return 0;
 }

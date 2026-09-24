@@ -24,9 +24,15 @@ typedef enum ProcessKind
 	/* The animation, vtable 0x004E51B0: it moves one display object's four
 	   animated channels - position, effect level and scale - from where they
 	   are to where they are asked for, over a duration, and holds the thread
-	   that started it until it is done. Made by Grp0 0x20. */
-	PROCESS_OBJECT_ANIMATION = 1
+	   that started it until it is done. Made by Grp0 0x20 to 0x23 and 0x28. */
+	PROCESS_OBJECT_ANIMATION = 1,
+	/* A process whose Run belongs to the subsystem that made it: the SE
+	   registration of Snd0 0x20, 0x21, 0x23 and 0x27 (the loader at 0x00439FD0). */
+	PROCESS_CALLBACK = 2
 } ProcessKind_t;
+
+typedef int  (*ProcessCallbackRun_t)(void* context);   /* 1 when finished */
+typedef void (*ProcessCallbackFree_t)(void* context);
 
 typedef struct ProcessEvent ProcessEvent_t;
 struct ProcessEvent
@@ -49,27 +55,69 @@ struct Process
 	uint32_t        keyMask;     /* +0x24 */
 	int             stopped;     /* +0x28, an event of 1 was posted */
 
-	/* The animation's own, all of them fields of the 0xA8-byte object. */
+	/* The animation's own, all of them fields of the 0xA8-byte object
+	   (0x00431CB0, vtable 0x004E51B0). */
 	uint32_t        objectHandle;  /* +0x20, re-resolved on every pass */
-	uint32_t        duration;      /* +0x30, milliseconds, never zero */
-	uint32_t        startTime;     /* +0x9C */
+	uint32_t        stopCode;      /* +0x28: 1 a click, 0x100 a key, 0x80000000 skipping */
 	uint32_t        elapsed;       /* +0x2C */
+	uint32_t        duration;      /* +0x30, milliseconds, never zero */
+	uint32_t        fps;           /* +0x38 */
+	uint32_t        frameStep;     /* +0x3C */
 	uint32_t        frames;        /* +0x40 */
-	uint32_t        stopCode;      /* +0x28 of the animation, not the wait's */
-	uint32_t        stepDeadline;  /* the base's +0x08, re-armed one ms ahead */
-	int32_t         startEffect;   /* +0x58 */
-	int32_t         deltaEffect;   /* +0x5C */
-	int32_t         lastEffect;    /* +0x74, so an unchanged pass costs nothing */
-	int             haveLast;
+	int32_t         startX, startY;   /* +0x44, +0x48 */
+	int32_t         deltaX, deltaY;   /* +0x4C, +0x50 */
+	uint32_t        positionCurve;    /* +0x54 */
+	int32_t         startLevel;       /* +0x58 */
+	int32_t         deltaLevel;       /* +0x5C */
+	uint32_t        levelCurve;       /* +0x60 */
+	int32_t         startEffect2;     /* +0x64 */
+	int32_t         deltaEffect2;     /* +0x68 */
+	int32_t         last[4];          /* +0x6C..+0x78: x, y, level, effect2 */
+	int             keyRegistered;    /* +0x7C */
+	uint32_t        allowSkip;        /* +0x80 */
+	uint32_t        priority;         /* +0x84 */
+	int             hadMouse;         /* +0x88 */
+	int             hadKeyboard;      /* +0x8C */
+	uint32_t        mouseTotal;       /* +0x90 */
+	uint32_t        keyTotal;         /* +0x94 */
+	int             stopRequested;    /* +0x98 */
+	uint32_t        startTime;        /* +0x9C */
+	uint32_t        frameInterval;    /* +0xA0 */
+	uint32_t        nextFrame;        /* +0xA4 */
+
+	/* The callback process's own. */
+	ProcessCallbackRun_t  callbackRun;
+	ProcessCallbackFree_t callbackFree;
+	void*                 callbackContext;
 };
 
 Process_t* Process_CreateWaitTiming(Thread_t* thread, uint32_t delay, uint32_t allowKey, uint32_t keyMask);
-/* Grp0 0x20's animation over one object's effect level. The target position and
-   the target scale are not parameters because the opcode does not have them: it
-   reads the object's own current position and scale and passes those as the
-   targets (0x00431DF0), so those two channels never move. */
+/* What 0x00431E70 is given: where the object goes, over which curve (0x0041A760), the
+   effect level it goes to and over which curve, the second effect parameter it goes
+   to (negative: it stays), the duration in milliseconds, and the frame rate and step
+   that quantise the clock. */
+typedef struct ObjectAnimation
+{
+	int32_t  x, y;
+	uint32_t positionCurve;
+	int32_t  level;
+	uint32_t levelCurve;
+	int32_t  effect2;
+	uint32_t duration;
+	uint32_t fps;
+	uint32_t frameStep;
+} ObjectAnimation_t;
+
+/* 0x00431CB0 + 0x00431E70 + 0x00431F60. NULL when the handle names no object. When
+   allowSkip is set, a click or a key on the region (priority << 16 | 0xFFFF) or the
+   skip keys cut it short. */
 Process_t* Process_CreateObjectAnimation(Thread_t* thread, uint32_t objectHandle,
-                                         uint32_t targetEffect, uint32_t duration);
+                                         const ObjectAnimation_t* animation,
+                                         uint32_t allowSkip, uint32_t priority);
+/* The curve table at 0x0041A760: t is 0 to 1 << 24, the answer 0 to 0x10000. */
+int32_t    Process_Ease(uint32_t curve, int32_t t);
+Process_t* Process_CreateCallback(Thread_t* thread, ProcessCallbackRun_t run,
+                                  ProcessCallbackFree_t destroy, void* context);
 void       Process_PostEvent(Process_t* process, uint32_t a, uint32_t b, uint32_t c);
 /* 1 when the process has finished (and has pushed its result on the thread),
    0 while it is still waiting. */

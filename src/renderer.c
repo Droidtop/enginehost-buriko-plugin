@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "renderer.h"
+#include "os.h"
 #include "engine.h"
 #include "object.h"
 #include "window.h"
@@ -733,6 +734,95 @@ static uint32_t Renderer_BlendOverWeighted(uint32_t destination, uint32_t source
 // The blit itself (0x0040A9E0), which the original also reaches with bitmaps that
 // are in no table slot at all - the animated cursor's frames are made that way. The
 // result codes are Renderer_BlitBitmap's, less the two for a slot that is empty.
+// The part of `src` placed with its corner at (x, y) that lands inside `dst`, as
+// two views of the same size (0x0040A530's clip). 0 when nothing does.
+static int Renderer_ClipPair(Bitmap_t* dst, int x, int y, Bitmap_t* src, Bitmap_t* d, Bitmap_t* s)
+{
+	int left   = x < 0 ? 0 : x;
+	int top    = y < 0 ? 0 : y;
+	int right  = x + src->width;
+	int bottom = y + src->height;
+	if(right > dst->width)
+		right = dst->width;
+	if(bottom > dst->height)
+		bottom = dst->height;
+	if(left >= right || top >= bottom)
+		return 0;
+	int dbytes = Renderer_ModePixelBytes(dst->mode);
+	int sbytes = Renderer_ModePixelBytes(src->mode);
+	*d = *dst;
+	*s = *src;
+	d->bitmap = dst->bitmap + (size_t)top * dst->stride + (size_t)left * dbytes;
+	s->bitmap = src->bitmap + (size_t)(top - y) * src->stride + (size_t)(left - x) * sbytes;
+	d->width = s->width = right - left;
+	d->height = s->height = bottom - top;
+	return 1;
+}
+
+// 0x0040DBA0 (modes 0x05 and 0xC0: the source darkened towards black by the
+// weight) and the 0xC1 arm (0x0040AC16 -> 0x0040E260 with 0xFFFFFF: towards white).
+// A weight of 0 is a plain copy (0x0040AF50). For 0x05/0xC0 the original has arms
+// per pair of pixel modes: 24 over 24 multiplies each colour by 0x100 - weight
+// (0x0040DC30, which also zeroes the unused fourth byte) and clears the view once
+// the weight reaches 0x100 (0x0040A620); 32-bit sources go through 0x0040DDB0 (onto
+// 24) and 0x0040DF30 (onto 32), which are not read yet and are refused by name.
+static int Renderer_BlitFade(Bitmap_t* dst, int x, int y, Bitmap_t* src, int mode, int weight)
+{
+	Bitmap_t d, s;
+	if(!Renderer_ClipPair(dst, x, y, src, &d, &s))
+		return 4;
+	if(weight <= 0)
+		return Renderer_BlitBitmaps(dst, x, y, src, BITMAP_BLEND_COPY, 0);
+	if(mode == BITMAP_BLEND_FADE_WHITE)
+	{
+		if(d.mode != s.mode || Renderer_ModePixelBytes(d.mode) != 4)
+			return 3;
+		uint32_t inverse = 0x100 - (uint32_t)weight;
+		uint32_t add = (0xFF * (uint32_t)weight) >> 8;
+		for(int row = 0; row < d.height; row++)
+		{
+			uint32_t* o = (uint32_t*)(d.bitmap + (size_t)row * d.stride);
+			const uint32_t* in = (const uint32_t*)(s.bitmap + (size_t)row * s.stride);
+			for(int column = 0; column < d.width; column++)
+			{
+				uint32_t pixel = in[column], out = 0;
+				for(int channel = 0; channel < 4; channel++)
+				{
+					uint32_t v = ((((pixel >> (channel * 8)) & 0xFF) * inverse) >> 8) + add;
+					out |= (v > 0xFF ? 0xFF : v) << (channel * 8);
+				}
+				o[column] = out;
+			}
+		}
+		return 0;
+	}
+	if(s.mode == BITMAP_MODE_24 && d.mode == BITMAP_MODE_24)
+	{
+		if(weight >= 0x100)
+		{
+			Renderer_ClearBitmap(&d);
+			return 0;
+		}
+		uint32_t m = 0x100 - (uint32_t)weight;
+		for(int row = 0; row < d.height; row++)
+		{
+			uint32_t* o = (uint32_t*)(d.bitmap + (size_t)row * d.stride);
+			const uint32_t* in = (const uint32_t*)(s.bitmap + (size_t)row * s.stride);
+			for(int column = 0; column < d.width; column++)
+			{
+				uint32_t pixel = in[column];
+				o[column] = ((((pixel      ) & 0xFF) * m) >> 8)
+				          | ((((pixel >>  8) & 0xFF) * m) >> 8) << 8
+				          | ((((pixel >> 16) & 0xFF) * m) >> 8) << 16;
+			}
+		}
+		return 0;
+	}
+	printf("[Renderer]: Warning: darkening a %d-bit source onto a %d-bit view (0x0040DDB0 / 0x0040DF30) is not written yet\n",
+	       s.mode == BITMAP_MODE_32 ? 32 : s.mode == BITMAP_MODE_24 ? 24 : 16, d.mode == BITMAP_MODE_32 ? 32 : 24);
+	return 5;
+}
+
 static int Renderer_BlitBitmaps(Bitmap_t* dst, int x, int y,
                                 Bitmap_t* src, int mode, int transparency)
 {
@@ -761,6 +851,8 @@ static int Renderer_BlitBitmaps(Bitmap_t* dst, int x, int y,
 		}
 		mode = BITMAP_BLEND_ALPHA;
 	}
+	if(mode == BITMAP_BLEND_FADE_BLACK || mode == BITMAP_BLEND_FADE_BLACK2 || mode == BITMAP_BLEND_FADE_WHITE)
+		return Renderer_BlitFade(dst, x, y, src, mode, transparency);
 	if(mode != BITMAP_BLEND_ALPHA && mode != BITMAP_BLEND_COPY)
 		return 5;
 	if(Renderer_ModePixelBytes(dst->mode) != 4)
@@ -1240,18 +1332,7 @@ void Renderer_DrawScreen(Renderer_t* renderer)
 	if(renderer->engine->window == NULL)
 		return;
 
-	SDL_Surface* windowSurface = SDL_GetWindowSurface(renderer->engine->window);
-	if(windowSurface == NULL)
-		return;
-	SDL_Surface* frame = SDL_CreateRGBSurfaceWithFormatFrom(
-	    back->bitmap, back->width, back->height, 32, back->stride, SDL_PIXELFORMAT_RGBA32);
-	if(frame == NULL)
-		return;
-	SDL_FillRect(windowSurface, NULL, SDL_MapRGB(windowSurface->format, 0, 0, 0));
-	SDL_SetSurfaceBlendMode(frame, SDL_BLENDMODE_NONE);
-	SDL_BlitSurface(frame, NULL, windowSurface, NULL);
-	SDL_FreeSurface(frame);
-	SDL_UpdateWindowSurface(renderer->engine->window);
+	OS_Present(back->bitmap, back->width, back->height, back->stride);
 }
 
 void Renderer_SetScreenParams(Renderer_t* renderer, uint32_t handle, int x, int y)
@@ -1289,4 +1370,22 @@ void Renderer_Free(Renderer_t* renderer)
 		renderer->screens[i] = NULL;
 	}
 	free(renderer);
+}
+
+int Renderer_BlitAt(Bitmap_t* destination, int x, int y, Bitmap_t* source, int mode, int weight)
+{
+	return Renderer_BlitBitmaps(destination, x, y, source, mode, weight);
+}
+
+// 0x0040A710: every pixel of the view set to one colour, opaque.
+void Renderer_FillSolid(Bitmap_t* view, uint32_t colour)
+{
+	if(Renderer_ModePixelBytes(view->mode) != 4)
+		return;
+	for(int row = 0; row < view->height; row++)
+	{
+		uint32_t* pixels = (uint32_t*)(view->bitmap + (size_t)row * view->stride);
+		for(int column = 0; column < view->width; column++)
+			pixels[column] = colour;
+	}
 }
