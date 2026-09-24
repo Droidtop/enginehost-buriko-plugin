@@ -14,6 +14,8 @@
 #include "renderer.h"
 #include "object.h"
 #include "audio.h"
+#include "xform.h"
+#include <SDL2/SDL.h>
 
 void PrintVersion()
 {
@@ -125,6 +127,10 @@ int main(int argc, char** argv)
 	// The sound library comes up at startup: WinMain (0x0048D5D0) -> 0x0046D600 ->
 	// 0x0046D550 -> 0x004A2790, which makes the DirectSound device (0x004A6540).
 	Audio_Init();
+	// 0x004315D0 installs the transformed blits' worker pool around the display-list
+	// draw with one worker per processor, and the pool's banding shows in the pixels
+	// (xform.h); the same count is used here.
+	Xform_SetWorkerCount(SDL_GetCPUCount());
 
 	// 0x0048CCF1 makes the boot thread with a 0x1000 stack, 0x80000 of code
 	// space and 0x40000 of local memory. Fureraba's boot loads twelve programs

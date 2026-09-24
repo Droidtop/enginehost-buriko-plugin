@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -63,7 +64,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x26  38 */ "--Unknown--",
 	/* 0x27  39 */ "--Unknown--",
 	/* 0x28  40 */ "CreateDirectory",
-	/* 0x29  41 */ "Unknown_41",
+	/* 0x29  41 */ "RemoveDirectory",
 	/* 0x2A  42 */ "IsDirectory",
 	/* 0x2B  43 */ "--Unknown--",
 	/* 0x2C  44 */ "Unknown_44",
@@ -83,7 +84,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x3A  58 */ "Unknown_58",
 	/* 0x3B  59 */ "Unknown_59",
 	/* 0x3C  60 */ "Unknown_60",
-	/* 0x3D  61 */ "Unknown_0x3D",
+	/* 0x3D  61 */ "GetDirectory",
 	/* 0x3E  62 */ "Unknown_62",
 	/* 0x3F  63 */ "Unknown_63",
 	/* 0x40  64 */ "LoadProgram",
@@ -322,7 +323,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x26  38 */ NULL,
 	/* 0x27  39 */ NULL,
 	/* 0x28  40 */ Opcode_Sys0_CreateDirectory,
-	/* 0x29  41 */ Opcode_Sys0_Unknown_41,
+	/* 0x29  41 */ Opcode_Sys0_RemoveDirectory,
 	/* 0x2A  42 */ Opcode_Sys0_IsDirectory,
 	/* 0x2B  43 */ NULL,
 	/* 0x2C  44 */ Opcode_Sys0_Unknown_44,
@@ -342,7 +343,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x3A  58 */ Opcode_Sys0_Unknown_58,
 	/* 0x3B  59 */ Opcode_Sys0_Unknown_59,
 	/* 0x3C  60 */ Opcode_Sys0_Unknown_60,
-	/* 0x3D  61 */ Opcode_Sys0_Unknown_0x3D,
+	/* 0x3D  61 */ Opcode_Sys0_GetDirectory,
 	/* 0x3E  62 */ Opcode_Sys0_Unknown_62,
 	/* 0x3F  63 */ Opcode_Sys0_Unknown_63,
 	/* 0x40  64 */ Opcode_Sys0_LoadProgram,
@@ -990,26 +991,68 @@ uint32_t Opcode_Sys0_ListFiles(Thread_t* thread)
 }
 
 
+/*
+ * Sys0 0x28 (0x00488710): CreateDirectoryA on the path the script gives; pushes its
+ * answer (non-zero when the directory was made).
+ */
 uint32_t Opcode_Sys0_CreateDirectory(Thread_t* thread)
 {
-	uint8_t* ptr = Thread_PopAndResolveAddress(thread);
-	printf("[Thread %d]: %sCreating directory \"%s\"\n", thread->threadId, TLevel[thread->level], ptr);
-	Thread_PushStack(thread, 1);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	const char* path = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t result = 0;
+	if(path != NULL)
+	{
+		char local[512];
+		snprintf(local, sizeof(local), "%s", path);
+		for(char* c = local; *c != 0; c++)
+			if(*c == '\\')
+				*c = '/';
+		result = mkdir(local, 0777) == 0 ? 1 : 0;
+	}
+	Thread_PushStack(thread, result);
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_41(Thread_t* thread)
+/*
+ * Sys0 0x29 (0x00488740): RemoveDirectoryA; pushes its answer. Only an empty
+ * directory can be removed, as on Windows.
+ */
+uint32_t Opcode_Sys0_RemoveDirectory(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	const char* path = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t result = 0;
+	if(path != NULL)
+	{
+		char local[512];
+		snprintf(local, sizeof(local), "%s", path);
+		for(char* c = local; *c != 0; c++)
+			if(*c == '\\')
+				*c = '/';
+		result = rmdir(local) == 0 ? 1 : 0;
+	}
+	Thread_PushStack(thread, result);
+	return 0;
 }
 
 
+/*
+ * Sys0 0x2A (0x00488770): GetFileAttributesA; pushes 1 when the path exists and has
+ * the directory attribute (bit 4), else 0.
+ */
 uint32_t Opcode_Sys0_IsDirectory(Thread_t* thread)
 {
-	uint8_t* ptr = Thread_PopAndResolveAddress(thread);
-	Thread_PushStack(thread, 1);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	const char* path = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t result = 0;
+	if(path != NULL)
+	{
+		char local[512];
+		snprintf(local, sizeof(local), "%s", path);
+		for(char* c = local; *c != 0; c++)
+			if(*c == '\\')
+				*c = '/';
+		struct stat info;
+		result = stat(local, &info) == 0 && S_ISDIR(info.st_mode) ? 1 : 0;
+	}
+	Thread_PushStack(thread, result);
 	return 0;
 }
 
@@ -1182,15 +1225,36 @@ uint32_t Opcode_Sys0_Unknown_60(Thread_t* thread)
 }
 
 
-uint32_t Opcode_Sys0_Unknown_0x3D(Thread_t* thread)
+/*
+ * Sys0 0x3D (0x00488CA0 -> 0x00464B20): pops which directory and a buffer in script
+ * memory, copies the directory's path there and pushes 1; 0 for a directory that is
+ * not known. Directory 0 is the game's own (0x00517F18: the executable's folder with
+ * a trailing separator, 0x00465180); 1 is the per-user folder at 0x00517C08, which
+ * only 0x004650C0 fills and which is empty until then (then 0 is pushed). The engine
+ * runs from inside the game's folder (main.c changes to it), so the game's folder is
+ * "./" here, the same prefix Sys0 0x39 is given by the scripts.
+ */
+char gUserSaveDirectory[512] = { 0 };   // 0x00517C08
+
+uint32_t Opcode_Sys0_GetDirectory(Thread_t* thread)
 {
-	// Get current working directory is value = 0, otherwise get maybeNextWorkingDir if value = 1
-	uint32_t value1 = Thread_PopStack(thread);
-	uint8_t* ptr = Thread_PopAndResolveAddress(thread);
-	strcpy(ptr, "./");
-	printf("[Thread %d]: %sRead: %s\n", thread->threadId, TLevel[thread->level], ptr);
-	Thread_PushStack(thread, 1);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t which = Thread_PopStack(thread);
+	char* buffer = (char*)Thread_PopAndResolveAddress(thread);
+	uint32_t result = 0;
+	if(buffer != NULL)
+	{
+		if(which == 0)
+		{
+			strcpy(buffer, "./");
+			result = 1;
+		}
+		else if(which == 1 && gUserSaveDirectory[0] != 0)
+		{
+			strcpy(buffer, gUserSaveDirectory);
+			result = 1;
+		}
+	}
+	Thread_PushStack(thread, result);
 	return 0;
 }
 

@@ -3,6 +3,8 @@
 #include <string.h>
 #include "screen.h"
 #include "engine.h"
+#include "process.h"
+#include "xform.h"
 
 // ----------------------------------------------------------------------------------
 // Class data. The original keeps these fields in the object from +0x13C on; one
@@ -265,8 +267,10 @@ uint32_t Screen_SetLayered(int32_t x, int32_t y, int32_t bitmap,
 static int Screen_DrawLayered(Renderer_t* renderer, DisplayObject_t* object, ScreenData_t* data,
                               Bitmap_t* target, const Rect_t* rect)
 {
-	(void)object;
 	int drawn = 0;
+	// 0x0041E284: the drawing device's size (0x0041C170), which the plain case is
+	// measured against.
+	Bitmap_t* device = Renderer_BackBuffer(renderer);
 	for(int i = 0; i < 8; i++)
 	{
 		ScreenLayer_t* layer = &data->layers[i];
@@ -275,28 +279,72 @@ static int Screen_DrawLayered(Renderer_t* renderer, DisplayObject_t* object, Scr
 			Bitmap_t* image = Renderer_ResolveBitmap(renderer, layer->bitmap);
 			if(image != NULL && Renderer_BitmapSerial(renderer, layer->bitmap) == layer->serial)
 			{
-				// 0x0041E2F2 onwards. The plain case the original special-cases - layer
-				// 0, no zoom, no rotation, whole pixels, the image covering the view -
-				// is a clear and a darkening blit by the layer's effect level (mode 5).
-				// Everything else goes through the transformed blits 0x00417800 and
-				// 0x004169B0, which are not written yet.
-				int32_t ox = layer->anchorX + (int32_t)((int64_t)layer->f17C * (int64_t)object->fieldB8 >> 24);
-				int32_t oy = layer->anchorY + (int32_t)((int64_t)layer->f180 * (int64_t)object->fieldB8 >> 24);
-				int32_t sx = layer->x - (rect->left << 16) - ox;
-				int32_t sy = layer->y - (rect->top << 16) - oy;
-				int plain = i == 0 && !drawn && layer->angle == 0 && layer->f174 == 0 && layer->f178 == 0
-				         && layer->f184 == 0 && layer->f188 == 0 && layer->f18C == 0
-				         && layer->scaleX == 0x10000 && layer->scaleY == 0x10000
-				         && (sx & 0xFFFF) == 0 && (sy & 0xFFFF) == 0 && sx <= 0 && sy <= 0
-				         && image->width + (sx >> 16) >= target->width
-				         && image->height + (sy >> 16) >= target->height;
-				if(plain)
+				// 0x0041E2F2: the second effect parameter (whole, 0x0041B820 in mode 1)
+				// is how far the layer has gone from its settings to their deltas:
+				// the anchor moves by f17C / f180 times it (>> 24), the angle by f184
+				// along curve f174, and the scales along curve f178 - interpolated in
+				// reciprocal space, from 1 / scale to 1 / (scale + f188 / f18C).
+				uint32_t e2 = object->fieldB8;
+				int32_t pointX = layer->x - (rect->left << 16);
+				int32_t pointY = layer->y - (rect->top << 16);
+				int32_t anchorX = layer->anchorX + (int32_t)((int64_t)layer->f17C * (int64_t)(int32_t)e2 >> 24);
+				int32_t anchorY = layer->anchorY + (int32_t)((int64_t)layer->f180 * (int64_t)(int32_t)e2 >> 24);
+				int32_t angle = (int32_t)(((int64_t)Process_Ease(layer->f174, (int32_t)e2) * (int32_t)layer->f184) >> 16) + (int32_t)layer->angle;
+				int32_t t2 = Process_Ease(layer->f178, (int32_t)e2);
+				double unit = 65536.0;
+				double inverseX = unit / (double)layer->scaleX;
+				double inverseY = unit / (double)layer->scaleY;
+				double toX = unit / (double)(uint32_t)(layer->scaleX + layer->f188);
+				double toY = unit / (double)(uint32_t)(layer->scaleY + layer->f18C);
+				uint32_t scaleX = (uint32_t)(int32_t)(unit / (inverseX + (toX - inverseX) * (double)t2 * (1.0 / 65536.0)));
+				uint32_t scaleY = (uint32_t)(int32_t)(unit / (inverseY + (toY - inverseY) * (double)t2 * (1.0 / 65536.0)));
+				if(i == 0)
 				{
-					Renderer_ClearBitmap(target);
-					Renderer_BlitAt(target, sx >> 16, sy >> 16, image, BITMAP_BLEND_FADE_BLACK, (int)layer->level);
+					// 0x0041E408: the plain case - the image covering the whole device
+					// from a whole-pixel place at or before its corner, nothing drawn
+					// yet, both scales 1:1 - is a clear and a darkening blit by the
+					// layer's level (mode 5). The angle is not part of the test.
+					int32_t sx = layer->x - anchorX;
+					int32_t sy = layer->y - anchorY;
+					int plain = device != NULL
+					         && image->width >= device->width && image->height >= device->height
+					         && (sx & 0xFFFF) == 0 && (sy & 0xFFFF) == 0 && sx <= 0 && sy <= 0
+					         && image->width + (sx >> 16) >= device->width
+					         && image->height + (sy >> 16) >= device->height
+					         && !drawn && scaleX == 0x10000 && scaleY == 0x10000;
+					if(plain)
+					{
+						Renderer_ClearBitmap(target);
+						Renderer_BlitAt(target, (sx >> 16) - rect->left, (sy >> 16) - rect->top, image,
+						                BITMAP_BLEND_FADE_BLACK, (int)layer->level);
+					}
+					else
+						Xform_DrawCopy(target, pointX, pointY, image, anchorX, anchorY, angle, scaleX, scaleY,
+						               layer->level, (int)layer->f190, 1);
+				}
+				else if(layer->f150 == 0 || layer->f150 == 1 || layer->f150 == 0x20)
+				{
+					// 0x0041E5AA: the layer's blend mode is an alpha one - blended
+					// straight on, the level as the transparency.
+					Xform_DrawBlend(target, pointX, pointY, image, anchorX, anchorY, angle, scaleX, scaleY,
+					                layer->level, (int)layer->f190, 1);
 				}
 				else
-					printf("[Screen]: Warning: a zoomed, turned or partial screen layer (0x00417800 / 0x004169B0) is not written yet\n");
+				{
+					// 0x0041E522: any other mode - drawn into a buffer the size of the
+					// part being drawn (0x00409030), then blended onto it with the
+					// layer's mode and level (0x0040A9E0).
+					Bitmap_t temp = *target;
+					temp.stride = target->width * Renderer_ModePixelBytes(target->mode);
+					temp.bitmap = (uint8_t*)calloc(1, (size_t)temp.stride * (size_t)target->height);
+					if(temp.bitmap != NULL)
+					{
+						Xform_DrawCopy(&temp, pointX, pointY, image, anchorX, anchorY, angle, scaleX, scaleY,
+						               0, (int)layer->f190, 1);
+						Renderer_BlitView(target, &temp, (int)layer->f150, (int)layer->level);
+						free(temp.bitmap);
+					}
+				}
 				drawn = 1;
 			}
 		}
