@@ -8,6 +8,9 @@ typedef struct Thread Thread_t;
 
 typedef uint32_t (*OpcodePtr_t)(Thread_t*);
 
+// Grp2 0x9C and Grp1 0x9C / 0x9D: a text draw's failure reported; 1 when it was one.
+int Opcode_ReportTextFailure(Thread_t* thread, uint32_t result, int32_t size, int32_t width, uint32_t fontNumber, int32_t bitmap);
+
 uint32_t Opcode_Push8(Thread_t* thread);
 uint32_t Opcode_Push16(Thread_t* thread);
 uint32_t Opcode_Push32(Thread_t* thread);

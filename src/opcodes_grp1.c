@@ -9,6 +9,8 @@
 #include "object.h"
 #include "screen.h"
 #include "opcodes_grp1.h"
+#include "font.h"
+#include "text.h"
 #include "renderer.h"
 #include "thread.h"
 
@@ -25,8 +27,8 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x09   9 */ "--Unknown--",
     /* 0x0A  10 */ "--Unknown--",
     /* 0x0B  11 */ "--Unknown--",
-    /* 0x0C  12 */ "--Unknown--",
-    /* 0x0D  13 */ "Unknown_13",
+    /* 0x0C  12 */ "SetCoverageCurve",
+    /* 0x0D  13 */ "SetFontPitchCheck",
     /* 0x0E  14 */ "SetFontAdjust",
     /* 0x0F  15 */ "--Unknown--",
     /* 0x10  16 */ "Unknown_16",
@@ -169,8 +171,8 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x99 153 */ "--Unknown--",
     /* 0x9A 154 */ "SetFunctionParameter",
     /* 0x9B 155 */ "--Unknown--",
-    /* 0x9C 156 */ "Unknown_156",
-    /* 0x9D 157 */ "Unknown_157",
+    /* 0x9C 156 */ "DrawTextInDefaultStyle",
+    /* 0x9D 157 */ "DrawTextInDefaultStyleOrPlain",
     /* 0x9E 158 */ "--Unknown--",
     /* 0x9F 159 */ "--Unknown--",
     /* 0xA0 160 */ "--Unknown--",
@@ -284,8 +286,8 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x09   9 */ NULL,
     /* 0x0A  10 */ NULL,
     /* 0x0B  11 */ NULL,
-    /* 0x0C  12 */ NULL,
-    /* 0x0D  13 */ Opcode_Grp1_Unknown_13,
+    /* 0x0C  12 */ Opcode_Grp1_SetCoverageCurve,
+    /* 0x0D  13 */ Opcode_Grp1_SetFontPitchCheck,
     /* 0x0E  14 */ Opcode_Grp1_SetFontAdjust,
     /* 0x0F  15 */ NULL,
     /* 0x10  16 */ Opcode_Grp1_Unknown_16,
@@ -428,8 +430,8 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x99 153 */ NULL,
     /* 0x9A 154 */ Opcode_Grp1_SetFunctionParameter,
     /* 0x9B 155 */ NULL,
-    /* 0x9C 156 */ Opcode_Grp1_Unknown_156,
-    /* 0x9D 157 */ Opcode_Grp1_Unknown_157,
+    /* 0x9C 156 */ Opcode_Grp1_DrawTextInDefaultStyle,
+    /* 0x9D 157 */ Opcode_Grp1_DrawTextInDefaultStyleOrPlain,
     /* 0x9E 158 */ NULL,
     /* 0x9F 159 */ NULL,
     /* 0xA0 160 */ NULL,
@@ -568,10 +570,24 @@ uint32_t Opcode_Grp1_SetFontAdjust(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp1_Unknown_13(Thread_t* thread)
+// Grp1 0x0C (0x004808A0 -> 0x00469110 -> 0x0042DD20): how a glyph's inked samples
+// become its coverage - 0 in proportion, 1 through a sine curve. Pushes 1 when the
+// value was taken, 0 for anything above 1.
+uint32_t Opcode_Grp1_SetCoverageCurve(Thread_t* thread)
+{
+	uint32_t curve = Thread_PopStack(thread);
+	Thread_PushStack(thread, (uint32_t)Font_SetCoverageCurve(curve));
+	return 0;
+}
+
+// Grp1 0x0D (0x004808D0 -> 0x00469100 -> 0x0042DD10): one value into 0x00565B60,
+// which 0x0042E1F0 reads when it makes a font: with it set, a face that reports
+// itself as variable pitch is not given the width the font was asked for. Nothing
+// is pushed.
+uint32_t Opcode_Grp1_SetFontPitchCheck(Thread_t* thread)
 {
 	uint32_t value = Thread_PopStack(thread);
-	Engine_SetGrp1FlagUnknown13(value);
+	Font_SetPitchCheck(value);
 	return 0;
 }
 
@@ -986,14 +1002,99 @@ uint32_t Opcode_Grp1_SetPhoneticMargin(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp1_Unknown_156(Thread_t* thread)
+/*
+ * Grp1 0x9C (0x00484BB0): Grp2 0x9C's draw with the default style (0x00433650) and
+ * one colour for the text and its ruby. Popped: the colour, the line spacing,
+ * kinsoku, the proportional setting, bold, width, size, font number, the ruby
+ * dictionary, whether there is ruby, the text, y, x and the bitmap; the checks and
+ * the failures are Grp2 0x9C's. Pushes the number of lines.
+ */
+uint32_t Opcode_Grp1_DrawTextInDefaultStyle(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t colour = Thread_PopStack(thread);
+	int32_t lineSpacing = (int32_t)Thread_PopStack(thread);
+	uint32_t kinsoku = Thread_PopStack(thread);
+	uint32_t proportional = Thread_PopStack(thread);
+	uint32_t bold = Thread_PopStack(thread);
+	int32_t width = (int32_t)Thread_PopStack(thread);
+	int32_t size = (int32_t)Thread_PopStack(thread);
+	uint32_t fontNumber = Thread_PopStack(thread);
+	const char* dictionary = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t ruby = Thread_PopStack(thread);
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	int32_t bitmap = (int32_t)Thread_PopStack(thread);
+	if(bitmap < 0 || bitmap >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: an invalid bitmap number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], bitmap);
+		return 0xFFFFFFFC;
+	}
+	if(Engine_FontNameById(fontNumber) == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid font number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], fontNumber);
+		return 0xFFFFFFFC;
+	}
+	TextStyle_t style;
+	Text_DefaultStyle(&style);
+	uint32_t lines = (uint32_t)x;
+	uint32_t result = Text_DrawIntoBitmap(thread->engine->renderer, bitmap, &lines, x, y, text, ruby,
+	                                      dictionary, fontNumber, size, width, bold, proportional,
+	                                      kinsoku, lineSpacing, colour, colour, &style);
+	if(Opcode_ReportTextFailure(thread, result, size, width, fontNumber, bitmap))
+		return 0xFFFFFFFC;
+	Thread_PushStack(thread, lines);
+	return 0;
 }
 
-uint32_t Opcode_Grp1_Unknown_157(Thread_t* thread)
+/*
+ * Grp1 0x9D (0x00484DC0): Grp1 0x9C with one more value popped first - non-zero
+ * draws the text plain (0x00484EB9, a style of kind 0), zero in the default style.
+ */
+uint32_t Opcode_Grp1_DrawTextInDefaultStyleOrPlain(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t plain = Thread_PopStack(thread);
+	uint32_t colour = Thread_PopStack(thread);
+	int32_t lineSpacing = (int32_t)Thread_PopStack(thread);
+	uint32_t kinsoku = Thread_PopStack(thread);
+	uint32_t proportional = Thread_PopStack(thread);
+	uint32_t bold = Thread_PopStack(thread);
+	int32_t width = (int32_t)Thread_PopStack(thread);
+	int32_t size = (int32_t)Thread_PopStack(thread);
+	uint32_t fontNumber = Thread_PopStack(thread);
+	const char* dictionary = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t ruby = Thread_PopStack(thread);
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	int32_t bitmap = (int32_t)Thread_PopStack(thread);
+	if(bitmap < 0 || bitmap >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: an invalid bitmap number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], bitmap);
+		return 0xFFFFFFFC;
+	}
+	if(Engine_FontNameById(fontNumber) == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid font number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], fontNumber);
+		return 0xFFFFFFFC;
+	}
+	TextStyle_t style;
+	if(plain != 0)
+		Text_MakeStyle(&style, 0, 0, 0, 0, 0);
+	else
+		Text_DefaultStyle(&style);
+	uint32_t lines = (uint32_t)x;
+	uint32_t result = Text_DrawIntoBitmap(thread->engine->renderer, bitmap, &lines, x, y, text, ruby,
+	                                      dictionary, fontNumber, size, width, bold, proportional,
+	                                      kinsoku, lineSpacing, colour, colour, &style);
+	if(Opcode_ReportTextFailure(thread, result, size, width, fontNumber, bitmap))
+		return 0xFFFFFFFC;
+	Thread_PushStack(thread, lines);
+	return 0;
 }
 
 // Grp1 0xB8 (0x00485070) pops a window handle, makes a DCIPIconEx out of it

@@ -8,6 +8,8 @@
 #include "sprite5.h"
 #include "icon.h"
 #include "object.h"
+#include "font.h"
+#include "text.h"
 #include "window.h"
 #include "movie.h"
 #include "screen.h"
@@ -164,15 +166,15 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x92 146 */ "--Unknown--",
 	/* 0x93 147 */ "--Unknown--",
 	/* 0x94 148 */ "SetFlagUnknown20",
-	/* 0x95 149 */ "SetSplits2",
-	/* 0x96 150 */ "SetSplits",
+	/* 0x95 149 */ "SetTextSplit1",
+	/* 0x96 150 */ "SetTextSplit2",
 	/* 0x97 151 */ "SetUnknownGrp0Val1and2",
 	/* 0x98 152 */ "SetAnimationFrames",
 	/* 0x99 153 */ "SetAnimationInterval",
 	/* 0x9A 154 */ "SetAnimationPlacement",
 	/* 0x9B 155 */ "SetMessageTiming",
-	/* 0x9C 156 */ "Unknown_156",
-	/* 0x9D 157 */ "Unknown_157",
+	/* 0x9C 156 */ "SetTextStyleKind",
+	/* 0x9D 157 */ "SetTextStyleEdge",
 	/* 0x9E 158 */ "Unknown_158",
 	/* 0x9F 159 */ "SetFlagUnknown21",
 	/* 0xA0 160 */ "Unknown_160",
@@ -423,15 +425,15 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x92 146 */ NULL,
 	/* 0x93 147 */ NULL,
 	/* 0x94 148 */ Opcode_Grp0_SetFlagUnknown20,
-	/* 0x95 149 */ Opcode_Grp0_SetSplits2,
-	/* 0x96 150 */ Opcode_Grp0_SetSplits,
+	/* 0x95 149 */ Opcode_Grp0_SetTextSplit1,
+	/* 0x96 150 */ Opcode_Grp0_SetTextSplit2,
 	/* 0x97 151 */ Opcode_Grp0_SetUnknownGrp0Val1and2,
 	/* 0x98 152 */ Opcode_Grp0_SetAnimationFrames,
 	/* 0x99 153 */ Opcode_Grp0_SetAnimationInterval,
 	/* 0x9A 154 */ Opcode_Grp0_SetAnimationPlacement,
 	/* 0x9B 155 */ Opcode_Grp0_SetMessageTiming,
-	/* 0x9C 156 */ Opcode_Grp0_Unknown_156,
-	/* 0x9D 157 */ Opcode_Grp0_Unknown_157,
+	/* 0x9C 156 */ Opcode_Grp0_SetTextStyleKind,
+	/* 0x9D 157 */ Opcode_Grp0_SetTextStyleEdge,
 	/* 0x9E 158 */ Opcode_Grp0_Unknown_158,
 	/* 0x9F 159 */ Opcode_Grp0_SetFlagUnknown21,
 	/* 0xA0 160 */ Opcode_Grp0_Unknown_160,
@@ -708,10 +710,20 @@ uint32_t Opcode_Grp0_ShowWindows(Thread_t* thread)
 	return 0;
 }
 
+// Grp0 0x0D (0x004797E0 -> 0x0042DD60): the quality glyph cells are made at. A
+// level the font code refuses (above 3) is fatal, "an invalid anti-aliasing level
+// [ %d ] was specified" (0x004E83B4); after it every font is made again at the new
+// quality (0x00461F90 -> 0x004092D0 -> 0x0042F3F0). Nothing is pushed.
 uint32_t Opcode_Grp0_SetAntialiasingLevel(Thread_t* thread)
 {
-	uint32_t value = Thread_PopStack(thread);
-	Engine_SetAntialiasingLevel(value);
+	int32_t level = (int32_t)Thread_PopStack(thread);
+	if(!Font_SetQuality(level))
+	{
+		printf("[Thread %d]: %sError: an invalid anti-aliasing level [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], level);
+		return 0xFFFFFFFC;
+	}
+	Font_RecreateAll();
 	return 0;
 }
 
@@ -2150,19 +2162,37 @@ uint32_t Opcode_Grp0_SetFlagUnknown20(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_SetSplits2(Thread_t* thread)
+// Grp0 0x95 (0x0047E2A0 -> 0x004632E0 -> 0x004335B0) and Grp0 0x96 (0x0047E2E0 ->
+// 0x004632F0 -> 0x004335D0): a value and a count for the window text, which reads
+// the first pair at 0x00433A92 and copies the second into a text object's
+// +0x54 / +0x58 at 0x00433985. The value pops first; a count outside 1..0x100 is
+// fatal, "an invalid split count [ %d ] was specified" (0x00497C20). Nothing is
+// pushed.
+uint32_t Opcode_Grp0_SetTextSplit1(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	int32_t value = (int32_t)Thread_PopStack(thread);
+	int32_t count = (int32_t)Thread_PopStack(thread);
+	if(count < 1 || count > 0x100)
+	{
+		printf("[Thread %d]: %sError: an invalid split count [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], count);
+		return 0xFFFFFFFC;
+	}
+	Text_SetSplitPair1(count, value);
 	return 0;
 }
 
-uint32_t Opcode_Grp0_SetSplits(Thread_t* thread)
+uint32_t Opcode_Grp0_SetTextSplit2(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	int32_t value = (int32_t)Thread_PopStack(thread);
+	int32_t count = (int32_t)Thread_PopStack(thread);
+	if(count < 1 || count > 0x100)
+	{
+		printf("[Thread %d]: %sError: an invalid split count [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], count);
+		return 0xFFFFFFFC;
+	}
+	Text_SetSplitPair2(count, value);
 	return 0;
 }
 
@@ -2234,20 +2264,39 @@ uint32_t Opcode_Grp0_SetMessageTiming(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_156(Thread_t* thread)
+// Grp0 0x9C (0x0047E460 -> 0x004633A0 -> 0x00433600): the default text style's
+// kind, as it comes (0 none, 1 shadow, 2 edge). Nothing is checked or pushed.
+uint32_t Opcode_Grp0_SetTextStyleKind(Thread_t* thread)
 {
-	// Sets DAT_004871c0
-	uint32_t value = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	Text_SetDefaultStyleKind(Thread_PopStack(thread));
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_157(Thread_t* thread)
+// Grp0 0x9D (0x0047E480 -> 0x004633B0 -> 0x00433610): the default style's weight,
+// then its two offsets, the second offset popping before the first. A negative
+// offset is fatal, "invalid coordinates [ %d , %d ] were specified" (0x004E9D50),
+// and so is a weight above 0x100, "an invalid density [ %d ] was specified"
+// (0x004E9D78). 0x00433610 then refuses offsets above 100 without a word; its
+// answer is not looked at. The style's colour goes back to black. Nothing is
+// pushed.
+uint32_t Opcode_Grp0_SetTextStyleEdge(Thread_t* thread)
 {
-	uint32_t route1 = Thread_PopStack(thread);
-	uint32_t coord1 = Thread_PopStack(thread);
-	uint32_t coord2 = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t weight = Thread_PopStack(thread);
+	int32_t b = (int32_t)Thread_PopStack(thread);
+	int32_t a = (int32_t)Thread_PopStack(thread);
+	if(a < 0 || b < 0)
+	{
+		printf("[Thread %d]: %sError: invalid coordinates [ %d , %d ] were specified\n",
+		       thread->threadId, TLevel[thread->level], a, b);
+		return 0xFFFFFFFC;
+	}
+	if(weight > 0x100)
+	{
+		printf("[Thread %d]: %sError: an invalid density [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)weight);
+		return 0xFFFFFFFC;
+	}
+	Text_SetDefaultStyleEdge(a, b, weight);
 	return 0;
 }
 

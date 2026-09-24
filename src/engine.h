@@ -97,8 +97,6 @@ extern uint32_t gDisplayFlagUnknown98;
 uint32_t Engine_SetDisplayFlagUnknown98(uint32_t value);
 
 
-extern uint32_t gGrp1FlagUnknown13;
-void Engine_SetGrp1FlagUnknown13(uint32_t value);
 
 typedef struct FontSubstitution
 {
@@ -155,10 +153,6 @@ extern uint32_t gFrameTimeMs;
 extern uint32_t gFrameTimer;
 void Engine_SetFramerateTime(uint32_t fps);
 
-extern int gAntiAliasing1;
-extern int gAntiAliasing2;
-extern int gAntiAliasing3;
-void Engine_SetAntialiasingLevel(int level);
 
 extern char gWindowTitle[256];
 void Engine_SetWindowTitle(const char* title);
