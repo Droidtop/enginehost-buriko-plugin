@@ -28,7 +28,11 @@ typedef enum ProcessKind
 	PROCESS_OBJECT_ANIMATION = 1,
 	/* A process whose Run belongs to the subsystem that made it: the SE
 	   registration of Snd0 0x20, 0x21, 0x23 and 0x27 (the loader at 0x00439FD0). */
-	PROCESS_CALLBACK = 2
+	PROCESS_CALLBACK = 2,
+	/* The bitmap loader (0x00439D50, vtable 0x004E57A0): the thread waits while the
+	   loader thread reads and decodes; its Run (0x00439A70) ends the wait once the
+	   load is done and pushes nothing. Made by Grp0 0x10. */
+	PROCESS_LOAD = 3
 } ProcessKind_t;
 
 typedef int  (*ProcessCallbackRun_t)(void* context);   /* 1 when finished */
@@ -118,6 +122,10 @@ Process_t* Process_CreateObjectAnimation(Thread_t* thread, uint32_t objectHandle
 int32_t    Process_Ease(uint32_t curve, int32_t t);
 Process_t* Process_CreateCallback(Thread_t* thread, ProcessCallbackRun_t run,
                                   ProcessCallbackFree_t destroy, void* context);
+/* Grp0 0x10's wait on the loader. The load itself is already done here, so the wait
+   ends at its first pass, as the original's does when its loader thread has
+   finished by then. */
+Process_t* Process_CreateLoadWait(Thread_t* thread);
 void       Process_PostEvent(Process_t* process, uint32_t a, uint32_t b, uint32_t c);
 /* 1 when the process has finished (and has pushed its result on the thread),
    0 while it is still waiting. */

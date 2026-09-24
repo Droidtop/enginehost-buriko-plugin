@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include <time.h>
 #include "engine.h"
+#include "input.h"
 #include "gdb.h"
 #include "audio.h"
 #include "movie.h"
@@ -2348,17 +2349,41 @@ void Engine_Free(Engine_t* engine)
 // so a timeout of zero means "do not wait at all" and the loader's answer passes
 // straight through. Setting the timeout always restarts the window, which is why the
 // deadline is cleared here rather than recomputed: the first poll arms it.
-uint32_t gLoadWaitTimeout = 0;
-uint32_t gLoadWaitDeadline = 0;
+uint32_t gLoadWaitTimeout = 0;      // 0x00565AE0
+static uint32_t gLoadDeadline = 0;  // 0x00565AE4
 
+// Grp0 0x07 (0x004796E0 -> 0x00402070): the budget, and no deadline.
 void Engine_SetLoadWaitTimeout(uint32_t timeout)
 {
 	gLoadWaitTimeout = timeout;
-	gLoadWaitDeadline = 0;
-	if(timeout == 0)
-		printf("[Engine]: Load wait window disabled\n");
-	else
-		printf("[Engine]: Load wait window set to %u ms\n", timeout);
+	gLoadDeadline = 0;
+}
+
+// 0x00402080: whether a bitmap load is done on the spot (1) or handed to the loader
+// thread while the script waits (0). While skipping (0x0046DFB0) always on the spot.
+// With a budget, the first load opens a window of that many milliseconds and every
+// load inside it is on the spot; the first one after it is not, and closes it. With
+// no budget, only skipping loads on the spot.
+int Engine_LoadSynchronously(void)
+{
+	int skipping = Input_SkipQuery() != 0;
+	if(gLoadWaitTimeout != 0)
+	{
+		if(gLoadDeadline == 0)
+		{
+			gLoadDeadline = OS_GetTicks() + gLoadWaitTimeout;
+			return 1;
+		}
+		if(skipping)
+			return 1;
+		if(gLoadDeadline > OS_GetTicks())
+			return 1;
+		gLoadDeadline = 0;
+		return 0;
+	}
+	if(!skipping)
+		gLoadDeadline = 0;
+	return skipping;
 }
 
 /*

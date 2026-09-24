@@ -770,6 +770,17 @@ uint32_t Opcode_Grp0_LoadBitmap(Thread_t* thread)
 		       thread->threadId, TLevel[thread->level], filename, archive, reason);
 		return 0xFFFFFFFF;
 	}
+	// 0x004799D0: a name with a '/' in it, or a load 0x00402080 does not take on the
+	// spot, goes to the loader thread (0x00439D50) and the thread waits (2).
+	if(strchr((const char*)filename, '/') != NULL || !Engine_LoadSynchronously())
+	{
+		Process_t* process = Process_CreateLoadWait(thread);
+		if(process != NULL)
+		{
+			Thread_SetProcess(thread, process);
+			return 2;
+		}
+	}
 	return 0;
 }
 

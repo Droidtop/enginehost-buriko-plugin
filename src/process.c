@@ -400,8 +400,20 @@ int Process_Run(Process_t* process)
 			return Process_RunObjectAnimation(process);
 		case PROCESS_CALLBACK:
 			return process->callbackRun(process->callbackContext);
+		case PROCESS_LOAD:
+			return 1;
 	}
 	return 1;
+}
+
+Process_t* Process_CreateLoadWait(Thread_t* thread)
+{
+	Process_t* process = (Process_t*)calloc(1, sizeof(Process_t));
+	if(process == NULL)
+		return NULL;
+	process->kind = PROCESS_LOAD;
+	process->thread = thread;
+	return process;
 }
 
 Process_t* Process_CreateCallback(Thread_t* thread, ProcessCallbackRun_t run,

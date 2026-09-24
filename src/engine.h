@@ -283,6 +283,7 @@ void Engine_FreeUserInstructions(void);
 extern uint32_t gLoadWaitTimeout;
 extern uint32_t gLoadWaitDeadline;
 void Engine_SetLoadWaitTimeout(uint32_t timeout);
+int  Engine_LoadSynchronously(void);
 
 #define ENGINE_GAME_ID_SIZE 16
 extern char gGameId[ENGINE_GAME_ID_SIZE];
