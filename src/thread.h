@@ -95,6 +95,10 @@ struct Thread
 };
 
 extern char* TLevel[4];
+// Every instruction, push, pop and code read logged: set by OPENBGI_VERBOSE or
+// --verbose. Off by default: on Android each line is a logcat write, and the
+// boot alone is millions of them.
+extern int gTraceExecution;
 
 // Answers where the program landed, or THREAD_LOAD_FAILED if the file cannot
 // hold the program its own header describes.

@@ -112,7 +112,7 @@ uint32_t Opcode_User(Thread_t* thread)
 		mnemonic = "Undefine";
 	else if(opcode == 0xF8)
 		mnemonic = "Return";
-	printf("[Thread %d]: %sUser Executing opcode User.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], mnemonic, opcode, opcode, GoldenLog_Time());
+	if(gTraceExecution) printf("[Thread %d]: %sUser Executing opcode User.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], mnemonic, opcode, opcode, GoldenLog_Time());
 
 	thread->level++;
 	uint32_t res;

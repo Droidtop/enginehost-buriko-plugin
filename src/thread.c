@@ -8,6 +8,8 @@
 #include "golden_log.h"
 #include "process.h"
 
+int gTraceExecution = 0;
+
 char* TLevel[4] = {
 	"",
 	"    ",
@@ -132,7 +134,7 @@ uint8_t Thread_ReadCode8(Thread_t* thread)
 {
 	uint8_t data = thread->code[thread->nextInstructionPointer];
 	if(!thread->inBasicOpcode || !thread->silenceBasicOpcodeLog)
-		printf("[Thread %d]: %sReadCode8() @ 0x%.8X = 0x%.2X\n", thread->threadId, TLevel[thread->level], thread->nextInstructionPointer, data);
+		if(gTraceExecution) printf("[Thread %d]: %sReadCode8() @ 0x%.8X = 0x%.2X\n", thread->threadId, TLevel[thread->level], thread->nextInstructionPointer, data);
 	thread->nextInstructionPointer = thread->nextInstructionPointer + 1;
 
 	if(GoldenLogTotal)
@@ -170,7 +172,7 @@ uint16_t Thread_ReadCode16(Thread_t* thread)
 {
 	uint16_t data = thread->code[thread->nextInstructionPointer] | (thread->code[thread->nextInstructionPointer + 1] << 8);
 	if(!thread->inBasicOpcode || !thread->silenceBasicOpcodeLog)
-		printf("[Thread %d]: %sReadCode16() @ 0x%.8X = 0x%.4X\n", thread->threadId, TLevel[thread->level], thread->nextInstructionPointer, data);
+		if(gTraceExecution) printf("[Thread %d]: %sReadCode16() @ 0x%.8X = 0x%.4X\n", thread->threadId, TLevel[thread->level], thread->nextInstructionPointer, data);
 	thread->nextInstructionPointer = thread->nextInstructionPointer + 2;
 
 	if(GoldenLogTotal)
@@ -212,7 +214,7 @@ uint32_t Thread_ReadCode32(Thread_t* thread)
 		(thread->code[thread->nextInstructionPointer + 2] << 16) |
 		(thread->code[thread->nextInstructionPointer + 3] << 24);
 	if(!thread->inBasicOpcode || !thread->silenceBasicOpcodeLog)
-		printf("[Thread %d]: %sReadCode32() @ 0x%.8X = 0x%.8X\n", thread->threadId, TLevel[thread->level], thread->nextInstructionPointer, data);
+		if(gTraceExecution) printf("[Thread %d]: %sReadCode32() @ 0x%.8X = 0x%.8X\n", thread->threadId, TLevel[thread->level], thread->nextInstructionPointer, data);
 	thread->nextInstructionPointer = thread->nextInstructionPointer + 4;
 
 	if(GoldenLogTotal)
@@ -292,7 +294,7 @@ void Thread_PushStack(Thread_t* thread, uint32_t data)
 	}
 
 	if(!thread->inBasicOpcode || !thread->silenceBasicOpcodeLog)
-		printf("[Thread %d]: %sPushStack(0x%.8X) @ 0x%.8X\n", thread->threadId, TLevel[thread->level], data, thread->stackPointer);
+		if(gTraceExecution) printf("[Thread %d]: %sPushStack(0x%.8X) @ 0x%.8X\n", thread->threadId, TLevel[thread->level], data, thread->stackPointer);
 	if(thread->stackPointer == thread->stackSize)
 	{
 		//sp = thread->stackSize;
@@ -325,7 +327,7 @@ uint32_t Thread_PopStack(Thread_t* thread)
 	thread->stackPointer = sp;
 	uint32_t data = thread->stack[sp];
 	if(!thread->inBasicOpcode || !thread->silenceBasicOpcodeLog)
-		printf("[Thread %d]: %sPopStack() @ 0x%.8X = 0x%.8X\n", thread->threadId, TLevel[thread->level], thread->stackPointer, data);
+		if(gTraceExecution) printf("[Thread %d]: %sPopStack() @ 0x%.8X = 0x%.8X\n", thread->threadId, TLevel[thread->level], thread->stackPointer, data);
 
 	if(GoldenLogTotal)
 	{
@@ -426,7 +428,7 @@ uint32_t Thread_GetInstructionPointer(Thread_t* thread)
 void Thread_SetInstructionPointer(Thread_t* thread, uint32_t value)
 {
 	if(!thread->silenceBasicOpcodeLog)
-		printf("[Thread %d]: %sSet instruction pointer to 0x%.8X\n", thread->threadId, TLevel[thread->level], value);
+		if(gTraceExecution) printf("[Thread %d]: %sSet instruction pointer to 0x%.8X\n", thread->threadId, TLevel[thread->level], value);
 	thread->nextInstructionPointer = value;
 }
 
@@ -438,7 +440,7 @@ uint32_t Thread_GetBasePointer(Thread_t* thread)
 void Thread_SetBasePointer(Thread_t* thread, uint32_t value)
 {
 	if(!thread->silenceBasicOpcodeLog)
-		printf("[Thread %d]: %sSet base pointer to 0x%.8X\n", thread->threadId, TLevel[thread->level], value);
+		if(gTraceExecution) printf("[Thread %d]: %sSet base pointer to 0x%.8X\n", thread->threadId, TLevel[thread->level], value);
 	thread->basePointer = value;
 }
 
@@ -455,7 +457,7 @@ uint32_t Thread_Execute(Thread_t* thread)
 	uint8_t opcode = Thread_ReadImm8(thread);
 	thread->inBasicOpcode = 1;
 	if(!thread->silenceBasicOpcodeLog)
-		printf("[Thread %d]: %s[%.8X] Executing opcode %s (0x%.2X / %d)\n", thread->threadId, TLevel[thread->level], thread->instructionPointer, OpcodesMnemonics[opcode], opcode, opcode);
+		if(gTraceExecution) printf("[Thread %d]: %s[%.8X] Executing opcode %s (0x%.2X / %d)\n", thread->threadId, TLevel[thread->level], thread->instructionPointer, OpcodesMnemonics[opcode], opcode, opcode);
 	thread->level++;
 	thread->opcode = opcode;
 

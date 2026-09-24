@@ -615,11 +615,11 @@ uint32_t Opcode_CondJump(Thread_t* thread)
 	{
 		// TODO: Bounds checking
 		if(!thread->silenceBasicOpcodeLog)
-			printf("[Thread %d]: %sJump taken\n", thread->threadId, TLevel[thread->level]);
+			if(gTraceExecution) printf("[Thread %d]: %sJump taken\n", thread->threadId, TLevel[thread->level]);
 		Thread_SetInstructionPointer(thread, dest);
 	}
 	else if(!thread->silenceBasicOpcodeLog)
-		printf("[Thread %d]: %sJump not taken\n", thread->threadId, TLevel[thread->level]);
+		if(gTraceExecution) printf("[Thread %d]: %sJump not taken\n", thread->threadId, TLevel[thread->level]);
 	return 0;
 }
 
@@ -730,7 +730,7 @@ uint32_t Opcode_Sys0(Thread_t* thread)
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
 	if(opcode != 0x5F || (opcode == 0x5F && !thread->silenceYield))
-		printf("[Thread %d]: %sSys0 Executing opcode Sys0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesSys0Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
+		if(gTraceExecution) printf("[Thread %d]: %sSys0 Executing opcode Sys0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesSys0Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesSys0[opcode] == NULL)
 	{
@@ -748,7 +748,7 @@ uint32_t Opcode_Sys1(Thread_t* thread)
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sSys1 Executing opcode Sys1.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesSys1Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
+	if(gTraceExecution) printf("[Thread %d]: %sSys1 Executing opcode Sys1.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesSys1Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesSys1[opcode] == NULL)
 	{
@@ -766,7 +766,7 @@ uint32_t Opcode_Grp0(Thread_t* thread)
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sGrp0 Executing opcode Grp0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesGrp0Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
+	if(gTraceExecution) printf("[Thread %d]: %sGrp0 Executing opcode Grp0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesGrp0Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesGrp0[opcode] == NULL)
 	{
@@ -784,7 +784,7 @@ uint32_t Opcode_Grp1(Thread_t* thread)
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sGrp1 Executing opcode Grp1.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesGrp1Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
+	if(gTraceExecution) printf("[Thread %d]: %sGrp1 Executing opcode Grp1.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesGrp1Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesGrp1[opcode] == NULL)
 	{
@@ -802,7 +802,7 @@ uint32_t Opcode_Grp2(Thread_t* thread)
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sGrp2 Executing opcode Grp2.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesGrp2Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
+	if(gTraceExecution) printf("[Thread %d]: %sGrp2 Executing opcode Grp2.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesGrp2Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesGrp2[opcode] == NULL)
 	{
@@ -820,7 +820,7 @@ uint32_t Opcode_Snd0(Thread_t* thread)
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sSnd0 Executing opcode Snd0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesSnd0Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
+	if(gTraceExecution) printf("[Thread %d]: %sSnd0 Executing opcode Snd0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesSnd0Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesSnd0[opcode] == NULL)
 	{
@@ -838,7 +838,7 @@ uint32_t Opcode_Ext0(Thread_t* thread)
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sExt0 Executing opcode Ext0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesExt0Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
+	if(gTraceExecution) printf("[Thread %d]: %sExt0 Executing opcode Ext0.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesExt0Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesExt0[opcode] == NULL)
 	{
@@ -856,7 +856,7 @@ uint32_t Opcode_Ext1(Thread_t* thread)
 	uint8_t opcode = Thread_ReadCode8(thread);
 	thread->inBasicOpcode = 0;
 	thread->opcode = (thread->opcode << 8) | opcode;
-	printf("[Thread %d]: %sExt1 Executing opcode Ext1.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesExt1Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
+	if(gTraceExecution) printf("[Thread %d]: %sExt1 Executing opcode Ext1.%s (0x%.2X / %d) (%d)\n", thread->threadId, TLevel[thread->level], OpcodesExt1Mnemonics[opcode], opcode, opcode, GoldenLog_Time());
 	thread->level++;
 	if(OpcodesExt1[opcode] == NULL)
 	{

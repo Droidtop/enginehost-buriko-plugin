@@ -46,6 +46,8 @@ int main(int argc, char** argv)
 	// They are all read out of the arguments first so that the two positional
 	// ones keep their places.
 	const char* shot = NULL;
+	if(getenv("OPENBGI_VERBOSE") != NULL)
+		gTraceExecution = 1;
 	int argumentCount = 0;
 	char* arguments[3] = { NULL, NULL, NULL };
 	for(int i = 0; i < argc; i++)
@@ -56,6 +58,8 @@ int main(int argc, char** argv)
 			gTickLimit = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--draws") == 0)
 			gLogDraws = 1;
+		else if(strcmp(argv[i], "--verbose") == 0)
+			gTraceExecution = 1;
 		else if(strcmp(argv[i], "--watch") == 0 && i + 1 < argc)
 		{
 			// --watch <address>[:<width>], the address in the script's own tagged
