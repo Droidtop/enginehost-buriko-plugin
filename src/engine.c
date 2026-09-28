@@ -575,7 +575,7 @@ void Engine_Execute(Engine_t* engine)
 			uint32_t res = Engine_RunInstructions(engine, thread);
 			if(res == 0xFFFFFFFF)
 			{
-				printf("[Engine]: Stub opcode encountered in %s. Stopping.\n", Thread_Where(thread, Thread_GetInstructionPointer(thread)));
+				printf("[Engine]: Stub opcode 0x%.4X encountered in %s. Stopping.\n", thread->opcode, Thread_Where(thread, Thread_GetInstructionPointer(thread)));
 				engine->isRunning = 0;
 				break;
 			}
