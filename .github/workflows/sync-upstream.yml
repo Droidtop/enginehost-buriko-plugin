@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: ${{ github.workflow }}
@@ -23,6 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      issues: write
     steps:
       - name: Checkout fork
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -52,4 +54,43 @@ jobs:
           # signal we want: someone committed engine changes to the mirror
           # branch and they belong on a plugin/* branch instead.
           git merge --no-edit upstream/main
+          if git push origin main 2>/tmp/push.log; then
+            exit 0
+          fi
+          cat /tmp/push.log >&2
+          echo "PUSH_FAILED=true" >> "$GITHUB_ENV"
+
+      - name: Open a follow-up issue if the push was rejected
+        if: env.PUSH_FAILED == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Upstream sync: main merge could not be pushed"
+          existing=$(gh issue list --repo "${{ github.repository }}" --state open --search "in:title \"$title\"" --json title -q ".[] | select(.title == \"$title\") | .title")
+          if [ -n "$existing" ]; then
+            echo "issue already open, not filing a duplicate"
+            exit 0
+          fi
+          cat > /tmp/issue-body.md <<BODY
+          The scheduled upstream-sync workflow merged
+          upstream/main into main locally but could
+          not push the result -- most likely upstream's own
+          .github/workflows/** changed and the default GITHUB_TOKEN is not
+          allowed to update workflow files (see run log). main on
+          GitHub is untouched. Run: $RUN_URL
+
+          Needs a PAT with the workflow scope (e.g. a repo secret such as
+          SYNC_UPSTREAM_PAT) used as the checkout token, or a manual:
+          \`\`\`
+          git fetch upstream main
+          git checkout main
+          git merge upstream/main
           git push origin main
+          \`\`\`
+          BODY
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "$title" \
+            --body-file /tmp/issue-body.md
+          exit 1
