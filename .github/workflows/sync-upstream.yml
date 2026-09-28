@@ -1,0 +1,55 @@
+name: Sync main with upstream Cytlan/openbgi
+
+# main exists purely as an always-current mirror of upstream
+# Cytlan/openbgi. Real plugin work happens on plugin/<line> branches,
+# which pull from main on their own deliberate schedule rather than
+# being auto-merged here: rebasing a patched branch unattended risks a
+# silent, wrong conflict resolution, so that step stays manual by design.
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync main with upstream
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/Cytlan/openbgi.git
+          git fetch upstream main
+
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "main already contains upstream/main, nothing to do."
+            exit 0
+          fi
+
+          # A plain merge, not --ff-only: this branch also carries our own
+          # workflow files (and, on some plugin repos, small wrapper
+          # commits upstream never has), so a byte-for-byte fast-forward
+          # is not always possible even when there is no real conflict.
+          # A genuine conflict still fails the job loudly, which is the
+          # signal we want: someone committed engine changes to the mirror
+          # branch and they belong on a plugin/* branch instead.
+          git merge --no-edit upstream/main
+          git push origin main
