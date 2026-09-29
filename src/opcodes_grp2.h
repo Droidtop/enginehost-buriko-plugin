@@ -10,7 +10,7 @@ uint32_t Opcode_Grp2_Unknown_1(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_16(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_17(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_24(Thread_t* thread);
-uint32_t Opcode_Grp2_Unknown_25(Thread_t* thread);
+uint32_t Opcode_Grp2_InvertBitmapMask(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_28(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_29(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_30(Thread_t* thread);

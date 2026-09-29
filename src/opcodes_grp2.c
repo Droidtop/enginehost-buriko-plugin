@@ -38,7 +38,7 @@ char* OpcodesGrp2Mnemonics[256] = {
     /* 0x16  22 */ "--Unknown--",
     /* 0x17  23 */ "--Unknown--",
     /* 0x18  24 */ "Unknown_24",
-    /* 0x19  25 */ "Unknown_25",
+    /* 0x19  25 */ "InvertBitmapMask",
     /* 0x1A  26 */ "--Unknown--",
     /* 0x1B  27 */ "--Unknown--",
     /* 0x1C  28 */ "Unknown_28",
@@ -297,7 +297,7 @@ OpcodePtr_t OpcodesGrp2[256] = {
     /* 0x16  22 */ NULL,
     /* 0x17  23 */ NULL,
     /* 0x18  24 */ Opcode_Grp2_Unknown_24,
-    /* 0x19  25 */ Opcode_Grp2_Unknown_25,
+    /* 0x19  25 */ Opcode_Grp2_InvertBitmapMask,
     /* 0x1A  26 */ NULL,
     /* 0x1B  27 */ NULL,
     /* 0x1C  28 */ Opcode_Grp2_Unknown_28,
@@ -555,9 +555,34 @@ uint32_t Opcode_Grp2_Unknown_24(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp2_Unknown_25(Thread_t* thread)
+/*
+ * Grp2 0x19 (0x00485BB0 -> 0x00403C10 -> 0x004083A0) flips an 8-bit bitmap's bytes in
+ * place. It pops a bitmap number, and 0x004083A0 resolves it (0x00407F20) and hands the
+ * descriptor to 0x0040E8D0, which - only when the pixel mode is 3, the 8-bit one -
+ * walks every row of the image, height rows of width pixels at stride and bytes-per-pixel
+ * steps, and replaces each first byte b with 0xFF - b; any other mode is left alone.
+ * 0x004083A0 answers 11 for a number that resolves to nothing, 7 for a bitmap not in
+ * mode 3, and 0 when it inverted; the handler pushes 1 for that 0 and 0 for the rest
+ * (sete at 0x00485BCA), then succeeds regardless.
+ */
+uint32_t Opcode_Grp2_InvertBitmapMask(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int id = (int)Thread_PopStack(thread);
+	Bitmap_t* bitmap = Renderer_ResolveBitmap(thread->engine->renderer, id);
+	uint32_t inverted = 0;
+	if(bitmap != NULL && bitmap->mode == BITMAP_MODE_8)
+	{
+		int step = Renderer_ModePixelBytes(bitmap->mode);
+		for(int row = 0; row < bitmap->height; row++)
+		{
+			uint8_t* pixel = bitmap->bitmap + (size_t)row * (size_t)bitmap->stride;
+			for(int column = 0; column < bitmap->width; column++, pixel += step)
+				*pixel = (uint8_t)(0xFF - *pixel);
+		}
+		inverted = 1;
+	}
+	Thread_PushStack(thread, inverted);
+	return 0;
 }
 
 uint32_t Opcode_Grp2_Unknown_28(Thread_t* thread)
