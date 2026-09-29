@@ -81,6 +81,8 @@ jobs:
           cp "$apk" build/unsigned/payload/runtime.apk
           unzip -q "$apk" 'classes*.dex' 'lib/*' -d build/unsigned/payload
           cp enginehost/LICENSES.md build/unsigned/payload/LICENSES.md
+          cp LICENSE build/unsigned/payload/LICENSE-GPL-2.0.txt
+          cp app/src/main/cpp/vendor/SDL/LICENSE.txt build/unsigned/payload/LICENSE-SDL-zlib.txt
           cp enginehost/bundle-metadata.json build/unsigned/bundle-metadata.json
           # A tar keeps the file modes the manifest signs; an artifact would not.
           tar -cf build/unsigned.tar -C build/unsigned payload bundle-metadata.json
