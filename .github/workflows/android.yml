@@ -113,6 +113,8 @@ jobs:
           print('dexFiles =', data['dexFiles'])
           DEXES
           cp enginehost/LICENSES.md build/unsigned/payload/LICENSES.md
+          cp LICENSE build/unsigned/payload/LICENSE-GPL-2.0.txt
+          cp app/src/main/cpp/vendor/SDL/LICENSE.txt build/unsigned/payload/LICENSE-SDL-zlib.txt
           # A tar keeps the file modes the manifest signs; an artifact would not.
           tar -cf build/unsigned.tar -C build/unsigned payload bundle-metadata.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
