@@ -477,7 +477,7 @@ static int32_t Text_CellAdvance(const FontEntryInfo_t* font)
 }
 
 // 0x00437180: the ruby's size for text of this size.
-static int32_t Text_RubySize(int32_t size)
+int32_t Text_RubySize(int32_t size)
 {
 	int32_t ruby = gTextRubySize;
 	if(ruby <= 0)
@@ -605,10 +605,6 @@ static void Text_Measure(Renderer_t* renderer, int32_t out[3], const char* s, co
 // The layout (0x00435370)
 // ----------------------------------------------------------------------------
 
-typedef struct TextLayout
-{
-	TextRecord_t* records;  // +0x44
-} TextLayout_t;
 
 static void Text_Append(TextRecord_t** tail, TextRecord_t* record)
 {
@@ -687,10 +683,10 @@ static const char* Text_SkipSpaces(const char* p)
 	return p;
 }
 
-static uint32_t Text_Layout(Renderer_t* renderer, TextLayout_t* layout, const char* text, uint32_t ruby,
-                            int32_t* cursor, const Rect_t* rect, int32_t lineHeight, uint32_t fontId,
-                            uint32_t proportional, uint32_t kinsoku, uint32_t colour, const TextStyle_t* style,
-                            uint32_t* lines, NameTable_t* dictionary)
+uint32_t Text_Layout(Renderer_t* renderer, TextLayout_t* layout, const char* text, uint32_t ruby,
+                     int32_t* cursor, const Rect_t* rect, int32_t lineHeight, uint32_t fontId,
+                     uint32_t proportional, uint32_t kinsoku, uint32_t colour, const TextStyle_t* style,
+                     uint32_t* lines, NameTable_t* dictionary)
 {
 	TextFontState_t fonts;
 	memset(&fonts, 0, sizeof(fonts));
@@ -1507,8 +1503,8 @@ static void Text_LayoutRubyWord(Renderer_t* renderer, TextRecord_t* record, Name
 }
 
 // 0x004371F0: the ruby of every record that starts a dictionary word.
-static int Text_LayoutRuby(Renderer_t* renderer, TextLayout_t* layout, uint32_t fontId, const TextStyle_t* style,
-                           uint32_t rubyColour, NameTable_t* dictionary)
+int Text_LayoutRuby(Renderer_t* renderer, TextLayout_t* layout, uint32_t fontId, const TextStyle_t* style,
+                    uint32_t rubyColour, NameTable_t* dictionary)
 {
 	FontEntryInfo_t font;
 	if(!Font_GetInfo(fontId, &font))
@@ -1541,7 +1537,7 @@ static int Text_LayoutRuby(Renderer_t* renderer, TextLayout_t* layout, uint32_t 
 }
 
 // 0x00437110: the records freed.
-static void Text_FreeLayout(TextLayout_t* layout)
+void Text_FreeLayout(TextLayout_t* layout)
 {
 	TextRecord_t* record = layout->records;
 	while(record != NULL)
@@ -1553,6 +1549,107 @@ static void Text_FreeLayout(TextLayout_t* layout)
 		record = next;
 	}
 	layout->records = NULL;
+}
+
+uint32_t Text_DelayStep(void)
+{
+	return gTextDelayStep;
+}
+
+uint32_t Text_FadeLength(void)
+{
+	return gTextFadeLength;
+}
+
+int32_t Text_RubyIndent(void)
+{
+	// 0x004345B0.
+	return gTextRubyIndent;
+}
+
+// One line of the layout as 0x00437D90 collects it: where its first character is,
+// how far right its last one reaches, and its y.
+typedef struct TextLine
+{
+	int32_t left;
+	int32_t right;
+	int32_t y;
+	struct TextLine* next;
+} TextLine_t;
+
+void Text_AlignLayout(Renderer_t* renderer, TextLayout_t* layout, int32_t* cursor, const Rect_t* rect,
+                      uint32_t fontId, uint32_t kinsoku, const TextStyle_t* style, uint32_t align)
+{
+	if(align == 0)
+		return;
+	// 0x00437DA3: the lines, by the y of their characters (records of kind 0), each
+	// with the right edge of its widest-reaching character. The head is a node of
+	// its own whose y no character has.
+	TextLine_t head = { 0, 0, (int32_t)0x80000000, NULL };
+	TextLine_t* line = &head;
+	for(TextRecord_t* record = layout->records; record != NULL; record = record->next)
+	{
+		if(record->kind != 0)
+			continue;
+		if(line->y != record->y)
+		{
+			TextLine_t* next = (TextLine_t*)calloc(1, sizeof(TextLine_t));
+			if(next == NULL)
+				break;
+			next->left = record->x;
+			next->right = (int32_t)0x80000000;
+			next->y = record->y;
+			line->next = next;
+			line = next;
+		}
+		int32_t right = record->bitmap.width + record->x - 1;
+		if(line->right < right)
+			line->right = right;
+	}
+
+	// 0x00437E1B: the font's size, the first frame of the wait glyph's height, and the
+	// effect's reach (the style's first offset, per cent of the size).
+	FontEntryInfo_t font;
+	int32_t size = Font_GetInfo(fontId, &font) ? font.size : 0;
+	int32_t glyph = 0;
+	if(renderer->animationFrames != NULL && renderer->animationFrameCount > 0 && renderer->animationFrames[0] != NULL)
+		glyph = renderer->animationFrames[0]->height;
+	int32_t effect = (style->a * size) / 100;
+
+	// 0x00437E71: every record moves with the line it is on; a record that is not a
+	// character keeps the shift of the line before it.
+	int32_t shift = 0;
+	line = &head;
+	for(TextRecord_t* record = layout->records; record != NULL; record = record->next)
+	{
+		if(record->kind == 0 && line->y != record->y && line->next != NULL)
+		{
+			line = line->next;
+			if(align == 1)
+			{
+				// 0x00437EA2: centred, less a character's width when kinsoku keeps
+				// one in hand and the line stops short of the right edge, and less
+				// the ruby indent.
+				int32_t reserve = (kinsoku != 0 && line->right < rect->right) ? size : 0;
+				shift = (rect->right - line->right - reserve + effect - Text_RubyIndent()) >> 1;
+			}
+			else if(align == 2)
+				// 0x00437E92: to the right edge, less the wait glyph.
+				shift = rect->right - line->right - glyph + effect;
+		}
+		record->x += shift;
+	}
+	// 0x00437ED9: the cursor moves with the last line.
+	if(rect->left < cursor[0])
+		cursor[0] += shift;
+
+	line = head.next;
+	while(line != NULL)
+	{
+		TextLine_t* next = line->next;
+		free(line);
+		line = next;
+	}
 }
 
 // 0x00437A20: every record blitted onto the target at its place. The number of

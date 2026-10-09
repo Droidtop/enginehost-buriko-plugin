@@ -10,6 +10,7 @@
 #include "renderer.h"
 #include "thread.h"
 #include "text.h"
+#include "message.h"
 #include <string.h>
 
 char* OpcodesGrp2Mnemonics[256] = {
@@ -157,7 +158,7 @@ char* OpcodesGrp2Mnemonics[256] = {
     /* 0x8D 141 */ "Unknown_141",
     /* 0x8E 142 */ "Unknown_142",
     /* 0x8F 143 */ "--Unknown--",
-    /* 0x90 144 */ "Unknown_144",
+    /* 0x90 144 */ "PrintMessage",
     /* 0x91 145 */ "Unknown_145",
     /* 0x92 146 */ "--Unknown--",
     /* 0x93 147 */ "--Unknown--",
@@ -416,7 +417,7 @@ OpcodePtr_t OpcodesGrp2[256] = {
     /* 0x8D 141 */ Opcode_Grp2_Unknown_141,
     /* 0x8E 142 */ Opcode_Grp2_Unknown_142,
     /* 0x8F 143 */ NULL,
-    /* 0x90 144 */ Opcode_Grp2_Unknown_144,
+    /* 0x90 144 */ Opcode_Grp2_PrintMessage,
     /* 0x91 145 */ Opcode_Grp2_Unknown_145,
     /* 0x92 146 */ NULL,
     /* 0x93 147 */ NULL,
@@ -660,9 +661,55 @@ uint32_t Opcode_Grp2_Unknown_142(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp2_Unknown_144(Thread_t* thread)
+/*
+ * Grp2 0x90 (0x00486560 -> 0x004913B0 with mode 1): a message printed into a window.
+ * Popped, in order: whether the configured buttons count (+0x40), whether the skip key
+ * counts (+0x3C), whether to wait for a key at the end (+0x38), whether the whole
+ * text shows at once (+0x30); the effect - weight, colour, the two offsets and the
+ * kind, built by 0x00434F10 - kinsoku, the ruby colour, whether there is ruby, the
+ * colour, the text (a string, 0x0048E0E0) and the window. The thread waits on the
+ * message, which pushes whether it was skipped when it is done; the handler answers 2.
+ * A handle that is not a window is fatal ("an invalid window handle", 0x004E9AC8), and
+ * so is a window with no font ("the specified window has no font set", 0x004E9C6C).
+ */
+uint32_t Opcode_Grp2_PrintMessage(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	MessageRequest_t request;
+	request.buttonsAllowed = Thread_PopStack(thread);
+	request.skipKeyAllowed = Thread_PopStack(thread);
+	request.waitForKey = Thread_PopStack(thread);
+	request.instant = Thread_PopStack(thread);
+	uint32_t weight = Thread_PopStack(thread);
+	uint32_t effectColour = Thread_PopStack(thread);
+	int32_t b = (int32_t)Thread_PopStack(thread);
+	int32_t a = (int32_t)Thread_PopStack(thread);
+	uint32_t kind = Thread_PopStack(thread);
+	request.kinsoku = Thread_PopStack(thread);
+	request.rubyColour = Thread_PopStack(thread);
+	request.ruby = Thread_PopStack(thread);
+	request.colour = Thread_PopStack(thread);
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t window = Thread_PopStack(thread);
+
+	// 0x0048660E: the style's answer is not looked at; 0x00434EE0 builds it again on
+	// the message, where a refused one leaves the default.
+	TextStyle_t style = { kind, a, b, effectColour, weight };
+	uint32_t result = Message_Print(thread, window, text, &style, &request);
+	if(result == 0xFFFFFFFFu)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFC;
+	}
+	if(result == 0x80000001u)
+	{
+		printf("[Thread %d]: %sError: the specified window has no font set\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFC;
+	}
+	if(result != 0)
+		return 0xFFFFFFFF;
+	return 2;
 }
 
 uint32_t Opcode_Grp2_Unknown_145(Thread_t* thread)

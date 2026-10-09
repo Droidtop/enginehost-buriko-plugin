@@ -40,4 +40,30 @@ extern uint32_t gMessageCharacterWait;
 // 0x10000 or more with mode 1; nothing changes on a failure.
 uint32_t Message_SetRegionMode(uint32_t mode, uint32_t priority);
 
+struct Thread;
+struct TextStyle;
+
+// What 0x004913B0 is given by Grp2 0x90 (0x00486560), past the window and the text.
+typedef struct MessageRequest
+{
+	uint32_t colour;            // +0x2C of the message (0x00434EC0)
+	uint32_t ruby;              // whether ruby is laid out (+0xC4)
+	uint32_t rubyColour;        // +0xDC
+	uint32_t kinsoku;
+	uint32_t instant;           // +0x30: the whole text at once
+	uint32_t waitForKey;        // +0x38: wait for a key at the end
+	uint32_t skipKeyAllowed;    // +0x3C: the skip key (bit 31 of the region's keys) counts
+	uint32_t buttonsAllowed;    // +0x40: the configured buttons (0x00507690 | 0x80) count
+} MessageRequest_t;
+
+// 0x004913B0 with mode 1, as Grp2 0x90 calls it: a message object made for the
+// window, the text laid out into it, and the thread joined to it (0x004452A0). The
+// message draws its characters into the window's text surface over time, waits at the
+// end as asked, and when it is done pushes whether it was skipped. 0 once the thread
+// waits; -1 when the handle is not a window, 0x80000001 when the window has no font,
+// and 0xFFFFFFFF when the window writes downwards, which needs the vertical class
+// (0x00438270) this engine does not have yet.
+uint32_t Message_Print(struct Thread* thread, uint32_t windowHandle, const char* text,
+                       const struct TextStyle* style, const MessageRequest_t* request);
+
 #endif // __MESSAGE_H__

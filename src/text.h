@@ -49,6 +49,42 @@ struct TextRecord
 	TextRecord_t* next;     // +0x44
 };
 
+// What a layout makes: the records, in order (+0x44 of the original's 0x48 bytes).
+typedef struct TextLayout
+{
+	TextRecord_t* records;
+} TextLayout_t;
+
+struct NameTable;
+
+// 0x00435370: `text` laid out into records from the cursor (which moves) within
+// `rect`, lines `lineHeight` apart, in the managed font `fontId`. `proportional` sets
+// characters by their ink, `kinsoku` keeps the characters Japanese typesetting will
+// not start a line with off the start of one, `ruby` pushes every line down to make
+// room for ruby, and a <ruby> tag's word goes into `dictionary` as a local word.
+// *lines counts the lines started. 0 when the font is not one.
+uint32_t Text_Layout(Renderer_t* renderer, TextLayout_t* layout, const char* text, uint32_t ruby,
+                     int32_t* cursor, const Rect_t* rect, int32_t lineHeight, uint32_t fontId,
+                     uint32_t proportional, uint32_t kinsoku, uint32_t colour, const TextStyle_t* style,
+                     uint32_t* lines, struct NameTable* dictionary);
+// 0x004371F0: the ruby of every record that starts a word of `dictionary`; the local
+// words are taken out again.
+int Text_LayoutRuby(Renderer_t* renderer, TextLayout_t* layout, uint32_t fontId, const TextStyle_t* style,
+                    uint32_t rubyColour, struct NameTable* dictionary);
+// 0x00437D90: the lines moved to `align` (0 none, 1 centred, 2 right) within `rect`;
+// the cursor moves with the last one.
+void Text_AlignLayout(Renderer_t* renderer, TextLayout_t* layout, int32_t* cursor, const Rect_t* rect,
+                      uint32_t fontId, uint32_t kinsoku, const TextStyle_t* style, uint32_t align);
+// 0x00437110: the records freed.
+void Text_FreeLayout(TextLayout_t* layout);
+// 0x00437180: the ruby's size for text of this size.
+int32_t Text_RubySize(int32_t size);
+// 0x004345B0: how far ruby pushes the first line in (0x00565BDC).
+int32_t Text_RubyIndent(void);
+// 0x00507638 and 0x0050763C: the delay between characters and the fade length.
+uint32_t Text_DelayStep(void);
+uint32_t Text_FadeLength(void);
+
 // 0x00434F10: a style out of its parts. A kind of 0 is all zero; kinds 1 and 2 need
 // both offsets at or below 100 and the weight at or below 0x100. 0 when refused, in
 // which case *style is left alone.
