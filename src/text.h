@@ -65,6 +65,15 @@ int Text_SetDefaultStyleEdge(int32_t a, int32_t b, uint32_t weight);
 // is above 0; the answer is whether it was.
 int Text_SetSplitPair1(int32_t count, int32_t value);
 int Text_SetSplitPair2(int32_t count, int32_t value);
+// Grp1 0x98 (0x00434420): the text engine's ruby and timing settings - whether an
+// opening bracket indents the lines after it (0x00565CF0), how far ruby pushes the
+// first line in (0x00565BDC), the ruby's size per cent (0x00507640), the spacing
+// added after every character of a monospaced layout (0x00565BB0), the fade length
+// (0x0050763C, 0 becomes 1) and the delay between characters (0x00507638). 0, or
+// 0x80000001 for a rate outside 25..100 and 0x80000002 for a negative margin, in
+// which case nothing changes.
+uint32_t Text_SetRubyStyle(uint32_t hangingIndent, int32_t rubyIndent, int32_t rubyPercent,
+                           int32_t extraSpacing, uint32_t fadeLength, uint32_t delayStep);
 
 // 0x00403B10 -> 0x00434C80: `text` drawn into bitmap `bitmapId` from (x, y) to the
 // bitmap's own edges, with font number `fontNumber` (Ext0 0xC1's numbering) at

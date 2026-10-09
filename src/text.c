@@ -12,10 +12,12 @@
 // 0x00507638: how much later each character starts to appear than the one before
 // it, and what a <t> tag's number is multiplied by. 0x0050763C: how long a
 // character takes to fade in. Both in the units the window's reveal counts in.
-#define TEXT_DELAY_STEP     0x19
-#define TEXT_FADE_LENGTH    0x96
 // 0x00507640: the ruby's size, per cent of the text's, when 0x00565CE0 is not set.
-#define TEXT_RUBY_PERCENT   0x28
+// The data section starts them at 0x19, 0x96 and 0x28; Grp1 0x98 (0x00434420)
+// writes all three.
+static uint32_t gTextDelayStep = 0x19;
+static uint32_t gTextFadeLength = 0x96;
+static int32_t  gTextRubyPercent = 0x28;
 // 0x005076B0: a proportionally set character's gap, 16.16 of the cell width
 // (0x00409790): one sixth.
 #define TEXT_GAP_FACTOR     0x2AAA
@@ -129,6 +131,24 @@ int Text_SetSplitPair2(int32_t count, int32_t value)
 		gTextSplit2Value = value;
 	}
 	return count > 0;
+}
+
+uint32_t Text_SetRubyStyle(uint32_t hangingIndent, int32_t rubyIndent, int32_t rubyPercent,
+                           int32_t extraSpacing, uint32_t fadeLength, uint32_t delayStep)
+{
+	// 0x00434420: the rate is checked first (0x80000001 outside 25..100), then the
+	// margin (0x80000002 below 0); nothing is written unless both pass.
+	if((uint32_t)rubyPercent - 0x19u > 0x4Bu)
+		return 0x80000001;
+	if(rubyIndent < 0)
+		return 0x80000002;
+	gTextDelayStep = delayStep;
+	gTextFadeLength = fadeLength == 0 ? 1 : fadeLength;
+	gTextRubyPercent = rubyPercent;
+	gTextHangingIndent = hangingIndent;
+	gTextExtraSpacing = extraSpacing;
+	gTextRubyIndent = rubyIndent;
+	return 0;
 }
 
 // ----------------------------------------------------------------------------
@@ -460,7 +480,7 @@ static int32_t Text_RubySize(int32_t size)
 {
 	int32_t ruby = gTextRubySize;
 	if(ruby <= 0)
-		ruby = (TEXT_RUBY_PERCENT * size) / 100;
+		ruby = (gTextRubyPercent * size) / 100;
 	if(ruby < 4)
 		ruby = 4;
 	return ruby;
@@ -1268,7 +1288,7 @@ static uint32_t Text_Layout(Renderer_t* renderer, TextLayout_t* layout, const ch
 								n++;
 							}
 							digits[n] = 0;
-							delay = atoi(digits) * TEXT_DELAY_STEP;
+							delay = atoi(digits) * gTextDelayStep;
 							break;
 						}
 						case 14:
@@ -1388,7 +1408,7 @@ static uint32_t Text_Layout(Renderer_t* renderer, TextLayout_t* layout, const ch
 		if(record == NULL)
 			break;
 		record->delay = (uint32_t)delay;
-		record->fadeLength = TEXT_FADE_LENGTH;
+		record->fadeLength = gTextFadeLength;
 		Text_NewBitmap(renderer, &record->bitmap, view.width, view.height, 1);
 		Text_ClearBitmap(&record->bitmap);
 		if(style->kind == 2)
@@ -1547,7 +1567,7 @@ static uint32_t Text_Layout(Renderer_t* renderer, TextLayout_t* layout, const ch
 		record->x0 = record->x;
 		record->y0 = record->y;
 		cursor[0] += Text_Spacing(fonts.current, proportional) + step;
-		delay += TEXT_DELAY_STEP;
+		delay += gTextDelayStep;
 		index += wide ? 2 : 1;
 		*append = record;
 		append = &record->next;
@@ -1596,7 +1616,7 @@ static void Text_LayoutRubyWord(Renderer_t* renderer, TextRecord_t* record, Text
 		x -= effectX;
 		y -= effectY;
 	}
-	uint32_t step = (word->keyCount * TEXT_DELAY_STEP) / (uint32_t)count;
+	uint32_t step = (word->keyCount * gTextDelayStep) / (uint32_t)count;
 	int32_t at = (int32_t)(step >> 1) + delay;
 
 	Bitmap_t cell;
@@ -1609,7 +1629,7 @@ static void Text_LayoutRubyWord(Renderer_t* renderer, TextRecord_t* record, Text
 		TextRecord_t* ruby = (TextRecord_t*)calloc(1, sizeof(TextRecord_t));
 		if(ruby == NULL)
 			break;
-		ruby->fadeLength = TEXT_FADE_LENGTH;
+		ruby->fadeLength = gTextFadeLength;
 		ruby->delay = (uint32_t)at;
 		ruby->y = y;
 		ruby->x = x;

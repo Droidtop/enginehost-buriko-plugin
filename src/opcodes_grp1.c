@@ -1206,42 +1206,35 @@ uint32_t Opcode_Grp1_SetObjectHidden(Thread_t* thread)
 
 /*
  * Grp1 0x98 (0x00484980 -> 0x00463470 -> 0x00434420): the text engine's ruby (reading
- * aid) settings and the four values beside them. Popped, in order: a value kept at
- * 0x00565CF0, the ruby margin (0x00565BDC; below 0 is fatal, "invalid margin size for
- * the reading", 0x004EB2EC), the ruby size rate in percent (0x00507640; outside 25 to
- * 100 is fatal, "invalid size rate for the reading", 0x004EB2B4), a value kept at
- * 0x00565BB0, one kept at 0x0050763C (0 becomes 1) and one at 0x00507638. What reads
- * the four unnamed ones belongs to the text drawing, which is not read yet; they are
- * kept by address until it is.
+ * aid) settings and the timing beside them. Popped, in order: whether an opening
+ * bracket indents the lines after it (0x00565CF0), the ruby margin (0x00565BDC), the
+ * ruby size rate in percent (0x00507640), the spacing after every character of a
+ * monospaced layout (0x00565BB0), the fade length (0x0050763C) and the delay between
+ * characters (0x00507638). A rate outside 25 to 100 is fatal, "invalid size rate for
+ * the reading" (0x004EB2B4), and so is a margin below 0, "invalid margin size for the
+ * reading" (0x004EB2EC). Nothing is pushed.
  */
-uint32_t gText565CF0 = 0, gRubyMargin = 0, gRubyRate = 0, gText565BB0 = 0, gText50763C = 0, gText507638 = 0;
-
 uint32_t Opcode_Grp1_SetRubyStyle(Thread_t* thread)
 {
-	uint32_t a = Thread_PopStack(thread);
+	uint32_t hangingIndent = Thread_PopStack(thread);
 	int32_t margin = (int32_t)Thread_PopStack(thread);
 	uint32_t rate = Thread_PopStack(thread);
-	uint32_t b = Thread_PopStack(thread);
-	uint32_t c = Thread_PopStack(thread);
-	uint32_t d = Thread_PopStack(thread);
-	if(rate - 0x19u > 0x4Bu)
+	int32_t extraSpacing = (int32_t)Thread_PopStack(thread);
+	uint32_t fadeLength = Thread_PopStack(thread);
+	uint32_t delayStep = Thread_PopStack(thread);
+	uint32_t result = Text_SetRubyStyle(hangingIndent, margin, (int32_t)rate, extraSpacing, fadeLength, delayStep);
+	if(result == 0x80000001)
 	{
 		printf("[Thread %d]: %sError: an invalid size rate for the reading [ %d ] was specified\n",
 		       thread->threadId, TLevel[thread->level], (int32_t)rate);
 		return 0xFFFFFFFC;
 	}
-	if(margin < 0)
+	if(result == 0x80000002)
 	{
 		printf("[Thread %d]: %sError: an invalid margin size for the reading [ %d ] was specified\n",
 		       thread->threadId, TLevel[thread->level], margin);
 		return 0xFFFFFFFC;
 	}
-	gText507638 = d;
-	gText50763C = c == 0 ? 1 : c;
-	gRubyRate = rate;
-	gText565CF0 = a;
-	gText565BB0 = b;
-	gRubyMargin = (uint32_t)margin;
 	return 0;
 }
 
