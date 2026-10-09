@@ -34,17 +34,17 @@ The games we have been working on, with the engine build each one needs
 | Prism Rhythm | `PrismRhythm` | 1.494 | Very playable |
 | Diamic Days | `DiamicDays` | 1.529 | Very playable |
 | Gakuou -THE ROYAL SEVEN STARS- | `Gackoh` | 1.535 | Very playable |
-| Gakuou -It's Heartful Days!!- | `Gackoh_HD` | 1.547 | Boots, but crashes in prolouge |
+| Gakuou -It's Heartful Days!!- | `Gackoh_HD` | 1.547 | Boots, but crashes in prologue |
 | Hanairo Heptagram | `HanairoHeptagram` | 1.553 | Very playable |
 | Magical Charming! | `MagicalCharming!` | 1.573 | Boots, severe visual glitches |
 | Sekai to Sekai no Mannaka de | `SekaiToSekaiNoMannakaDe` | 1.588 | Boots, severe visual glitches |
-| Unmei Senjou no Phi | `UnmeisenjouNoPhi` | 1.599 | Boots, but crashes in prolouge |
-| Kodomo no Asobi | `KodomoNoAsobi` | 1.616 | Boots, but crashes in prolouge |
+| Unmei Senjou no Phi | `UnmeisenjouNoPhi` | 1.599 | Boots, but crashes in prologue |
+| Kodomo no Asobi | `KodomoNoAsobi` | 1.616 | Boots, but crashes in prologue |
 | Tayutama 2 -After Stories- | `Tayutama2AS` | 1.640 | Somewhat playable, glitchy |
 | Wakabairo no Quartet | `WakabaironoQuartet` | 1.653 | Somewhat playable, glitchy |
 | Nekotsuku, Sakura. | `NekoTsukuSakura` | 1.654 | Somewhat playable, glitchy |
-| Madohi Shiroki no Kamikakushi | `MadoiShirokinoKamikakushi` | 1.659 | Boots, but crashes in prolouge |
-| Yumahorome | `Yumahorome` | 1.662 | Boots, but crashes in prolouge |
+| Madohi Shiroki no Kamikakushi | `MadoiShirokinoKamikakushi` | 1.659 | Boots, but crashes in prologue |
+| Yumahorome | `Yumahorome` | 1.662 | Boots, but crashes in prologue |
 | Arcana Alchemia | `ArcanaAlchemia` | 1.667 | Testing in progress |
 | Haruka Ao no Hanayome ni | `HarukaAonoHanayomeni` | 1.669 | Testing in progress |
 
