@@ -2219,7 +2219,7 @@ void Engine_Free(Engine_t* engine)
 	Engine_FreeUserInstructions();
 	Icon_FreeAll();
 	Object_FreeAll();
-	NameTable_FreeAll();
+	NameTable_Clear(NameTable_Global());
 	Region_FreeAll();
 	while(gSearchPaths)
 	{

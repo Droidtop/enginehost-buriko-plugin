@@ -983,7 +983,7 @@ uint32_t Opcode_Grp1_LoadNameTable(Thread_t* thread)
 {
 	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
 
-	uint32_t result = NameTable_Load(text);
+	uint32_t result = NameTable_Load(NameTable_Global(), text);
 	printf("[Thread %d]: %sLoad the name table from %d bytes of text: %s\n", thread->threadId, TLevel[thread->level], text != NULL ? (int)strlen(text) : 0, result != 0 ? "all of it" : "stopped early");
 
 	Thread_PushStack(thread, result);

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <math.h>
 #include "text.h"
+#include "nametable.h"
 #include "engine.h"
 
 // ----------------------------------------------------------------------------
@@ -537,28 +538,9 @@ static void Text_PutCharacter(Bitmap_t* view, uint32_t code, FontObject_t* font,
 }
 
 // ----------------------------------------------------------------------------
-// The ruby dictionary (0x004345E0 - 0x004349F1)
+// The ruby dictionary is nametable.c's: the layout adds a <ruby> tag's word to the
+// table it is given as a local word (mode 1) and looks words up in it.
 // ----------------------------------------------------------------------------
-
-typedef struct TextWord TextWord_t;
-struct TextWord
-{
-	char*     key;          // +0x00
-	uint32_t  keySize;      // +0x04, bytes with the terminator
-	uint32_t  keyCount;     // +0x08, characters
-	char*     value;        // +0x0C
-	uint32_t  valueSize;    // +0x10
-	uint32_t* valueCodes;   // +0x14
-	uint32_t  valueCount;   // +0x18
-	uint32_t  local;        // +0x1C: from a tag or this call's own dictionary
-	uint32_t  used;         // +0x20
-	TextWord_t* next;       // +0x24
-};
-
-typedef struct TextDictionary
-{
-	TextWord_t* words;      // +0x24
-} TextDictionary_t;
 
 static char* Text_Duplicate(const char* s)
 {
@@ -567,168 +549,6 @@ static char* Text_Duplicate(const char* s)
 	if(copy != NULL)
 		memcpy(copy, s, n);
 	return copy;
-}
-
-static void Text_SetWordValue(TextWord_t* word, const char* value)
-{
-	word->valueSize = (uint32_t)strlen(value) + 1;
-	word->valueCount = Text_CountCharacters(value, NULL);
-	word->value = Text_Duplicate(value);
-	word->valueCodes = (uint32_t*)malloc(sizeof(uint32_t) * (word->valueCount + 1));
-	if(word->valueCodes != NULL)
-		Text_CountCharacters(value, word->valueCodes);
-}
-
-// 0x00434600: a word and its reading. A dictionary word replaces the reading of
-// the same word already there; a local one (a tag's, or this call's) goes after
-// the other local ones, ahead of the dictionary's, which are kept longest first.
-static void Text_AddWord(TextDictionary_t* dictionary, const char* key, const char* value, uint32_t local)
-{
-	if(!local)
-	{
-		for(TextWord_t* word = dictionary->words; word != NULL; word = word->next)
-		{
-			if(strcmp(word->key, key) == 0)
-			{
-				free(word->value);
-				free(word->valueCodes);
-				Text_SetWordValue(word, value);
-				return;
-			}
-		}
-	}
-	uint32_t size = (uint32_t)strlen(key) + 1;
-	TextWord_t** link = &dictionary->words;
-	while(*link != NULL)
-	{
-		if(local ? (*link)->local == 0 : size >= (*link)->keySize)
-			break;
-		link = &(*link)->next;
-	}
-	TextWord_t* word = (TextWord_t*)calloc(1, sizeof(TextWord_t));
-	if(word == NULL)
-		return;
-	word->keySize = size;
-	word->keyCount = Text_CountCharacters(key, NULL);
-	word->key = Text_Duplicate(key);
-	Text_SetWordValue(word, value);
-	word->local = local;
-	word->used = 0;
-	word->next = *link;
-	*link = word;
-}
-
-// 0x00434B20: "word\reading" lines, each added as a local word. 1 when the whole
-// string was taken.
-static int Text_ParseDictionary(TextDictionary_t* dictionary, const char* s)
-{
-	if(s == NULL)
-		return 0;
-	while(*s != 0)
-	{
-		const char* slash = strstr(s, "\\");
-		if(slash == NULL || slash - s <= 0)
-			break;
-		char key[0x100];
-		char value[0x100];
-		size_t keyLength = (size_t)(slash - s);
-		if(keyLength >= sizeof(key))
-			keyLength = sizeof(key) - 1;
-		memcpy(key, s, keyLength);
-		key[keyLength] = 0;
-		s = slash + 1;
-		const char* newline = strstr(s, "\n");
-		size_t valueLength = newline != NULL ? (size_t)(newline - s) : strlen(s);
-		if(valueLength == 0)
-			break;
-		if(valueLength >= sizeof(value))
-			valueLength = sizeof(value) - 1;
-		memcpy(value, s, valueLength);
-		value[valueLength] = 0;
-		s += valueLength + (newline != NULL ? 1 : 0);
-		// 0x00434C01 -> 0x004345E0: added as a dictionary word, not a local one, so
-		// it gives its reading to every place the word appears.
-		Text_AddWord(dictionary, key, value, 0);
-	}
-	return *s == 0;
-}
-
-static void Text_FreeWord(TextWord_t* word)
-{
-	free(word->key);
-	free(word->value);
-	free(word->valueCodes);
-	free(word);
-}
-
-// 0x00434810: the word `key` taken out - only a local one when `localOnly`.
-static int Text_RemoveWord(TextDictionary_t* dictionary, const char* key, int localOnly)
-{
-	for(TextWord_t** link = &dictionary->words; *link != NULL; link = &(*link)->next)
-	{
-		TextWord_t* word = *link;
-		if(localOnly && word->local == 0)
-			continue;
-		if(strcmp(word->key, key) != 0)
-			continue;
-		*link = word->next;
-		Text_FreeWord(word);
-		return 1;
-	}
-	return 0;
-}
-
-// 0x004348B0: every local word taken out.
-static void Text_RemoveLocalWords(TextDictionary_t* dictionary)
-{
-	TextWord_t** link = &dictionary->words;
-	while(*link != NULL)
-	{
-		if((*link)->local)
-		{
-			TextWord_t* word = *link;
-			*link = word->next;
-			Text_FreeWord(word);
-		}
-		else
-			link = &(*link)->next;
-	}
-}
-
-// 0x004348F0: the dictionary emptied.
-static void Text_ClearDictionary(TextDictionary_t* dictionary)
-{
-	while(dictionary->words != NULL)
-	{
-		TextWord_t* word = dictionary->words;
-		dictionary->words = word->next;
-		Text_FreeWord(word);
-	}
-}
-
-// 0x004349A0: the first unused word the text at `p` starts with, into `out`; a
-// local word is used up by being found.
-static int Text_FindWordAt(TextDictionary_t* dictionary, const char* p, char* out)
-{
-	for(TextWord_t* word = dictionary->words; word != NULL; word = word->next)
-	{
-		if(strncmp(p, word->key, word->keySize - 1) != 0 || word->used != 0)
-			continue;
-		strcpy(out, word->key);
-		if(word->local)
-			word->used++;
-		return 1;
-	}
-	return 0;
-}
-
-// 0x00434920: the word `key`.
-static TextWord_t* Text_FindWord(TextDictionary_t* dictionary, const char* key)
-{
-	for(TextWord_t* word = dictionary->words; word != NULL; word = word->next)
-		if(strcmp(word->key, key) == 0)
-			return word;
-	return NULL;
 }
 
 // ----------------------------------------------------------------------------
@@ -870,7 +690,7 @@ static const char* Text_SkipSpaces(const char* p)
 static uint32_t Text_Layout(Renderer_t* renderer, TextLayout_t* layout, const char* text, uint32_t ruby,
                             int32_t* cursor, const Rect_t* rect, int32_t lineHeight, uint32_t fontId,
                             uint32_t proportional, uint32_t kinsoku, uint32_t colour, const TextStyle_t* style,
-                            uint32_t* lines, TextDictionary_t* dictionary)
+                            uint32_t* lines, NameTable_t* dictionary)
 {
 	TextFontState_t fonts;
 	memset(&fonts, 0, sizeof(fonts));
@@ -1133,7 +953,7 @@ static uint32_t Text_Layout(Renderer_t* renderer, TextLayout_t* layout, const ch
 							while(*p != 0)
 								*out++ = *p++;
 							*out = 0;
-							Text_AddWord(dictionary, first, second, 1);
+							NameTable_Set(dictionary, first, second, 1);
 							break;
 						}
 						case 6:
@@ -1162,7 +982,7 @@ static uint32_t Text_Layout(Renderer_t* renderer, TextLayout_t* layout, const ch
 							}
 							*out = 0;
 							if(ended && first[0] != 0)
-								Text_AddWord(dictionary, first, second, 1);
+								NameTable_Set(dictionary, first, second, 1);
 							break;
 						}
 						case 8:
@@ -1482,7 +1302,7 @@ static uint32_t Text_Layout(Renderer_t* renderer, TextLayout_t* layout, const ch
 			else
 			{
 				char key[0x200];
-				if(Text_FindWordAt(dictionary, here, key))
+				if(NameTable_FindAt(dictionary, here, key))
 				{
 					int32_t measured[3];
 					Text_Measure(renderer, measured, key, fonts.current, proportional);
@@ -1582,7 +1402,7 @@ static uint32_t Text_Layout(Renderer_t* renderer, TextLayout_t* layout, const ch
 
 // 0x00437380: one word's ruby, a record per character of the reading, spread over
 // the word's width and put in the list after the word's first character.
-static void Text_LayoutRubyWord(Renderer_t* renderer, TextRecord_t* record, TextWord_t* word, int32_t rubySize,
+static void Text_LayoutRubyWord(Renderer_t* renderer, TextRecord_t* record, NameTableEntry_t* word, int32_t rubySize,
                                 const FontEntryInfo_t* rubyFont, uint32_t colour, const TextStyle_t* style,
                                 int32_t x, int32_t y, int32_t baseWidth, int32_t delay)
 {
@@ -1604,7 +1424,7 @@ static void Text_LayoutRubyWord(Renderer_t* renderer, TextRecord_t* record, Text
 		extraX = effectX * 2;
 		extraY = effectY * 2;
 	}
-	int32_t count = (int32_t)word->valueCount;
+	int32_t count = (int32_t)word->valueLength;
 	if(count <= 0)
 		return;
 	int32_t pitch = baseWidth / count;
@@ -1616,7 +1436,7 @@ static void Text_LayoutRubyWord(Renderer_t* renderer, TextRecord_t* record, Text
 		x -= effectX;
 		y -= effectY;
 	}
-	uint32_t step = (word->keyCount * gTextDelayStep) / (uint32_t)count;
+	uint32_t step = (word->nameLength * gTextDelayStep) / (uint32_t)count;
 	int32_t at = (int32_t)(step >> 1) + delay;
 
 	Bitmap_t cell;
@@ -1635,7 +1455,7 @@ static void Text_LayoutRubyWord(Renderer_t* renderer, TextRecord_t* record, Text
 		ruby->x = x;
 		ruby->kind = 2;
 		Text_ClearBitmap(&cell);
-		uint32_t code = word->valueCodes[i];
+		uint32_t code = word->valueChars[i];
 		FontGlyphInfo_t info;
 		Text_DrawCharacter(&cell, rubyFont->font, code, &info, colour);
 		int32_t width = extraX + (code < 0x100 ? advance / 2 : advance);
@@ -1688,7 +1508,7 @@ static void Text_LayoutRubyWord(Renderer_t* renderer, TextRecord_t* record, Text
 
 // 0x004371F0: the ruby of every record that starts a dictionary word.
 static int Text_LayoutRuby(Renderer_t* renderer, TextLayout_t* layout, uint32_t fontId, const TextStyle_t* style,
-                           uint32_t rubyColour, TextDictionary_t* dictionary)
+                           uint32_t rubyColour, NameTable_t* dictionary)
 {
 	FontEntryInfo_t font;
 	if(!Font_GetInfo(fontId, &font))
@@ -1709,14 +1529,14 @@ static int Text_LayoutRuby(Renderer_t* renderer, TextLayout_t* layout, uint32_t 
 	{
 		if(record->rubyKey == NULL)
 			continue;
-		TextWord_t* word = Text_FindWord(dictionary, record->rubyKey);
+		NameTableEntry_t* word = NameTable_Find(dictionary, record->rubyKey);
 		if(word != NULL)
 			Text_LayoutRubyWord(renderer, record, word, rubySize, &rubyFont, colour, &rubyStyle,
 			                    record->x0 + gTextRubyOffsetX, record->y0 - rubySize + gTextRubyOffsetY,
 			                    record->rubyWidth, (int32_t)record->delay);
-		Text_RemoveWord(dictionary, record->rubyKey, 1);
+		NameTable_Remove(dictionary, record->rubyKey, 1);
 	}
-	Text_RemoveLocalWords(dictionary);
+	NameTable_RemoveLocal(dictionary);
 	return 1;
 }
 
@@ -1759,9 +1579,8 @@ static uint32_t Text_Print(Renderer_t* renderer, Bitmap_t* target, int32_t* curs
 		return 0;
 	TextLayout_t layout;
 	memset(&layout, 0, sizeof(layout));
-	TextDictionary_t dictionary;
-	memset(&dictionary, 0, sizeof(dictionary));
-	Text_ParseDictionary(&dictionary, rubyDictionary);
+	NameTable_t dictionary = { NULL };
+	NameTable_Load(&dictionary, rubyDictionary);
 	int32_t lineHeight = (font.size * lineSpacing) / 100 + font.size;
 	Text_Layout(renderer, &layout, text, ruby, cursor, rect, lineHeight, fontId, proportional, kinsoku,
 	            colour, style, lines, &dictionary);
@@ -1770,7 +1589,7 @@ static uint32_t Text_Print(Renderer_t* renderer, Bitmap_t* target, int32_t* curs
 	// 0x00437D90 with an alignment of 0 does nothing.
 	Text_BlitLayout(&layout, target);
 	Text_FreeLayout(&layout);
-	Text_ClearDictionary(&dictionary);
+	NameTable_Clear(&dictionary);
 	return 1;
 }
 

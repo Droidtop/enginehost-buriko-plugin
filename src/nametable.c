@@ -1,5 +1,6 @@
 //
-// The named-string table at 0x00565BB4, which Grp1 0x96 loads.
+// The ruby dictionary: the global table at 0x00565BB4 and the tables a text draw
+// builds of its own (nametable.h).
 //
 
 #include <stdio.h>
@@ -10,11 +11,11 @@
 
 // The original's root is a whole 0x28-byte node used only for its +0x24; nothing
 // else of it is ever read, so only that field is kept.
-static NameTableEntry_t* gNameTableHead = NULL;
+static NameTable_t gNameTable = { NULL };
 
-NameTableEntry_t* NameTable_First(void)
+NameTable_t* NameTable_Global(void)
 {
-	return gNameTableHead;
+	return &gNameTable;
 }
 
 // 0x00434C30. Walks a string one Shift-JIS character at a time through 0x0042EAF0,
@@ -46,7 +47,7 @@ static void NameTable_SetValue(NameTableEntry_t* entry, const char* value)
 	entry->valueSize = (uint32_t)strlen(value) + 1;
 	entry->valueLength = NameTable_Characters(value, NULL);
 	entry->value = (char*)malloc(entry->valueSize);
-	entry->valueChars = (uint32_t*)malloc(entry->valueLength * 4);
+	entry->valueChars = (uint32_t*)malloc((entry->valueLength + 1) * 4);
 	if(entry->value == NULL || entry->valueChars == NULL)
 	{
 		printf("[NameTable]: Out of memory\n");
@@ -56,13 +57,13 @@ static void NameTable_SetValue(NameTableEntry_t* entry, const char* value)
 	NameTable_Characters(value, entry->valueChars);
 }
 
-// 0x00434600, with the root at 0x00565BB4 as 0x004345E0 passes it.
-void NameTable_Set(const char* name, const char* value, uint32_t mode)
+// 0x00434600.
+void NameTable_Set(NameTable_t* table, const char* name, const char* value, uint32_t mode)
 {
 	// The lookup, which the original does only in the replace mode.
 	if(mode == NAMETABLE_MODE_REPLACE)
 	{
-		for(NameTableEntry_t* entry = gNameTableHead; entry != NULL; entry = entry->next)
+		for(NameTableEntry_t* entry = table->head; entry != NULL; entry = entry->next)
 		{
 			if(strcmp(entry->name, name) != 0)
 				continue;
@@ -77,7 +78,7 @@ void NameTable_Set(const char* name, const char* value, uint32_t mode)
 	// there; `previous` NULL means the head.
 	uint32_t nameSize = (uint32_t)strlen(name) + 1;
 	NameTableEntry_t* previous = NULL;
-	NameTableEntry_t* next = gNameTableHead;
+	NameTableEntry_t* next = table->head;
 	while(next != NULL)
 	{
 		if(mode == NAMETABLE_MODE_REPLACE)
@@ -113,12 +114,12 @@ void NameTable_Set(const char* name, const char* value, uint32_t mode)
 	memcpy(entry->name, name, nameSize);
 	NameTable_SetValue(entry, value);
 	entry->mode = mode;
-	entry->field20 = 0;
+	entry->used = 0;
 	entry->next = next;
 	if(previous != NULL)
 		previous->next = entry;
 	else
-		gNameTableHead = entry;
+		table->head = entry;
 }
 
 // 0x00434B20. The blob is a run of `name\value\n` records: the name reaches to the
@@ -135,7 +136,7 @@ void NameTable_Set(const char* name, const char* value, uint32_t mode)
 // off it; this refuses the record instead and says so.
 #define NAMETABLE_FIELD_MAX 0x100
 
-uint32_t NameTable_Load(const char* text)
+uint32_t NameTable_Load(NameTable_t* table, const char* text)
 {
 	if(text == NULL)
 		return 0;
@@ -165,24 +166,81 @@ uint32_t NameTable_Load(const char* text)
 		name[nameLength] = 0;
 		memcpy(value, rest, valueLength);
 		value[valueLength] = 0;
-		NameTable_Set(name, value, NAMETABLE_MODE_REPLACE);
+		NameTable_Set(table, name, value, NAMETABLE_MODE_REPLACE);
 
 		at = rest + valueLength + (end != NULL ? 1 : 0);
 	}
 	return *at == 0 ? 1u : 0u;
 }
 
-void NameTable_FreeAll(void)
+static void NameTable_FreeEntry(NameTableEntry_t* entry)
 {
-	NameTableEntry_t* entry = gNameTableHead;
-	while(entry != NULL)
+	free(entry->name);
+	free(entry->value);
+	free(entry->valueChars);
+	free(entry);
+}
+
+NameTableEntry_t* NameTable_Find(NameTable_t* table, const char* name)
+{
+	for(NameTableEntry_t* entry = table->head; entry != NULL; entry = entry->next)
+		if(strcmp(entry->name, name) == 0)
+			return entry;
+	return NULL;
+}
+
+int NameTable_FindAt(NameTable_t* table, const char* p, char* out)
+{
+	for(NameTableEntry_t* entry = table->head; entry != NULL; entry = entry->next)
 	{
-		NameTableEntry_t* next = entry->next;
-		free(entry->name);
-		free(entry->value);
-		free(entry->valueChars);
-		free(entry);
-		entry = next;
+		if(strncmp(p, entry->name, entry->nameSize - 1) != 0 || entry->used != 0)
+			continue;
+		strcpy(out, entry->name);
+		if(entry->mode != NAMETABLE_MODE_REPLACE)
+			entry->used++;
+		return 1;
 	}
-	gNameTableHead = NULL;
+	return 0;
+}
+
+int NameTable_Remove(NameTable_t* table, const char* name, int localOnly)
+{
+	for(NameTableEntry_t** link = &table->head; *link != NULL; link = &(*link)->next)
+	{
+		NameTableEntry_t* entry = *link;
+		if(localOnly && entry->mode == NAMETABLE_MODE_REPLACE)
+			continue;
+		if(strcmp(entry->name, name) != 0)
+			continue;
+		*link = entry->next;
+		NameTable_FreeEntry(entry);
+		return 1;
+	}
+	return 0;
+}
+
+void NameTable_RemoveLocal(NameTable_t* table)
+{
+	NameTableEntry_t** link = &table->head;
+	while(*link != NULL)
+	{
+		if((*link)->mode != NAMETABLE_MODE_REPLACE)
+		{
+			NameTableEntry_t* entry = *link;
+			*link = entry->next;
+			NameTable_FreeEntry(entry);
+		}
+		else
+			link = &(*link)->next;
+	}
+}
+
+void NameTable_Clear(NameTable_t* table)
+{
+	while(table->head != NULL)
+	{
+		NameTableEntry_t* entry = table->head;
+		table->head = entry->next;
+		NameTable_FreeEntry(entry);
+	}
 }
