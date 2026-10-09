@@ -138,6 +138,12 @@ struct DisplayObject
 	// spacing per cent of the size (+0x360, Grp1 0x89), whether a column is kept free
 	// at the right of the client area (+0x364), and how lines are aligned (+0x374,
 	// Grp1 0x8B: 0 left, 1 centred, 2 right).
+	// A window's text surface (+0x184): its own pixels, the window's size, where the
+	// message text is drawn (0x0042B690), shown over the window when +0x17C is set and
+	// blended with +0x19C as its transparency (0x0042CC29). Made on first use.
+	uint8_t*  textPixels;
+	uint32_t  textShown;
+	uint32_t  textTransparency;
 	uint32_t  fontId;
 	int32_t   fontSize;
 	int32_t   fontAdvance;

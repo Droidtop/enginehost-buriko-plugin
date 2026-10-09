@@ -66,6 +66,76 @@ void Window_ReserveContent(Renderer_t* renderer, DisplayObject_t* window, uint32
 	window->contentHalfWidth = width / 2;
 }
 
+// The text surface's pixel mode: 0x0041C060 with no template asks the device's own
+// mode (0x00407B10) and makes 24-bit into 32-bit, so the text keeps its alpha.
+static int Window_TextMode(Renderer_t* renderer)
+{
+	int mode = Renderer_ScreenMode(renderer);
+	return mode == BITMAP_MODE_24 ? BITMAP_MODE_32 : mode;
+}
+
+int Window_TextSurface(Renderer_t* renderer, DisplayObject_t* window, Bitmap_t* out)
+{
+	Bitmap_t pixels;
+	if(window == NULL || !Renderer_WindowBitmap(renderer, window->handle, &pixels))
+		return 0;
+	int mode = Window_TextMode(renderer);
+	int stride = pixels.width * Renderer_ModePixelBytes(mode);
+	if(window->textPixels == NULL)
+	{
+		// 0x0042B320: made with the window's pixels, and cleared (0x0042BA90).
+		window->textPixels = (uint8_t*)calloc(1, (size_t)stride * (size_t)pixels.height);
+		if(window->textPixels == NULL)
+			return 0;
+	}
+	*out = pixels;
+	out->mode = mode;
+	out->stride = stride;
+	out->bitmap = window->textPixels;
+	return 1;
+}
+
+// 0x0042CC29, the frame layer: the text surface over the window when it is shown -
+// through a copy that has the eight parts erased out of it first when the window's
+// +0x3BC asks for that - and then the eight parts, each with its own weight.
+static void Window_ComposeTextLayer(Renderer_t* renderer, DisplayObject_t* window,
+                                    const Bitmap_t* pixels, const Rect_t* area)
+{
+	Bitmap_t view = *pixels;
+	if(!Renderer_ClipBitmap(&view, area))
+		return;
+	Bitmap_t text;
+	if(window->textShown && Window_TextSurface(renderer, window, &text) && Renderer_ClipBitmap(&text, area))
+	{
+		if(window->field3BC != 0)
+		{
+			// 0x0042CC8A: a copy of that part of the text (0x00409080, 0x0040A9E0
+			// mode 0x80), every part erased out of it (mode 0x40, weight 1), and the
+			// copy blended on.
+			Bitmap_t copy = text;
+			copy.stride = text.width * Renderer_ModePixelBytes(text.mode);
+			copy.bitmap = (uint8_t*)malloc((size_t)copy.stride * (size_t)copy.height);
+			if(copy.bitmap != NULL)
+			{
+				Renderer_BlitView(&copy, &text, BITMAP_BLEND_COPY, 0);
+				for(int i = 0; i < 8; i++)
+					if(window->parts[i].enabled && window->parts[i].surface.bitmap != NULL)
+						Renderer_BlitAt(&copy, window->parts[i].x - area->left, window->parts[i].y - area->top,
+						                &window->parts[i].surface, BITMAP_BLEND_ERASE, 1);
+				Renderer_BlitView(&view, &copy, BITMAP_BLEND_ALPHA_TRANS, (int)window->textTransparency);
+				free(copy.bitmap);
+			}
+		}
+		else
+			Renderer_BlitView(&view, &text, BITMAP_BLEND_ALPHA_TRANS, (int)window->textTransparency);
+	}
+	// 0x0042CD33: the parts, at their places, with their own weight (mode 1).
+	for(int i = 0; i < 8; i++)
+		if(window->parts[i].enabled && window->parts[i].surface.bitmap != NULL)
+			Renderer_BlitAt(&view, window->parts[i].x - area->left, window->parts[i].y - area->top,
+			                &window->parts[i].surface, BITMAP_BLEND_ALPHA_TRANS, (int)window->parts[i].weight);
+}
+
 void Window_Redraw(Renderer_t* renderer, DisplayObject_t* window, const Rect_t* rect)
 {
 	if(window == NULL || rect == NULL)
@@ -111,11 +181,7 @@ void Window_Redraw(Renderer_t* renderer, DisplayObject_t* window, const Rect_t* 
 			}
 
 			case WINDOW_LAYER_FRAME:
-				// 0x0042CC29: the frame image at +0x184 behind +0x17C, and the
-				// eight 0x2C-byte parts at +0x1B8 the constructor builds. Nothing
-				// in this engine gives a window either yet, and the original's
-				// own arm does nothing at all when both are empty, so this is
-				// silent rather than refused.
+				Window_ComposeTextLayer(renderer, window, &pixels, &area);
 				break;
 
 			case WINDOW_LAYER_CONTENT:
@@ -236,6 +302,103 @@ int32_t Window_LineHeight(const DisplayObject_t* window)
 {
 	// 0x0042C580 -> 0x004097B0: the spacing is that per cent of the size.
 	return (window->fontSize * (int32_t)window->lineSpacing) / 100 + window->fontSize;
+}
+
+void Window_SetTextShown(DisplayObject_t* window, uint32_t shown)
+{
+	window->textShown = shown;
+}
+
+void Window_SetTextTransparency(DisplayObject_t* window, uint32_t transparency)
+{
+	window->textTransparency = transparency;
+}
+
+void Window_ClearText(Renderer_t* renderer, DisplayObject_t* window)
+{
+	Bitmap_t text;
+	if(Window_TextSurface(renderer, window, &text))
+		Renderer_ClearBitmap(&text);
+	Window_RedrawAll(renderer, window);
+}
+
+void Window_TextArea(const DisplayObject_t* window, Rect_t* rect)
+{
+	Window_ClientRect(window, rect);
+	if(window->reserveColumn)
+		rect->right += window->fontSize;
+}
+
+uint32_t Window_DrawText(Renderer_t* renderer, DisplayObject_t* window, int32_t x, int32_t y,
+                         Bitmap_t* image, int mode, int weight)
+{
+	Bitmap_t text;
+	if(!Window_TextSurface(renderer, window, &text))
+		return 0;
+	Rect_t area;
+	Window_TextArea(window, &area);
+	Bitmap_t view = text;
+	if(!Renderer_ClipBitmap(&view, &area))
+		return 4;
+	switch(Renderer_BlitAt(&view, x - area.left, y - area.top, image, mode, weight))
+	{
+		case 0:
+		{
+			Rect_t covered = { x, y, x + image->width - 1, y + image->height - 1 };
+			Window_Redraw(renderer, window, &covered);
+			return 0;
+		}
+		case 1: return 5;
+		case 2: return 6;
+		case 3: return 7;
+		case 4: return 4;
+	}
+	return 5;
+}
+
+int Window_NewLine(DisplayObject_t* window)
+{
+	Rect_t client;
+	Window_ClientRect(window, &client);
+	int32_t line = Window_LineHeight(window);
+	if(window->textDirection == 0)
+	{
+		// 0x0042C725: back to the left edge, and down a line when another one still
+		// fits under it.
+		window->textCursorX = client.left;
+		if(window->textCursorY + line * 2 > client.bottom + 1)
+			return 0;
+		window->textCursorY += line;
+		return 1;
+	}
+	if(window->textDirection == 1)
+	{
+		// 0x0042C70C: down, a column further left, back to the top.
+		window->textCursorX -= line;
+		window->textCursorY = client.top;
+		return 1;
+	}
+	return 0;
+}
+
+int Window_Fits(const DisplayObject_t* window, int32_t extent)
+{
+	Rect_t client;
+	Window_ClientRect(window, &client);
+	if(window->textDirection == 0)
+		return window->textCursorX + extent <= client.right + 1;
+	if(window->textDirection == 1)
+		return window->textCursorY + extent <= client.bottom + 1;
+	// 0x0042C7B1: no direction but 0 and 1 can be set (0x0042C630).
+	return 0;
+}
+
+void Window_AdvanceCursor(DisplayObject_t* window, int32_t amount)
+{
+	if(window->textDirection == 0)
+		window->textCursorX += amount;
+	else if(window->textDirection == 1)
+		window->textCursorY += amount;
 }
 
 

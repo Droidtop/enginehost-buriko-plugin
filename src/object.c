@@ -338,6 +338,7 @@ void Object_FreeDetached(DisplayObject_t* object)
 	Sprite5_Free(object);
 	free(object->hitMask);
 	free(object->backgroundPixels);
+	free(object->textPixels);
 	free(object);
 }
 
@@ -378,6 +379,7 @@ void Object_Destroy(uint32_t handle)
 	Sprite5_Free(kind->slots[index]);
 	free(kind->slots[index]->hitMask);
 	free(kind->slots[index]->backgroundPixels);
+	free(kind->slots[index]->textPixels);
 	free(kind->slots[index]);
 	kind->slots[index] = NULL;
 	if(*kind->count > 0)
@@ -1580,6 +1582,7 @@ void Object_FreeAll(void)
 			{
 				Sprite5_Free(gKinds[i].slots[slot]);
 				free(gKinds[i].slots[slot]->backgroundPixels);
+				free(gKinds[i].slots[slot]->textPixels);
 			}
 			free(gKinds[i].slots[slot]);
 			gKinds[i].slots[slot] = NULL;

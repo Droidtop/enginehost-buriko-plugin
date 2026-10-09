@@ -138,6 +138,10 @@ int Renderer_CopyBitmap(Renderer_t* renderer, int destination, int source, int o
 #define BITMAP_BLEND_ALPHA_TRANS  0x01
 #define BITMAP_BLEND_ALPHA_TRANS2 0x20
 #define BITMAP_BLEND_COPY         0x80
+// The destination cleared to zero wherever the source covers it (0x0040E050): a
+// 32-bit source covers a pixel whose alpha is not zero (any weight but 0) or is 0xFF
+// (weight 0), a 24-bit one a pixel whose three colours are not all zero.
+#define BITMAP_BLEND_ERASE        0x40
 // The source darkened towards black by the weight (0x0040DBA0), which 0x05 and
 // 0xC0 share, and lightened towards white (0x0040AC16).
 #define BITMAP_BLEND_FADE_BLACK   0x05

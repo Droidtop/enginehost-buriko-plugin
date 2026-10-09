@@ -778,6 +778,49 @@ static int Renderer_BlitFade(Bitmap_t* dst, int x, int y, Bitmap_t* src, int mod
 	return 5;
 }
 
+// 0x0040E050: blend mode 0x40. The arm is chosen by the source's pixel mode, and a
+// 24-bit or 32-bit source writes only to a 24-bit or 32-bit destination; the 16-bit
+// arm (0x0040E0C0) is refused by name.
+static int Renderer_BlitErase(Bitmap_t* dst, int x, int y, Bitmap_t* src, int weight)
+{
+	if(src->mode == BITMAP_MODE_16)
+	{
+		printf("[Renderer]: Warning: erasing under a 16-bit source (0x0040E0C0) is not written yet\n");
+		return 5;
+	}
+	if(Renderer_ModePixelBytes(dst->mode) != 4 || Renderer_ModePixelBytes(src->mode) != 4)
+		return 0;
+	int left   = x < 0 ? 0 : x;
+	int top    = y < 0 ? 0 : y;
+	int right  = x + src->width;
+	int bottom = y + src->height;
+	if(right > dst->width)
+		right = dst->width;
+	if(bottom > dst->height)
+		bottom = dst->height;
+	if(left >= right || top >= bottom)
+		return 4;
+	for(int row = top; row < bottom; row++)
+	{
+		uint32_t* dstRow = (uint32_t*)(dst->bitmap + (size_t)row * dst->stride);
+		const uint8_t* srcRow = src->bitmap + (size_t)(row - y) * src->stride;
+		for(int column = left; column < right; column++)
+		{
+			const uint8_t* in = srcRow + (size_t)(column - x) * 4;
+			int covered;
+			if(src->mode == BITMAP_MODE_32)
+				// 0x0040E1A0.
+				covered = weight != 0 ? in[3] != 0 : in[3] == 0xFF;
+			else
+				// 0x0040E120: blue, green and red summed.
+				covered = in[0] + in[1] + in[2] > 0;
+			if(covered)
+				dstRow[column] = 0;
+		}
+	}
+	return 0;
+}
+
 static int Renderer_BlitBitmaps(Bitmap_t* dst, int x, int y,
                                 Bitmap_t* src, int mode, int transparency)
 {
@@ -808,6 +851,8 @@ static int Renderer_BlitBitmaps(Bitmap_t* dst, int x, int y,
 	}
 	if(mode == BITMAP_BLEND_FADE_BLACK || mode == BITMAP_BLEND_FADE_BLACK2 || mode == BITMAP_BLEND_FADE_WHITE)
 		return Renderer_BlitFade(dst, x, y, src, mode, transparency);
+	if(mode == BITMAP_BLEND_ERASE)
+		return Renderer_BlitErase(dst, x, y, src, transparency);
 	if(mode != BITMAP_BLEND_ALPHA && mode != BITMAP_BLEND_COPY)
 		return 5;
 	if(Renderer_ModePixelBytes(dst->mode) != 4)

@@ -60,6 +60,32 @@ int Window_SetAlignment(DisplayObject_t* window, uint32_t align);
 // 0x0042C5A0: the size plus the line spacing, how far one line is below the last.
 int32_t Window_LineHeight(const DisplayObject_t* window);
 
+// The text surface (+0x184), the window's size; 0 when the window has no pixels yet.
+int Window_TextSurface(Renderer_t* renderer, DisplayObject_t* window, Bitmap_t* out);
+// 0x0042B620 and 0x0042B630: whether the text surface is shown (+0x17C) and its
+// transparency (+0x19C). Neither redraws the window.
+void Window_SetTextShown(DisplayObject_t* window, uint32_t shown);
+void Window_SetTextTransparency(DisplayObject_t* window, uint32_t transparency);
+// 0x0042BA90: the text surface cleared and the window redrawn.
+void Window_ClearText(Renderer_t* renderer, DisplayObject_t* window);
+// 0x0042C3B0: the area text is drawn into, the client area with one font size more on
+// the right when the window keeps a column free (0x0042C360).
+void Window_TextArea(const DisplayObject_t* window, Rect_t* rect);
+// 0x0042B690: `image` drawn onto the text surface with its corner at (x, y) of the
+// window, clipped to the text area, with a blend mode and a weight (0x0040A530); the
+// part it covered is redrawn (0x0042CE10). 0, or the blit's failure as 0x0042B7DC
+// maps it: 5, 6, 7 for 1, 2, 3 and 4 for nothing left.
+uint32_t Window_DrawText(Renderer_t* renderer, DisplayObject_t* window, int32_t x, int32_t y,
+                         Bitmap_t* image, int mode, int weight);
+// 0x0042C6E0: the text cursor to the start of the next line (across) or column
+// (down). 1 when the next one still fits in the client area.
+int Window_NewLine(DisplayObject_t* window);
+// 0x0042C760: whether something `extent` wide (across) or high (down) still fits
+// on the line from the cursor.
+int Window_Fits(const DisplayObject_t* window, int32_t extent);
+// 0x0042C7C0: the cursor moved along the line by `amount`.
+void Window_AdvanceCursor(DisplayObject_t* window, int32_t amount);
+
 // 0x0042B380 (Grp0 0x86): the window's background image, the bitmap copied onto a
 // surface of the window's own at its corner; -1 for none. 0, or 1 (the window has no
 // pixels) or 2 (no such bitmap).
