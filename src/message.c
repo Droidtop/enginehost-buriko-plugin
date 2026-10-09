@@ -79,6 +79,7 @@ typedef struct PrintMessage
 	uint32_t     regionKey;         // +0x78
 	TextLayout_t layout;            // +0x7C, the records at +0xC0
 	uint32_t     ruby;              // +0xC4
+	uint32_t     vertical;          // the class: 0x004342B0, or 0x00438270 when set
 	TextStyle_t  style;             // +0xC8
 	uint32_t     rubyColour;        // +0xDC
 	uint32_t     firstPass;         // +0xE0
@@ -295,13 +296,21 @@ static int Message_WaitGlyph(PrintMessage_t* m, DisplayObject_t* window)
 				}
 				else
 				{
-					// vtable+0x30 (0x00437A90): ruby lifts the glyph by its size.
+					// vtable+0x30: with ruby the glyph moves by the ruby's size -
+					// down for the horizontal class (0x00437A90), left (with the
+					// first frame's width) for the vertical one (0x00438FE0).
 					int32_t lift = 0;
 					FontEntryInfo_t font;
 					if(m->ruby && Font_GetInfo(window->fontId, &font))
 						lift = Text_RubySize(font.size);
-					x = window->textCursorX + renderer->animationX;
-					y = window->textCursorY + renderer->animationY + lift;
+					int32_t offset[2] = { 0, lift };
+					if(m->vertical)
+					{
+						offset[0] = -(renderer->animationFrames[0] != NULL ? renderer->animationFrames[0]->width : 0) - lift;
+						offset[1] = 0;
+					}
+					x = window->textCursorX + renderer->animationX + offset[0];
+					y = window->textCursorY + renderer->animationY + offset[1];
 				}
 				Window_SetPartPosition(renderer, window, 0, x, y, 0);
 				Window_SetPartBitmap(renderer, window, 0, entry);
@@ -468,19 +477,14 @@ uint32_t Message_Print(Thread_t* thread, uint32_t windowHandle, const char* text
 		return 0xFFFFFFFFu;
 	if(window->fontId == 0)
 		return 0x80000001;
-	// 0x00491465: a window that writes downwards takes the vertical class.
-	if(window->textDirection == 1)
-	{
-		printf("[Message]: a message in a window that writes downwards needs the vertical class (0x00438270), which is not written yet\n");
-		return 0xFFFFFFFE;
-	}
-
 	PrintMessage_t* m = (PrintMessage_t*)calloc(1, sizeof(PrintMessage_t));
 	if(m == NULL)
 		return 0xFFFFFFFE;
 	m->thread = thread;
 	m->renderer = renderer;
 	m->window = windowHandle;
+	// 0x00491465: a window that writes downwards takes the vertical class.
+	m->vertical = window->textDirection == 1;
 
 	// 0x00432CA0, the base: the region the keys are taken from (0x00432CFE), put on
 	// both lists and its presses so far taken (0x0046D840, 0x0046D8A0, 0x0046E080);
@@ -518,20 +522,35 @@ uint32_t Message_Print(Thread_t* thread, uint32_t windowHandle, const char* text
 	// 0x004351A0: the text laid out from the window's cursor within its client area,
 	// in its font, line height and proportional setting, against the global ruby
 	// dictionary (0x00565BB4); then the ruby, the alignment, and the cursor left after
-	// the text.
+	// the text. The vertical class's three (vtable+0x34..+0x3C: 0x00438470,
+	// 0x00438BC0, 0x004391D0) take no proportional setting.
 	int32_t cursor[2] = { window->textCursorX, window->textCursorY };
 	Rect_t client;
 	Window_ClientRect(window, &client);
 	uint32_t lines = 0;
 	NameTable_t* dictionary = NameTable_Global();
-	if(Text_Layout(renderer, &m->layout, text != NULL ? text : "", request->ruby, cursor, &client,
-	               Window_LineHeight(window), window->fontId, window->proportional, request->kinsoku,
-	               m->colour, &m->style, &lines, dictionary))
+	const char* body = text != NULL ? text : "";
+	uint32_t laidOut = m->vertical
+	    ? Text_LayoutVertical(renderer, &m->layout, body, request->ruby, cursor, &client, Window_LineHeight(window),
+	                          window->fontId, request->kinsoku, m->colour, &m->style, &lines, dictionary)
+	    : Text_Layout(renderer, &m->layout, body, request->ruby, cursor, &client, Window_LineHeight(window),
+	                  window->fontId, window->proportional, request->kinsoku, m->colour, &m->style, &lines,
+	                  dictionary);
+	if(laidOut)
 	{
 		if(request->ruby)
-			Text_LayoutRuby(renderer, &m->layout, window->fontId, &m->style, m->rubyColour, dictionary);
-		Text_AlignLayout(renderer, &m->layout, cursor, &client, window->fontId, request->kinsoku,
-		                 &m->style, window->textAlign);
+		{
+			if(m->vertical)
+				Text_LayoutRubyVertical(renderer, &m->layout, window->fontId, &m->style, m->rubyColour, dictionary);
+			else
+				Text_LayoutRuby(renderer, &m->layout, window->fontId, &m->style, m->rubyColour, dictionary);
+		}
+		if(m->vertical)
+			Text_AlignLayoutVertical(renderer, &m->layout, cursor, &client, window->fontId, request->kinsoku,
+			                         window->textAlign);
+		else
+			Text_AlignLayout(renderer, &m->layout, cursor, &client, window->fontId, request->kinsoku,
+			                 &m->style, window->textAlign);
 		window->textCursorX = cursor[0];
 		window->textCursorY = cursor[1];
 		m->ruby = request->ruby;
@@ -551,5 +570,68 @@ uint32_t Message_Print(Thread_t* thread, uint32_t windowHandle, const char* text
 		return 0xFFFFFFFE;
 	}
 	Thread_SetProcess(thread, m->process);
+	return 0;
+}
+
+uint32_t Message_PrintNow(Thread_t* thread, uint32_t windowHandle, const char* text,
+                          const TextStyle_t* style, const MessageRequest_t* request)
+{
+	Renderer_t* renderer = thread->engine->renderer;
+	DisplayObject_t* window = Object_ResolveKind(windowHandle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+		return 0xFFFFFFFFu;
+	const char* body = text != NULL ? text : "";
+
+	// 0x0042B817: the text shown and opaque, the eight parts off.
+	Window_SetTextTransparency(window, 0);
+	Window_SetTextShown(window, 1);
+	for(int i = 0; i < 8; i++)
+		Window_EnablePart(renderer, window, i, 0);
+	int32_t cursor[2] = { window->textCursorX, window->textCursorY };
+	Rect_t client;
+	Window_ClientRect(window, &client);
+	// 0x0042B85C: with ruby, the global dictionary's words that occur in the text, as
+	// a dictionary string (0x00434A00 into a 0x400-byte buffer).
+	char dictionary[0x400];
+	dictionary[0] = 0;
+	if(request->ruby)
+		NameTable_WordsIn(NameTable_Global(), body, dictionary, sizeof(dictionary));
+
+	// 0x0042B89B: a rectangle per record. The original makes room for four per byte
+	// of the text and does not check it; the readings of the dictionary words are
+	// counted in here too, so the room cannot run out.
+	size_t room = strlen(body) * 4 + strlen(dictionary) + 1;
+	Rect_t* drawn = (Rect_t*)calloc(room, sizeof(Rect_t));
+	if(drawn == NULL)
+		return 0x80000001;
+	Bitmap_t surface;
+	uint32_t printed = 0;
+	uint32_t count = 0;
+	uint32_t lines = 0;
+	if(Window_TextSurface(renderer, window, &surface))
+	{
+		if(window->textDirection == 0)
+			printed = Text_Print(renderer, &surface, cursor, &lines, &client, body, request->ruby, dictionary,
+			                     window->fontId, window->proportional, request->kinsoku, (int32_t)window->lineSpacing,
+			                     request->colour, request->rubyColour, style, window->textAlign, drawn, &count);
+		else if(window->textDirection == 1)
+			printed = Text_PrintVertical(renderer, &surface, cursor, &lines, &client, body, request->ruby, dictionary,
+			                             window->fontId, request->kinsoku, (int32_t)window->lineSpacing,
+			                             request->colour, request->rubyColour, style, window->textAlign, drawn, &count);
+	}
+	if(printed)
+	{
+		// 0x0042B987: each record's rectangle redrawn (0x0042CB10), the cursor left
+		// after the text (0x0042C7E0).
+		for(uint32_t i = 0; i < count && i < room; i++)
+			Window_Redraw(renderer, window, &drawn[i]);
+		window->textCursorX = cursor[0];
+		window->textCursorY = cursor[1];
+	}
+	free(drawn);
+	if(!printed)
+		return 0x80000001;
+	// 0x00441028: the window's damage, when it is drawn.
+	Message_Damage(window);
 	return 0;
 }

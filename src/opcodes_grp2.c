@@ -159,7 +159,7 @@ char* OpcodesGrp2Mnemonics[256] = {
     /* 0x8E 142 */ "Unknown_142",
     /* 0x8F 143 */ "--Unknown--",
     /* 0x90 144 */ "PrintMessage",
-    /* 0x91 145 */ "Unknown_145",
+    /* 0x91 145 */ "PrintText",
     /* 0x92 146 */ "--Unknown--",
     /* 0x93 147 */ "--Unknown--",
     /* 0x94 148 */ "--Unknown--",
@@ -418,7 +418,7 @@ OpcodePtr_t OpcodesGrp2[256] = {
     /* 0x8E 142 */ Opcode_Grp2_Unknown_142,
     /* 0x8F 143 */ NULL,
     /* 0x90 144 */ Opcode_Grp2_PrintMessage,
-    /* 0x91 145 */ Opcode_Grp2_Unknown_145,
+    /* 0x91 145 */ Opcode_Grp2_PrintText,
     /* 0x92 146 */ NULL,
     /* 0x93 147 */ NULL,
     /* 0x94 148 */ NULL,
@@ -712,9 +712,49 @@ uint32_t Opcode_Grp2_PrintMessage(Thread_t* thread)
 	return 2;
 }
 
-uint32_t Opcode_Grp2_Unknown_145(Thread_t* thread)
+/*
+ * Grp2 0x91 (0x00486680 -> 0x00463220 -> 0x00440FF0 -> 0x0042B7F0): text printed into
+ * a window at once, with no wait. Popped, in order: the effect - weight, colour, the
+ * two offsets and the kind, built by 0x00434F10 - kinsoku, the ruby colour, whether
+ * there is ruby, the colour, the text (a string) and the window. Nothing is pushed.
+ * A handle that is not a window is fatal ("an invalid window handle", 0x004E9AC8),
+ * and so is a print that fails ("the specified window has no font set", 0x004E9C6C).
+ */
+uint32_t Opcode_Grp2_PrintText(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	MessageRequest_t request;
+	memset(&request, 0, sizeof(request));
+	uint32_t weight = Thread_PopStack(thread);
+	uint32_t effectColour = Thread_PopStack(thread);
+	int32_t b = (int32_t)Thread_PopStack(thread);
+	int32_t a = (int32_t)Thread_PopStack(thread);
+	uint32_t kind = Thread_PopStack(thread);
+	request.kinsoku = Thread_PopStack(thread);
+	request.rubyColour = Thread_PopStack(thread);
+	request.ruby = Thread_PopStack(thread);
+	request.colour = Thread_PopStack(thread);
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t window = Thread_PopStack(thread);
+
+	// 0x00486706: the style 0x00434F10 builds; one it refuses is left as the
+	// handler's own stack held it, and here as the plain style.
+	TextStyle_t style;
+	if(!Text_MakeStyle(&style, kind, a, b, effectColour, weight))
+		Text_MakeStyle(&style, 0, 0, 0, 0, 0);
+	uint32_t result = Message_PrintNow(thread, window, text, &style, &request);
+	if(result == 0xFFFFFFFFu)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFC;
+	}
+	if(result != 0)
+	{
+		printf("[Thread %d]: %sError: the specified window has no font set\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFC;
+	}
+	return 0;
 }
 
 /*

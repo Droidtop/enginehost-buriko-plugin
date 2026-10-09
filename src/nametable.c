@@ -244,3 +244,40 @@ void NameTable_Clear(NameTable_t* table)
 		NameTable_FreeEntry(entry);
 	}
 }
+
+uint32_t NameTable_WordsIn(NameTable_t* table, const char* text, char* out, size_t size)
+{
+	uint32_t count = 0;
+	size_t used = 0;
+	if(size == 0)
+		return 0;
+	out[0] = 0;
+	uint32_t skip = 0;
+	const uint8_t* p = (const uint8_t*)text;
+	while(*p != 0)
+	{
+		int wide = SjisIsTwobyte((uint8_t*)p) ? 1 : 0;
+		if(skip > 0)
+			skip--;
+		else
+		{
+			char name[0x400];
+			if(NameTable_FindAt(table, (const char*)p, name))
+			{
+				count++;
+				NameTableEntry_t* entry = NameTable_Find(table, name);
+				if(entry != NULL)
+				{
+					int n = snprintf(out + used, size - used, "%s\\%s\n", entry->name, entry->value);
+					if(n > 0 && (size_t)n < size - used)
+						used += (size_t)n;
+					else
+						out[used] = 0;
+				}
+				skip = NameTable_Characters(name, NULL) - 1;
+			}
+		}
+		p += wide ? 2 : 1;
+	}
+	return count;
+}

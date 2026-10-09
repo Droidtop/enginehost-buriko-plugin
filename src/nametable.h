@@ -73,5 +73,11 @@ int NameTable_Remove(NameTable_t* table, const char* name, int localOnly);
 void NameTable_RemoveLocal(NameTable_t* table);
 // 0x004348F0: the table emptied.
 void NameTable_Clear(NameTable_t* table);
+// 0x00434A00: the words of the table that occur in `text`, in the order they occur,
+// written to `out` as name\value\n records (0x004E5250) - the dictionary a window's
+// immediate print hands its layout. A word is found as 0x004349A0 finds it, and the
+// characters it covers are passed over. The number of records; `out` is always
+// terminated, and a record that would not fit is left out.
+uint32_t NameTable_WordsIn(NameTable_t* table, const char* text, char* out, size_t size);
 
 #endif // __NAMETABLE_H__

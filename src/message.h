@@ -57,13 +57,22 @@ typedef struct MessageRequest
 } MessageRequest_t;
 
 // 0x004913B0 with mode 1, as Grp2 0x90 calls it: a message object made for the
-// window, the text laid out into it, and the thread joined to it (0x004452A0). The
-// message draws its characters into the window's text surface over time, waits at the
-// end as asked, and when it is done pushes whether it was skipped. 0 once the thread
-// waits; -1 when the handle is not a window, 0x80000001 when the window has no font,
-// and 0xFFFFFFFF when the window writes downwards, which needs the vertical class
-// (0x00438270) this engine does not have yet.
+// window - the horizontal class (0x004342B0), or the vertical one (0x00438270) for a
+// window that writes downwards - the text laid out into it, and the thread joined to
+// it (0x004452A0). The message draws its characters into the window's text surface
+// over time, waits at the end as asked, and when it is done pushes whether it was
+// skipped. 0 once the thread waits; 0xFFFFFFFF when the handle is not a window,
+// 0x80000001 when the window has no font, 0xFFFFFFFE when memory ran out.
 uint32_t Message_Print(struct Thread* thread, uint32_t windowHandle, const char* text,
                        const struct TextStyle* style, const MessageRequest_t* request);
+
+// 0x00440FF0 -> 0x0042B7F0, as Grp2 0x91 calls it: the text printed into the
+// window's text surface at once, from its cursor within its client area, in its font,
+// line spacing, alignment and (across only) proportional setting, against the global
+// ruby dictionary's words that occur in the text; the window is redrawn where each
+// record went and the cursor left after the text. 0, 0xFFFFFFFF when the handle is
+// not a window, 0x80000001 when the print failed (the window has no usable font).
+uint32_t Message_PrintNow(struct Thread* thread, uint32_t windowHandle, const char* text,
+                          const struct TextStyle* style, const MessageRequest_t* request);
 
 #endif // __MESSAGE_H__
