@@ -75,6 +75,32 @@ int Text_LayoutRuby(Renderer_t* renderer, TextLayout_t* layout, uint32_t fontId,
 // the cursor moves with the last one.
 void Text_AlignLayout(Renderer_t* renderer, TextLayout_t* layout, int32_t* cursor, const Rect_t* rect,
                       uint32_t fontId, uint32_t kinsoku, const TextStyle_t* style, uint32_t align);
+// 0x004384B0, 0x00438BF0 and 0x00439200: the same three for text set top to bottom
+// in columns from right to left (a window whose direction is 1). The vertical layout
+// has no proportional setting.
+uint32_t Text_LayoutVertical(Renderer_t* renderer, TextLayout_t* layout, const char* text, uint32_t ruby,
+                             int32_t* cursor, const Rect_t* rect, int32_t lineHeight, uint32_t fontId,
+                             uint32_t kinsoku, uint32_t colour, const TextStyle_t* style,
+                             uint32_t* lines, struct NameTable* dictionary);
+int Text_LayoutRubyVertical(Renderer_t* renderer, TextLayout_t* layout, uint32_t fontId, const TextStyle_t* style,
+                            uint32_t rubyColour, struct NameTable* dictionary);
+void Text_AlignLayoutVertical(Renderer_t* renderer, TextLayout_t* layout, int32_t* cursor, const Rect_t* rect,
+                              uint32_t fontId, uint32_t kinsoku, uint32_t align);
+// 0x00434D30 (across) and 0x00438350 (down): `text` laid out from the cursor (which
+// moves) within `rect`, against the dictionary string `rubyDictionary` (lines of
+// word\reading), aligned, and drawn onto `target`; each record's rectangle goes into
+// `drawn` and their number into *drawnCount when they are given. 0 when the font is
+// not one.
+uint32_t Text_Print(Renderer_t* renderer, Bitmap_t* target, int32_t* cursor, uint32_t* lines,
+                    const Rect_t* rect, const char* text, uint32_t ruby, const char* rubyDictionary,
+                    uint32_t fontId, uint32_t proportional, uint32_t kinsoku, int32_t lineSpacing,
+                    uint32_t colour, uint32_t rubyColour, const TextStyle_t* style, uint32_t align,
+                    Rect_t* drawn, uint32_t* drawnCount);
+uint32_t Text_PrintVertical(Renderer_t* renderer, Bitmap_t* target, int32_t* cursor, uint32_t* lines,
+                            const Rect_t* rect, const char* text, uint32_t ruby, const char* rubyDictionary,
+                            uint32_t fontId, uint32_t kinsoku, int32_t lineSpacing, uint32_t colour,
+                            uint32_t rubyColour, const TextStyle_t* style, uint32_t align,
+                            Rect_t* drawn, uint32_t* drawnCount);
 // 0x00437110: the records freed.
 void Text_FreeLayout(TextLayout_t* layout);
 // 0x00437180: the ruby's size for text of this size.

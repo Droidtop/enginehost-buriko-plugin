@@ -228,6 +228,53 @@ static const char gTextHanging[] =
 static const char gTextNoLineEnd[] =
 	"[{(\x81\x69\x81\x6B\x81\x6D\x81\x6F\x81\x71\x81\xE1\x81\x73\x81\x75\x81\x77\x81\x79\x81\x67";
 
+// 0x004E5408: the characters vertical text draws turned a quarter turn
+// (0x00439040): brackets, dashes, the long vowel mark, the colon and semicolon.
+static const char gTextVerticalTurned[] =
+	"\x81\x75\x81\x76\x81\x77\x81\x78\x81\x79\x81\x7A\x81\x73\x81\x74\x81\x6B\x81\x6C"
+	"\x81\x83\x81\x84\x81\xE1\x81\xE2\x81\x71\x81\x72\x81\x69\x81\x6A\x81\x6F\x81\x70"
+	"\x81\x6D\x81\x6E\x81\x81\x81\xE0\x81\x7C\x81\x80\x81\x5E\x81\x62\x81\x64\x81\x63"
+	"\x81\x5C\x84\x9F\x81\x60\x81\x5B\x81\x46\x81\x47";
+// 0x004E5454: the characters vertical text moves up and right (0x00439040): the
+// first four (the commas and full stops) by 67 per cent of the size, the small kana
+// after them by 20.
+static const char gTextVerticalShifted[] =
+	"\x81\x43\x81\x44\x81\x41\x81\x42\x82\x9F\x82\xA1\x82\xA3\x82\xA5\x82\xA7\x82\xC1"
+	"\x82\xE1\x82\xE3\x82\xE5\x83\x40\x83\x42\x83\x44\x83\x46\x83\x48\x83\x62\x83\x83"
+	"\x83\x85\x83\x87";
+
+// The position of the character at `p` in `list`, or -1.
+static int Text_ListIndex(const char* p, const char* list)
+{
+	uint32_t code, other;
+	Text_Decode(p, &code);
+	for(int index = 0; *list != 0; index++)
+	{
+		int wide = Text_Decode(list, &other);
+		if(other == code)
+			return index;
+		list += wide ? 2 : 1;
+	}
+	return -1;
+}
+
+// 0x00439040: how vertical text sets the character at `p`: out[0] set when it is
+// turned, else out[1] and out[2] the per cent of the size it moves right and down.
+static void Text_VerticalForm(const char* p, int32_t out[3])
+{
+	out[0] = out[1] = out[2] = 0;
+	if(Text_InList(p, gTextVerticalTurned))
+	{
+		out[0] = 1;
+		return;
+	}
+	int index = Text_ListIndex(p, gTextVerticalShifted);
+	if(index < 0)
+		return;
+	out[1] = index >= 4 ? 0x14 : 0x43;
+	out[2] = index >= 4 ? -0x14 : -0x43;
+}
+
 // 0x00437AF0: how many characters from `p` on may not start a line, copied into
 // `out`.
 static int Text_CountNoLineStart(const char* p, char* out)
@@ -321,6 +368,30 @@ static void Text_BlitAt(Bitmap_t* destination, int x, int y, Bitmap_t* source, i
 	if(destination->bitmap == NULL || source->bitmap == NULL || source->width <= 0 || source->height <= 0)
 		return;
 	Renderer_BlitAt(destination, x, y, source, mode, weight);
+}
+
+// 0x00439100: a square view turned a quarter turn clockwise in place - the source's
+// (x, y) lands on (width - 1 - y, x) - through a copy (0x00409030, 0x0040ADF0).
+// Anything not square is left alone.
+static int Text_TurnSquare(Bitmap_t* view)
+{
+	if(view->width != view->height || view->bitmap == NULL)
+		return 0;
+	int bytes = Renderer_ModePixelBytes(view->mode);
+	if(bytes <= 0)
+		return 0;
+	size_t row = (size_t)view->width * (size_t)bytes;
+	uint8_t* turned = (uint8_t*)malloc(row * (size_t)view->height);
+	if(turned == NULL)
+		return 0;
+	for(int y = 0; y < view->height; y++)
+		for(int x = 0; x < view->width; x++)
+			memcpy(turned + (size_t)x * row + (size_t)(view->width - 1 - y) * (size_t)bytes,
+			       view->bitmap + (size_t)y * (size_t)view->stride + (size_t)x * (size_t)bytes, (size_t)bytes);
+	for(int y = 0; y < view->height; y++)
+		memcpy(view->bitmap + (size_t)y * (size_t)view->stride, turned + (size_t)y * row, row);
+	free(turned);
+	return 1;
 }
 
 // 0x004092E0: a character's cell drawn into a bitmap in one colour, as much of it
@@ -1652,24 +1723,437 @@ void Text_AlignLayout(Renderer_t* renderer, TextLayout_t* layout, int32_t* curso
 	}
 }
 
-// 0x00437A20: every record blitted onto the target at its place. The number of
-// records drawn.
-static uint32_t Text_BlitLayout(TextLayout_t* layout, Bitmap_t* target)
+// 0x004384B0: `text` laid out top to bottom in columns from right to left. Simpler
+// than the horizontal layout: no tags, no proportional setting, no external
+// characters; a character from gTextVerticalTurned is turned and one from
+// gTextVerticalShifted moved (and marked kind 1); the effect of any kind is the
+// character's shape under it, offset.
+uint32_t Text_LayoutVertical(Renderer_t* renderer, TextLayout_t* layout, const char* text, uint32_t ruby,
+                             int32_t* cursor, const Rect_t* rect, int32_t lineHeight, uint32_t fontId,
+                             uint32_t kinsoku, uint32_t colour, const TextStyle_t* style,
+                             uint32_t* lines, NameTable_t* dictionary)
+{
+	FontEntryInfo_t font;
+	if(!Font_GetInfo(fontId, &font))
+		return 0;
+
+	// 0x0043851C: a control character 4..8 in front says the text opens with a
+	// bracket; which one is not kept here.
+	int haveOpener = 0;
+	uint8_t first = (uint8_t)text[0];
+	if(first < 0x20 && (uint8_t)(first - 4) <= 4)
+	{
+		text++;
+		haveOpener = 1;
+	}
+
+	int32_t size = font.size;
+	int32_t half = (size + 1) >> 1;
+	int32_t rubyDrop = ruby ? Text_RubySize(size) : 0;
+	int32_t effectX = (style->a * size) / 100;
+	if(effectX <= 0)
+		effectX = 1;
+	int32_t effectY = (style->b * size) / 100;
+	if(effectY <= 0)
+		effectY = 1;
+	int32_t extraX = style->kind != 0 ? effectX : 0;
+	int32_t extraY = style->kind != 0 ? effectY : 0;
+	Bitmap_t scratch;
+	Text_NewBitmap(renderer, &scratch, size, size, 1);
+
+	// 0x004385F1: kinsoku keeps a character's height in hand at the bottom, and a
+	// text that opens with a bracket may indent its following columns past it.
+	int32_t indent = 0;
+	int32_t reserve = 0;
+	uint32_t hangCode = 0;
+	if(kinsoku)
+	{
+		reserve = size;
+		if(gTextHangingIndent != 0)
+		{
+			if(Text_InList(text, gTextOpeners))
+			{
+				int32_t height = size;
+				uint32_t code;
+				if(!haveOpener && !Text_Decode(text, &code))
+					height = half;
+				indent = height + gTextExtraSpacing;
+			}
+			else if(haveOpener)
+				indent = size + gTextExtraSpacing;
+		}
+	}
+	if(ruby)
+	{
+		if(cursor[1] == rect->top)
+			cursor[1] += Text_RubyIndent();
+		indent += Text_RubyIndent();
+	}
+
+	*lines = 1;
+	int32_t rubySkip = 0;
+	int32_t kinsokuSkip = 0;
+	uint32_t delay = 0;
+	size_t index = 0;
+	TextRecord_t** append = &layout->records;
+	while(text[index] != 0)
+	{
+		const char* here = text + index;
+		Bitmap_t view = scratch;
+		if((uint8_t)*here < 0x20)
+		{
+			// 0x00438702: a new line is the next column; other control characters
+			// are passed over.
+			if(*here == '\n')
+			{
+				cursor[0] -= lineHeight;
+				cursor[1] = rect->top + indent;
+				(*lines)++;
+			}
+			index++;
+			continue;
+		}
+
+		TextRecord_t* record = (TextRecord_t*)calloc(1, sizeof(TextRecord_t));
+		if(record == NULL)
+			break;
+		record->fadeLength = gTextFadeLength;
+		record->delay = delay;
+		uint32_t code;
+		int wide = Text_Decode(here, &code);
+		Text_ClearBitmap(&view);
+		FontGlyphInfo_t info;
+		Text_PutCharacter(&view, code, font.font, colour, &info);
+		int32_t form[3];
+		Text_VerticalForm(here, form);
+		if(form[0])
+			Text_TurnSquare(&view);
+		record->kind = form[2] != 0 ? 1 : 0;
+		Text_NewBitmap(renderer, &record->bitmap, size + extraX, size + extraY, 1);
+		Text_ClearBitmap(&record->bitmap);
+		if(style->kind != 0)
+		{
+			// 0x004387FE: the character's shape in the effect's colour (darkened
+			// all the way for black), offset, under it.
+			Bitmap_t shadow;
+			Text_NewBitmap(renderer, &shadow, view.width, view.height, 1);
+			Text_ClearBitmap(&shadow);
+			if(style->colour == 0)
+				Renderer_BlitView(&shadow, &view, BITMAP_BLEND_FADE_BLACK, 0x100);
+			else
+			{
+				FontGlyphInfo_t other;
+				Text_PutCharacter(&shadow, code, font.font, style->colour, &other);
+				if(form[0])
+					Text_TurnSquare(&shadow);
+			}
+			Text_BlitAt(&record->bitmap, effectX, effectY, &shadow, BITMAP_BLEND_ALPHA_TRANS, 0x100 - (int)style->weight);
+			Text_FreeBitmap(&shadow);
+		}
+		Text_BlitAt(&record->bitmap, 0, 0, &view, BITMAP_BLEND_ALPHA, 0);
+
+		// 0x004388D8: what this character takes down the column, for the margin test.
+		int32_t reach = gTextExtraSpacing + size;
+		int hang = 0;
+		int bytes = wide ? 2 : 1;
+		const char* next = here + bytes;
+		const char* after = next;
+		int32_t skipCount = 0;
+		if(ruby)
+		{
+			// 0x00438917: a dictionary word starting here is kept whole, at least as
+			// tall as its characters.
+			if(rubySkip > 0)
+				rubySkip--;
+			else
+			{
+				char key[0x200];
+				if(NameTable_FindAt(dictionary, here, key))
+				{
+					size_t n = strlen(key);
+					int32_t height = (int32_t)(n >> 1) * (gTextExtraSpacing + size);
+					if(reach < height)
+						reach = height;
+					record->rubyKey = Text_Duplicate(key);
+					record->rubyWidth = height;
+					rubySkip = (int32_t)Text_CountCharacters(key, NULL) - 1;
+					skipCount = rubySkip;
+					after = here + n;
+				}
+			}
+		}
+		if(kinsoku)
+		{
+			// 0x004389DD: the characters that may not start a column are kept with
+			// the one before them; an opening bracket with the one after it.
+			if(kinsokuSkip > 0)
+				kinsokuSkip--;
+			else
+			{
+				char held[0x200];
+				int n = Text_CountNoLineStart(after, held);
+				if(n > 0)
+				{
+					reach += (int32_t)(strlen(held) >> 1) * (gTextExtraSpacing + size);
+					kinsokuSkip = n + skipCount;
+					char last[3];
+					Text_CharacterAt(held, n - 1, last);
+					hang = Text_InList(last, gTextHanging);
+					if(hang)
+						Text_Decode(last, &hangCode);
+				}
+				else if(Text_InList(here, gTextNoLineEnd) && *next != 0)
+					reach += Text_IsLeadByte((uint8_t)*next) ? size : half;
+			}
+		}
+
+		// 0x00438A7C: past the bottom margin - less the kinsoku reserve unless the
+		// held characters may hang - the character goes to the next column, unless
+		// it is the hanging character the test above named.
+		int32_t margin = rect->bottom - (hang ? 0 : reserve) + 1;
+		if(cursor[1] + reach > margin)
+		{
+			if(code == hangCode)
+				hangCode = 0;
+			else
+			{
+				cursor[0] -= lineHeight;
+				cursor[1] = rect->top + indent;
+				(*lines)++;
+			}
+		}
+
+		// 0x00438B08: the column's right edge is the cursor; ruby sits right of the
+		// characters.
+		record->x = cursor[0] + 1 - size - rubyDrop + (form[1] * size) / 100;
+		record->y = cursor[1] + (form[2] * size) / 100;
+		record->x0 = record->x;
+		record->y0 = record->y;
+		cursor[1] += gTextExtraSpacing + size;
+		delay += gTextDelayStep;
+		index += (size_t)bytes;
+		*append = record;
+		append = &record->next;
+	}
+	Text_FreeBitmap(&scratch);
+	return 1;
+}
+
+// 0x00438CF0: one word's ruby down the right of its characters, a record per
+// character of the reading, spread over the word's height.
+static void Text_LayoutRubyWordVertical(Renderer_t* renderer, TextRecord_t* record, NameTableEntry_t* word,
+                                        const FontEntryInfo_t* rubyFont, uint32_t colour,
+                                        const TextStyle_t* style, int32_t x, int32_t y,
+                                        int32_t baseHeight, uint32_t delay)
+{
+	int32_t size = rubyFont->size;
+	int32_t effectX = (style->a * size) / 100;
+	if(effectX <= 0)
+		effectX = 1;
+	int32_t effectY = (style->b * size) / 100;
+	if(effectY <= 0)
+		effectY = 1;
+	int32_t extraX = style->kind != 0 ? effectX : 0;
+	int32_t extraY = style->kind != 0 ? effectY : 0;
+	int32_t count = (int32_t)word->valueLength;
+	if(count <= 0)
+		return;
+	int32_t pitch = baseHeight / count;
+	if(pitch < size)
+		pitch = size;
+	y += (size >> 3) + ((baseHeight - (count - 1) * pitch - size) >> 1);
+	uint32_t step = (word->nameLength * gTextDelayStep) / (uint32_t)count;
+	uint32_t at = (step >> 1) + delay;
+
+	Bitmap_t cell;
+	Text_NewBitmap(renderer, &cell, size, size, 1);
+	TextRecord_t* first = NULL;
+	TextRecord_t* last = NULL;
+	for(int32_t i = 0; i < count; i++)
+	{
+		TextRecord_t* ruby = (TextRecord_t*)calloc(1, sizeof(TextRecord_t));
+		if(ruby == NULL)
+			break;
+		ruby->fadeLength = gTextFadeLength;
+		ruby->delay = at;
+		ruby->x = x;
+		ruby->y = y;
+		ruby->x0 = x;
+		ruby->y0 = y;
+		ruby->kind = 2;
+		Text_ClearBitmap(&cell);
+		uint32_t code = word->valueChars[i];
+		FontGlyphInfo_t info;
+		Text_DrawCharacter(&cell, rubyFont->font, code, &info, colour);
+		// 0x00438E72: the reading's character as Shift-JIS bytes, for the turn test.
+		char bytes[3];
+		bytes[0] = (char)(code < 0x100 ? code : (code >> 8) & 0xFF);
+		bytes[1] = (char)(code < 0x100 ? 0 : code & 0xFF);
+		bytes[2] = 0;
+		int32_t form[3];
+		Text_VerticalForm(bytes, form);
+		if(form[0])
+			Text_TurnSquare(&cell);
+		Text_NewBitmap(renderer, &ruby->bitmap, extraX + size, extraY + size, 1);
+		Text_ClearBitmap(&ruby->bitmap);
+		if(style->kind != 0)
+		{
+			Bitmap_t shadow;
+			Text_NewBitmap(renderer, &shadow, cell.width, cell.height, 1);
+			Text_ClearBitmap(&shadow);
+			if(style->colour == 0)
+				Renderer_BlitView(&shadow, &cell, BITMAP_BLEND_FADE_BLACK, 0x100);
+			else
+			{
+				FontGlyphInfo_t other;
+				Text_DrawCharacter(&shadow, rubyFont->font, code, &other, style->colour);
+			}
+			Text_BlitAt(&ruby->bitmap, effectX, effectY, &shadow, BITMAP_BLEND_ALPHA_TRANS, 0x100 - (int)style->weight);
+			Text_FreeBitmap(&shadow);
+		}
+		Text_BlitAt(&ruby->bitmap, 0, 0, &cell, BITMAP_BLEND_ALPHA, 0);
+		at += step;
+		y += pitch;
+		if(last != NULL)
+			last->next = ruby;
+		else
+			first = ruby;
+		last = ruby;
+	}
+	if(first != NULL)
+	{
+		last->next = record->next;
+		record->next = first;
+	}
+	Text_FreeBitmap(&cell);
+}
+
+int Text_LayoutRubyVertical(Renderer_t* renderer, TextLayout_t* layout, uint32_t fontId, const TextStyle_t* style,
+                            uint32_t rubyColour, NameTable_t* dictionary)
+{
+	// 0x00438BF0: the ruby font is the text's own at the ruby size; the global ruby
+	// font settings (0x00434520) are not consulted, and the local words stay.
+	FontEntryInfo_t font;
+	if(!Font_GetInfo(fontId, &font))
+		return 0;
+	uint32_t rubyId = 0;
+	if(Font_Open(font.name, Text_RubySize(font.size), font.width, font.bold, &rubyId) != 0)
+		return 0;
+	FontEntryInfo_t rubyFont;
+	if(!Font_GetInfo(rubyId, &rubyFont))
+		return 1;
+	for(TextRecord_t* record = layout->records; record != NULL; record = record->next)
+	{
+		if(record->rubyKey == NULL)
+			continue;
+		NameTableEntry_t* word = NameTable_Find(dictionary, record->rubyKey);
+		if(word != NULL)
+			Text_LayoutRubyWordVertical(renderer, record, word, &rubyFont, rubyColour, style,
+			                            record->x + font.size, record->y, record->rubyWidth, record->delay);
+	}
+	return 1;
+}
+
+// One column of the layout as 0x00439200 collects it.
+typedef struct TextColumn
+{
+	int32_t top;
+	int32_t bottom;
+	int32_t x;
+	struct TextColumn* next;
+} TextColumn_t;
+
+void Text_AlignLayoutVertical(Renderer_t* renderer, TextLayout_t* layout, int32_t* cursor, const Rect_t* rect,
+                              uint32_t fontId, uint32_t kinsoku, uint32_t align)
+{
+	if(align == 0)
+		return;
+	FontEntryInfo_t font;
+	int32_t size = Font_GetInfo(fontId, &font) ? font.size : 0;
+
+	// 0x00439232: the columns, by the x of their characters; a kind 0 character
+	// starts or continues one, a moved one (kind 1) only continues it, and each adds
+	// the size to its bottom.
+	TextColumn_t head = { 0, 0, (int32_t)0x80000000, NULL };
+	TextColumn_t* column = &head;
+	for(TextRecord_t* record = layout->records; record != NULL; record = record->next)
+	{
+		if(record->kind == 0)
+		{
+			if(column->x != record->x)
+			{
+				TextColumn_t* next = (TextColumn_t*)calloc(1, sizeof(TextColumn_t));
+				if(next == NULL)
+					break;
+				next->top = record->y;
+				next->bottom = record->y;
+				next->x = record->x;
+				column->next = next;
+				column = next;
+			}
+		}
+		else if(record->kind != 1)
+			continue;
+		column->bottom += size;
+	}
+
+	int32_t glyph = 0;
+	if(renderer->animationFrames != NULL && renderer->animationFrameCount > 0 && renderer->animationFrames[0] != NULL)
+		glyph = renderer->animationFrames[0]->height;
+	int32_t shift = 0;
+	column = &head;
+	for(TextRecord_t* record = layout->records; record != NULL; record = record->next)
+	{
+		if(record->kind == 0 && column->x != record->x && column->next != NULL)
+		{
+			column = column->next;
+			if(align == 1)
+			{
+				int32_t reserve = (kinsoku != 0 && column->bottom < rect->bottom) ? size : 0;
+				shift = (rect->bottom - column->bottom - reserve - Text_RubyIndent()) >> 1;
+			}
+			else if(align == 2)
+				shift = rect->bottom - column->bottom - glyph;
+		}
+		record->y += shift;
+	}
+	if(rect->top < cursor[1])
+		cursor[1] += shift;
+
+	column = head.next;
+	while(column != NULL)
+	{
+		TextColumn_t* next = column->next;
+		free(column);
+		column = next;
+	}
+}
+
+// 0x00437A20: every record blitted onto the target at its place, and each one's
+// rectangle into `drawn` when it is given. The number of records drawn.
+static uint32_t Text_BlitLayout(TextLayout_t* layout, Bitmap_t* target, Rect_t* drawn)
 {
 	uint32_t count = 0;
 	for(TextRecord_t* record = layout->records; record != NULL; record = record->next)
 	{
 		Text_BlitAt(target, record->x, record->y, &record->bitmap, BITMAP_BLEND_ALPHA, 0);
+		if(drawn != NULL)
+		{
+			drawn[count].left = record->x;
+			drawn[count].top = record->y;
+			drawn[count].right = record->x + record->bitmap.width - 1;
+			drawn[count].bottom = record->y + record->bitmap.height - 1;
+		}
 		count++;
 	}
 	return count;
 }
 
-// 0x00434D30: lay the text out and draw it.
-static uint32_t Text_Print(Renderer_t* renderer, Bitmap_t* target, int32_t* cursor, uint32_t* lines,
-                           const Rect_t* rect, const char* text, uint32_t ruby, const char* rubyDictionary,
-                           uint32_t fontId, uint32_t proportional, uint32_t kinsoku, int32_t lineSpacing,
-                           uint32_t colour, uint32_t rubyColour, const TextStyle_t* style)
+uint32_t Text_Print(Renderer_t* renderer, Bitmap_t* target, int32_t* cursor, uint32_t* lines,
+                    const Rect_t* rect, const char* text, uint32_t ruby, const char* rubyDictionary,
+                    uint32_t fontId, uint32_t proportional, uint32_t kinsoku, int32_t lineSpacing,
+                    uint32_t colour, uint32_t rubyColour, const TextStyle_t* style, uint32_t align,
+                    Rect_t* drawn, uint32_t* drawnCount)
 {
 	FontEntryInfo_t font;
 	if(!Font_GetInfo(fontId, &font))
@@ -1683,8 +2167,38 @@ static uint32_t Text_Print(Renderer_t* renderer, Bitmap_t* target, int32_t* curs
 	            colour, style, lines, &dictionary);
 	if(ruby)
 		Text_LayoutRuby(renderer, &layout, fontId, style, rubyColour, &dictionary);
-	// 0x00437D90 with an alignment of 0 does nothing.
-	Text_BlitLayout(&layout, target);
+	Text_AlignLayout(renderer, &layout, cursor, rect, fontId, kinsoku, style, align);
+	uint32_t count = Text_BlitLayout(&layout, target, drawn);
+	if(drawnCount != NULL)
+		*drawnCount = count;
+	Text_FreeLayout(&layout);
+	NameTable_Clear(&dictionary);
+	return 1;
+}
+
+uint32_t Text_PrintVertical(Renderer_t* renderer, Bitmap_t* target, int32_t* cursor, uint32_t* lines,
+                            const Rect_t* rect, const char* text, uint32_t ruby, const char* rubyDictionary,
+                            uint32_t fontId, uint32_t kinsoku, int32_t lineSpacing, uint32_t colour,
+                            uint32_t rubyColour, const TextStyle_t* style, uint32_t align,
+                            Rect_t* drawn, uint32_t* drawnCount)
+{
+	// 0x00438350: 0x00434D30 with the vertical layout, ruby and alignment.
+	FontEntryInfo_t font;
+	if(!Font_GetInfo(fontId, &font))
+		return 0;
+	TextLayout_t layout;
+	memset(&layout, 0, sizeof(layout));
+	NameTable_t dictionary = { NULL };
+	NameTable_Load(&dictionary, rubyDictionary);
+	int32_t lineHeight = (font.size * lineSpacing) / 100 + font.size;
+	Text_LayoutVertical(renderer, &layout, text, ruby, cursor, rect, lineHeight, fontId, kinsoku, colour, style,
+	                    lines, &dictionary);
+	if(ruby)
+		Text_LayoutRubyVertical(renderer, &layout, fontId, style, rubyColour, &dictionary);
+	Text_AlignLayoutVertical(renderer, &layout, cursor, rect, fontId, kinsoku, align);
+	uint32_t count = Text_BlitLayout(&layout, target, drawn);
+	if(drawnCount != NULL)
+		*drawnCount = count;
 	Text_FreeLayout(&layout);
 	NameTable_Clear(&dictionary);
 	return 1;
@@ -1720,6 +2234,6 @@ uint32_t Text_DrawIntoBitmap(Renderer_t* renderer, int bitmapId, uint32_t* lines
 	Rect_t rect = { 0, 0, bitmap->width - 1, bitmap->height - 1 };
 	int32_t cursor[2] = { x, y };
 	Text_Print(renderer, &view, cursor, lines, &rect, text != NULL ? text : "", ruby, rubyDictionary,
-	           fontId, proportional, kinsoku, lineSpacing, colour, rubyColour, style);
+	           fontId, proportional, kinsoku, lineSpacing, colour, rubyColour, style, 0, NULL, NULL);
 	return 0;
 }
