@@ -23,8 +23,6 @@
 #include "os.h"
 
 int gWheelToObjects = 1;
-uint32_t gMessageInterval = 0;
-uint32_t gMessageDelay = 0;
 
 void Engine_Init(Engine_t* engine)
 {
@@ -2021,26 +2019,6 @@ int Engine_FileExists(const char* archive, const char* filename)
 	}
 
 	return Arc_FileExists(archive, filename);
-}
-
-int gFlagUnknown20 = 0;
-void Engine_SetFlagUnknown20(int value)
-{
-	gFlagUnknown20 = value;
-}
-
-int gUnknownGrp0Val1 = 0;
-int gUnknownGrp0Val2 = 0;
-void Engine_SetUnknownGrp0Val1and2(int value1, int value2)
-{
-	gUnknownGrp0Val1 = value1;
-	gUnknownGrp0Val2 = value2;
-}
-
-int gFlagUnknown21 = 0;
-void Engine_SetFlagUnknown21(int value)
-{
-	gFlagUnknown21 = value;
 }
 
 ListNode_t* gLinkedListHead;

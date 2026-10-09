@@ -159,11 +159,6 @@ void Engine_SetWindowTitle(const char* title);
 
 extern int gCursorShape;
 
-// 0x00565B90 and 0x00565B94, what a new message display starts with: the
-// interval it keeps as it stands, and the delay it counts from the current
-// tick for its first deadline. Grp0 0x9B sets both.
-extern uint32_t gMessageInterval;
-extern uint32_t gMessageDelay;
 
 // 0x00507204. Set, the mouse wheel goes to the objects registered as wheel
 // targets; clear, the window turns it into key 0x0E (down) and 0x0F (up).
@@ -283,15 +278,6 @@ extern int gFlagUnknown3;
 extern int gFlagUnknown4;
 void Engine_SetFlagUnknown1to4(int value);
 
-extern int gFlagUnknown20;
-void Engine_SetFlagUnknown20(int value);
-
-extern int gUnknownGrp0Val1;
-extern int gUnknownGrp0Val2;
-void Engine_SetUnknownGrp0Val1and2(int value1, int value2);
-
-extern int gFlagUnknown21;
-void Engine_SetFlagUnknown21(int value);
 
 typedef struct ListNode ListNode_t;
 struct ListNode

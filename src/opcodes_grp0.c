@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include "engine.h"
+#include "message.h"
 #include "renderer.h"
 #include "opcodes.h"
 #include "opcodes_grp0.h"
@@ -162,13 +163,13 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x8E 142 */ "--Unknown--",
 	/* 0x8F 143 */ "--Unknown--",
 	/* 0x90 144 */ "Unknown_144",
-	/* 0x91 145 */ "Unknown_145",
-	/* 0x92 146 */ "--Unknown--",
+	/* 0x91 145 */ "SetMessageRegion",
+	/* 0x92 146 */ "SetMessageNoFlush",
 	/* 0x93 147 */ "--Unknown--",
-	/* 0x94 148 */ "SetFlagUnknown20",
+	/* 0x94 148 */ "SetMessageCharacterWait",
 	/* 0x95 149 */ "SetTextSplit1",
 	/* 0x96 150 */ "SetTextSplit2",
-	/* 0x97 151 */ "SetUnknownGrp0Val1and2",
+	/* 0x97 151 */ "SetMessageAuto",
 	/* 0x98 152 */ "SetAnimationFrames",
 	/* 0x99 153 */ "SetAnimationInterval",
 	/* 0x9A 154 */ "SetAnimationPlacement",
@@ -176,7 +177,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x9C 156 */ "SetTextStyleKind",
 	/* 0x9D 157 */ "SetTextStyleEdge",
 	/* 0x9E 158 */ "Unknown_158",
-	/* 0x9F 159 */ "SetFlagUnknown21",
+	/* 0x9F 159 */ "SetMessageKeyShowsAll",
 	/* 0xA0 160 */ "Unknown_160",
 	/* 0xA1 161 */ "Unknown_161",
 	/* 0xA2 162 */ "Unknown_162",
@@ -421,13 +422,13 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x8E 142 */ NULL,
 	/* 0x8F 143 */ NULL,
 	/* 0x90 144 */ Opcode_Grp0_Unknown_144,
-	/* 0x91 145 */ Opcode_Grp0_Unknown_145,
-	/* 0x92 146 */ NULL,
+	/* 0x91 145 */ Opcode_Grp0_SetMessageRegion,
+	/* 0x92 146 */ Opcode_Grp0_SetMessageNoFlush,
 	/* 0x93 147 */ NULL,
-	/* 0x94 148 */ Opcode_Grp0_SetFlagUnknown20,
+	/* 0x94 148 */ Opcode_Grp0_SetMessageCharacterWait,
 	/* 0x95 149 */ Opcode_Grp0_SetTextSplit1,
 	/* 0x96 150 */ Opcode_Grp0_SetTextSplit2,
-	/* 0x97 151 */ Opcode_Grp0_SetUnknownGrp0Val1and2,
+	/* 0x97 151 */ Opcode_Grp0_SetMessageAuto,
 	/* 0x98 152 */ Opcode_Grp0_SetAnimationFrames,
 	/* 0x99 153 */ Opcode_Grp0_SetAnimationInterval,
 	/* 0x9A 154 */ Opcode_Grp0_SetAnimationPlacement,
@@ -435,7 +436,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x9C 156 */ Opcode_Grp0_SetTextStyleKind,
 	/* 0x9D 157 */ Opcode_Grp0_SetTextStyleEdge,
 	/* 0x9E 158 */ Opcode_Grp0_Unknown_158,
-	/* 0x9F 159 */ Opcode_Grp0_SetFlagUnknown21,
+	/* 0x9F 159 */ Opcode_Grp0_SetMessageKeyShowsAll,
 	/* 0xA0 160 */ Opcode_Grp0_Unknown_160,
 	/* 0xA1 161 */ Opcode_Grp0_Unknown_161,
 	/* 0xA2 162 */ Opcode_Grp0_Unknown_162,
@@ -2150,15 +2151,43 @@ uint32_t Opcode_Grp0_Unknown_144(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_145(Thread_t* thread)
+/*
+ * Grp0 0x91 (0x0047E1C0 -> 0x004633D0 -> 0x00432E60): which region a message takes
+ * its keys from. Pops the priority, then the mode. A mode above 2 is fatal, "an
+ * invalid mode [ %d ] was specified" (0x004E9CA4), and so is a priority of 0x10000
+ * or more with mode 1 (0x004E9CCC). Nothing is pushed.
+ */
+uint32_t Opcode_Grp0_SetMessageRegion(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t priority = Thread_PopStack(thread);
+	uint32_t mode = Thread_PopStack(thread);
+	uint32_t result = Message_SetRegionMode(mode, priority);
+	if(result == 0x80000004)
+	{
+		printf("[Thread %d]: %sError: an invalid mode [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], mode);
+		return 0xFFFFFFFC;
+	}
+	if(result == 0x80000005)
+	{
+		printf("[Thread %d]: %sError: an invalid priority [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], priority);
+		return 0xFFFFFFFC;
+	}
+	return 0;
 }
 
-uint32_t Opcode_Grp0_SetFlagUnknown20(Thread_t* thread)
+// Grp0 0x92 (0x0047E260 -> 0x004633E0 -> 0x00432EA0): one value, 0x00565BAC.
+uint32_t Opcode_Grp0_SetMessageNoFlush(Thread_t* thread)
 {
-	uint32_t value = Thread_PopStack(thread);
-	Engine_SetFlagUnknown20(value);
+	gMessageNoFlush = Thread_PopStack(thread);
+	return 0;
+}
+
+// Grp0 0x94 (0x0047E280 -> 0x004632D0 -> 0x004335A0): one value, 0x00507660.
+uint32_t Opcode_Grp0_SetMessageCharacterWait(Thread_t* thread)
+{
+	gMessageCharacterWait = Thread_PopStack(thread);
 	return 0;
 }
 
@@ -2196,11 +2225,14 @@ uint32_t Opcode_Grp0_SetTextSplit2(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_SetUnknownGrp0Val1and2(Thread_t* thread)
+// Grp0 0x97 (0x0047E320 -> 0x00463300 -> 0x004335F0): the automatic mode. Pops the
+// time (0x00565B9C), then whether it is on (0x00565B98).
+uint32_t Opcode_Grp0_SetMessageAuto(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	Engine_SetUnknownGrp0Val1and2(value1, value2);
+	uint32_t time = Thread_PopStack(thread);
+	uint32_t on = Thread_PopStack(thread);
+	gMessageAutoTime = time;
+	gMessageAuto = on;
 	return 0;
 }
 
@@ -2237,30 +2269,30 @@ uint32_t Opcode_Grp0_SetAnimationInterval(Thread_t* thread)
 }
 
 // Grp0 0x9A (0x0047E3F0 -> 0x00463370 -> 0x00433570) says where the animated cursor
-// is drawn: three stores, in the order the values come off the stack. It pushes
-// nothing back and can fail at nothing.
+// is drawn. The handler pops three values and hands them on reversed (0x00463373
+// pushes the first as the stack argument and passes the third in eax): the first
+// popped is the y offset (0x00565B8C), the second the x offset (0x00565B88), the
+// third the placement (0x00565B84). It pushes nothing back and can fail at nothing.
 uint32_t Opcode_Grp0_SetAnimationPlacement(Thread_t* thread)
 {
 	Renderer_t* renderer = thread->engine->renderer;
-	renderer->animationPlacement = Thread_PopStack(thread);
-	renderer->animationX = (int32_t)Thread_PopStack(thread);
 	renderer->animationY = (int32_t)Thread_PopStack(thread);
+	renderer->animationX = (int32_t)Thread_PopStack(thread);
+	renderer->animationPlacement = Thread_PopStack(thread);
 	return 0;
 }
 
 /*
- * Grp0 0x9B (0x0047E430) sets the pair every new message display starts with.
- * The delay pops first; both are kept until a display asks for them, which is
- * what CProcDspMsg's constructor does at 0x00432D79.
+ * Grp0 0x9B (0x0047E430 -> 0x00463390 -> 0x00433590): whether a new message holds its
+ * end wait for a minimum time, and the time. The time pops first. A message's
+ * constructor copies both (0x00432D79).
  */
 uint32_t Opcode_Grp0_SetMessageTiming(Thread_t* thread)
 {
-	uint32_t delay = Thread_PopStack(thread);
-	uint32_t interval = Thread_PopStack(thread);
-	gMessageInterval = interval;
-	gMessageDelay = delay;
-	printf("[Thread %d]: %sMessages start at interval %d, first after %d\n",
-	       thread->threadId, TLevel[thread->level], interval, delay);
+	uint32_t time = Thread_PopStack(thread);
+	uint32_t hold = Thread_PopStack(thread);
+	gMessageHold = hold;
+	gMessageHoldTime = time;
 	return 0;
 }
 
@@ -2305,10 +2337,10 @@ uint32_t Opcode_Grp0_Unknown_158(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_SetFlagUnknown21(Thread_t* thread)
+// Grp0 0x9F (0x0047E5E0 -> 0x004633C0 -> 0x00432E50): one value, 0x00565BA0.
+uint32_t Opcode_Grp0_SetMessageKeyShowsAll(Thread_t* thread)
 {
-	uint32_t value = Thread_PopStack(thread);
-	Engine_SetFlagUnknown21(value);
+	gMessageKeyShowsAll = Thread_PopStack(thread);
 	return 0;
 }
 
