@@ -4,6 +4,7 @@
 
 #include "engine.h"
 #include "window.h"
+#include "font.h"
 #include "sprite5.h"
 #include "icon.h"
 
@@ -173,6 +174,68 @@ void Window_ResetTextCursor(DisplayObject_t* window)
 		window->textCursorX = window->clientRect[2];
 		window->textCursorY = window->clientRect[1];
 	}
+}
+
+uint32_t Window_SetFont(Renderer_t* renderer, DisplayObject_t* window, const char* name, int32_t size,
+                        int32_t width, uint32_t bold, uint32_t proportional, uint32_t reserveColumn)
+{
+	// 0x00440AA0: the two plain values go in first, whatever the font does.
+	window->proportional = proportional;     // 0x0042C5F0
+	window->reserveColumn = reserveColumn;   // 0x0042C610
+
+	// 0x0042C490 -> 0x00409290 -> 0x0042F1D0: the id goes straight into +0x350, and
+	// only a font that was made moves the size and the advance.
+	uint32_t id = 0;
+	uint32_t result = Font_Open(name, size, width, (int)bold, &id);
+	window->fontId = id;
+	if(result != 0)
+		return result;
+	window->fontSize = size;
+	window->fontAdvance = (size * width) / 100;
+
+	// 0x0042C4E1: with a column reserved, the client area's right edge may come no
+	// nearer the window's right edge than one advance; the area is set again through
+	// 0x0042B9E0, which resets the cursor.
+	Bitmap_t pixels;
+	if(window->reserveColumn && Renderer_WindowBitmap(renderer, window->handle, &pixels))
+	{
+		int32_t limit = (pixels.width - 1) - window->fontAdvance;
+		if(window->clientRect[2] > limit)
+			Window_SetClientArea(renderer, window, window->clientRect[0], window->clientRect[1],
+			                     limit, window->clientRect[3]);
+	}
+	return 0;
+}
+
+int Window_SetLineSpacing(DisplayObject_t* window, uint32_t spacing)
+{
+	if(spacing > 0x320)
+		return 0;
+	window->lineSpacing = spacing;
+	return 1;
+}
+
+int Window_SetDirection(DisplayObject_t* window, uint32_t direction)
+{
+	if(direction > 1)
+		return 0;
+	window->textDirection = direction;
+	Window_ResetTextCursor(window);
+	return 1;
+}
+
+int Window_SetAlignment(DisplayObject_t* window, uint32_t align)
+{
+	if(align > 2)
+		return 0;
+	window->textAlign = align;
+	return 1;
+}
+
+int32_t Window_LineHeight(const DisplayObject_t* window)
+{
+	// 0x0042C580 -> 0x004097B0: the spacing is that per cent of the size.
+	return (window->fontSize * (int32_t)window->lineSpacing) / 100 + window->fontSize;
 }
 
 

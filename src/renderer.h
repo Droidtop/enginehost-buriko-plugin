@@ -12,38 +12,12 @@
 #define RENDERER_MAX_BITMAPS 0x4000
 #define RENDERER_MAX_SCREENS 0x10
 
-// The largest gap coefficient 0x0042C550 accepts.
-#define SCREEN_MAX_GAP_COEFFICIENT 0x320
-// The largest message swinging style 0x0042C660 accepts.
-#define SCREEN_MAX_SWINGING_STYLE 2
-
 typedef struct Screen
 {
 	int width;
 	int height;
 	int x;
 	int y;
-	// +0x360 of the original's 0x3CC-byte window object: the gap
-	// coefficient its text layout reads at 0x0042B892. The constructor
-	// (0x0042AF00) leaves it 0.
-	int gapCoefficient;
-	// The font selection 0x0042C490 writes into the window: the font
-	// itself at +0x350, its size at +0x358 and size * width / 100 at
-	// +0x35C, with the width and style the font was asked for. NULL font
-	// family means no font has been chosen yet.
-	const char* fontFamily;
-	int fontSize;
-	int fontWidth;
-	int fontStyle;
-	int fontScaledWidth;
-	// +0x354 and +0x364, written by 0x0042C5F0 and 0x0042C610 from the
-	// same opcode. What reads them back is not read yet.
-	// +0x15C, written by 0x0042B490, after which the window is laid out
-	// again. What reads it back is not read yet.
-	// +0x374, the message swinging style: 0, 1 or 2 only (0x0042C660).
-	int swingingStyle;
-	int field354;
-	int field364;
 	uint8_t* bitmap;
 	SDL_Surface* surface;
 } Screen_t;

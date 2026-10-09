@@ -132,6 +132,19 @@ struct DisplayObject
 	uint32_t  textDirection;
 	int32_t   textCursorX;
 	int32_t   textCursorY;
+	// A window's font and text settings (0x0042C490 and its neighbours): the managed
+	// font's id (+0x350, 0 for none), its size (+0x358) and its cell advance, size
+	// times width per cent (+0x35C); whether text is set by its ink (+0x354), the line
+	// spacing per cent of the size (+0x360, Grp1 0x89), whether a column is kept free
+	// at the right of the client area (+0x364), and how lines are aligned (+0x374,
+	// Grp1 0x8B: 0 left, 1 centred, 2 right).
+	uint32_t  fontId;
+	int32_t   fontSize;
+	int32_t   fontAdvance;
+	uint32_t  proportional;
+	uint32_t  lineSpacing;
+	uint32_t  reserveColumn;
+	uint32_t  textAlign;
 	// +0x138, the second bitmap a sprite can be given. The sprite constructor
 	// (0x00425790) leaves it 0, and nothing in this engine sets it; the arms of the
 	// sprite's draw that read it (0x00425BB8 and the masked path at 0x00425ADC) are

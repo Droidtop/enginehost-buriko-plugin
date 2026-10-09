@@ -42,6 +42,24 @@ int  Window_SetClientArea(Renderer_t* renderer, DisplayObject_t* window, int32_t
 // 0x0042C690.
 void Window_ResetTextCursor(DisplayObject_t* window);
 
+// Grp1 0x88 (0x00440AA0): the window's proportional setting (+0x354), its reserved
+// column (+0x364), and its font (0x0042C490): the managed font of that name, size,
+// width and weight, the size, and the cell advance. With the column reserved the
+// client area's right edge is pulled in to leave one advance free. 0, or the font
+// manager's failure (0x80000002 a size, 0x80000003 a width, 0x80000004 a name), in
+// which case the font fields are left as they were.
+uint32_t Window_SetFont(Renderer_t* renderer, DisplayObject_t* window, const char* name, int32_t size,
+                        int32_t width, uint32_t bold, uint32_t proportional, uint32_t reserveColumn);
+// Grp1 0x89 (0x0042C550): the line spacing, per cent of the size. 0 for one above 800.
+int Window_SetLineSpacing(DisplayObject_t* window, uint32_t spacing);
+// Grp1 0x8A (0x0042C630): the text direction, 0 across and 1 down, and the cursor
+// back to where a line starts. 0 for anything else.
+int Window_SetDirection(DisplayObject_t* window, uint32_t direction);
+// Grp1 0x8B (0x0042C660): the line alignment, 0 to 2. 0 for anything else.
+int Window_SetAlignment(DisplayObject_t* window, uint32_t align);
+// 0x0042C5A0: the size plus the line spacing, how far one line is below the last.
+int32_t Window_LineHeight(const DisplayObject_t* window);
+
 // 0x0042B380 (Grp0 0x86): the window's background image, the bitmap copied onto a
 // surface of the window's own at its corner; -1 for none. 0, or 1 (the window has no
 // pixels) or 2 (no such bitmap).

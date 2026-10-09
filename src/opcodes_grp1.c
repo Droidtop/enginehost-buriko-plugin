@@ -8,6 +8,7 @@
 #include "nametable.h"
 #include "object.h"
 #include "screen.h"
+#include "window.h"
 #include "opcodes_grp1.h"
 #include "font.h"
 #include "text.h"
@@ -153,7 +154,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x87 135 */ "--Unknown--",
     /* 0x88 136 */ "SetWindowFont",
     /* 0x89 137 */ "SetWindowGapCoefficient",
-    /* 0x8A 138 */ "Unknown_138",
+    /* 0x8A 138 */ "SetWindowDirection",
     /* 0x8B 139 */ "SetWindowSwingingStyle",
     /* 0x8C 140 */ "Unknown_140",
     /* 0x8D 141 */ "GetTextCursor",
@@ -412,7 +413,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x87 135 */ NULL,
     /* 0x88 136 */ Opcode_Grp1_SetWindowFont,
     /* 0x89 137 */ Opcode_Grp1_SetWindowGapCoefficient,
-    /* 0x8A 138 */ Opcode_Grp1_Unknown_138,
+    /* 0x8A 138 */ Opcode_Grp1_SetWindowDirection,
     /* 0x8B 139 */ Opcode_Grp1_SetWindowSwingingStyle,
     /* 0x8C 140 */ Opcode_Grp1_Unknown_140,
     /* 0x8D 141 */ Opcode_Grp1_GetTextCursor,
@@ -823,91 +824,136 @@ uint32_t Opcode_Grp1_Unknown_104(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
+/*
+ * Grp1 0x88 (0x00484220 -> 0x00462D70 -> 0x00440AA0): a window's font. Popped, in
+ * order: the reserved-column setting (+0x364), the proportional setting (+0x354), the
+ * weight, the width, the size, the font number and the window. The font number is
+ * checked first (0x00497C80). The font manager's failures are fatal with the value
+ * the original prints beside each: 0x80000002 "the font width [ %d ] is invalid"
+ * with the width, 0x80000003 "the font size [ %d ] is invalid" with the size,
+ * 0x80000004 "the font number [ %d ] is invalid"; a handle that is not a window is
+ * "an invalid window handle". Nothing is pushed.
+ */
 uint32_t Opcode_Grp1_SetWindowFont(Thread_t* thread)
 {
-	uint32_t value364 = Thread_PopStack(thread);
-	uint32_t value354 = Thread_PopStack(thread);
-	uint32_t style = Thread_PopStack(thread);
-	uint32_t width = Thread_PopStack(thread);
-	uint32_t size = Thread_PopStack(thread);
+	uint32_t reserveColumn = Thread_PopStack(thread);
+	uint32_t proportional = Thread_PopStack(thread);
+	uint32_t bold = Thread_PopStack(thread);
+	int32_t width = (int32_t)Thread_PopStack(thread);
+	int32_t size = (int32_t)Thread_PopStack(thread);
 	uint32_t number = Thread_PopStack(thread);
 	uint32_t handle = Thread_PopStack(thread);
-
-	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
-	if(window == NULL)
-	{
-		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
-		       thread->threadId, TLevel[thread->level]);
-		return 0xFFFFFFFF;
-	}
 
 	const char* family = Engine_FontNameById(number);
 	if(family == NULL)
 	{
 		printf("[Thread %d]: %sError: the font number [ %d ] is invalid\n",
 		       thread->threadId, TLevel[thread->level], number);
-		return 0xFFFFFFFF;
+		return 0xFFFFFFFC;
 	}
-
-	window->field354 = (int)value354;
-	window->field364 = (int)value364;
-	window->fontFamily = family;
-	window->fontSize = (int)size;
-	window->fontWidth = (int)width;
-	window->fontStyle = (int)style;
-	window->fontScaledWidth = (int)((size * width) / 100);
-
-	printf("[Thread %d]: %sWindow font \"%s\" (number %d), size %d, width %d, style %d\n",
-	       thread->threadId, TLevel[thread->level], family, number, size, width, style);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFC;
+	}
+	uint32_t result = Window_SetFont(thread->engine->renderer, window, family, size, width, bold,
+	                                 proportional, reserveColumn);
+	if(result == 0x80000002)
+	{
+		printf("[Thread %d]: %sError: the font width [ %d ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], width);
+		return 0xFFFFFFFC;
+	}
+	if(result == 0x80000003)
+	{
+		printf("[Thread %d]: %sError: the font size [ %d ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], size);
+		return 0xFFFFFFFC;
+	}
+	if(result == 0x80000004)
+	{
+		printf("[Thread %d]: %sError: the font number [ %d ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], number);
+		return 0xFFFFFFFC;
+	}
 	return 0;
 }
 
+/*
+ * Grp1 0x89 (0x00484350 -> 0x00462DE0 -> 0x00440B30 -> 0x0042C550): a window's line
+ * spacing, per cent of the font size, at most 800 ("the gap coefficient [ %d ] is
+ * invalid"). The value pops first. Nothing is pushed.
+ */
 uint32_t Opcode_Grp1_SetWindowGapCoefficient(Thread_t* thread)
 {
 	uint32_t value = Thread_PopStack(thread);
 	uint32_t handle = Thread_PopStack(thread);
-
-	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
 	if(window == NULL)
 	{
 		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
 		       thread->threadId, TLevel[thread->level]);
-		return 0xFFFFFFFF;
+		return 0xFFFFFFFC;
 	}
-	if(value > SCREEN_MAX_GAP_COEFFICIENT)
+	if(!Window_SetLineSpacing(window, value))
 	{
 		printf("[Thread %d]: %sError: the gap coefficient [ %d ] is invalid\n",
 		       thread->threadId, TLevel[thread->level], value);
-		return 0xFFFFFFFF;
+		return 0xFFFFFFFC;
 	}
-	window->gapCoefficient = (int)value;
 	return 0;
 }
 
-uint32_t Opcode_Grp1_Unknown_138(Thread_t* thread)
+/*
+ * Grp1 0x8A (0x004843D0 -> 0x00462D10 -> 0x00440A20 -> 0x0042C630): a window's text
+ * direction, 0 across and 1 down ("an invalid message drawing style [ %d ]" for any
+ * other); the text cursor goes back to where a line starts. The value pops first.
+ */
+uint32_t Opcode_Grp1_SetWindowDirection(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t value = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFC;
+	}
+	if(!Window_SetDirection(window, value))
+	{
+		printf("[Thread %d]: %sError: an invalid message drawing style [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], value);
+		return 0xFFFFFFFC;
+	}
+	return 0;
 }
 
+/*
+ * Grp1 0x8B (0x00484450 -> 0x00462D40 -> 0x00440A60 -> 0x0042C660): how a window's
+ * lines are aligned, 0 to 2 ("an invalid message swinging style [ %d ]" for any
+ * other). The message layout reads it (0x004352C0 -> 0x00437D90). The value pops
+ * first.
+ */
 uint32_t Opcode_Grp1_SetWindowSwingingStyle(Thread_t* thread)
 {
 	uint32_t style = Thread_PopStack(thread);
 	uint32_t handle = Thread_PopStack(thread);
-
-	Screen_t* window = Renderer_ResolveScreen(thread->engine->renderer, handle);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
 	if(window == NULL)
 	{
 		printf("[Thread %d]: %sError: an invalid window handle was specified\n",
 		       thread->threadId, TLevel[thread->level]);
-		return 0xFFFFFFFF;
+		return 0xFFFFFFFC;
 	}
-	if(style > SCREEN_MAX_SWINGING_STYLE)
+	if(!Window_SetAlignment(window, style))
 	{
 		printf("[Thread %d]: %sError: an invalid message swinging style [ %d ] was specified\n",
 		       thread->threadId, TLevel[thread->level], style);
-		return 0xFFFFFFFF;
+		return 0xFFFFFFFC;
 	}
-	window->swingingStyle = (int)style;
 	return 0;
 }
 
