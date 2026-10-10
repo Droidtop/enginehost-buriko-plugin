@@ -1,0 +1,15 @@
+{
+  "description": "Enginehost plugin implementation repository for openbgi",
+  "engine": "buriko",
+  "engineContexts": [
+    "compiled-script-v1",
+    "august-compiled-script-v1"
+  ],
+  "formatVersion": 1,
+  "implementation": {
+    "id": "openbgi",
+    "name": "openbgi",
+    "upstream": "https://github.com/Cytlan/openbgi"
+  },
+  "origin": "https://github.com/droidtop/enginehost-buriko-plugin"
+}
