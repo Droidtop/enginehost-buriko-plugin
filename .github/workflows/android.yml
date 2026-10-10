@@ -41,9 +41,9 @@ concurrency:
 
 jobs:
   android:
-    # Builds the APK and packs the bundle payload. No signing key and no write
-    # token here: Gradle, its plugins, the SDL clone and the third-party
-    # actions below run in this job
+    # Builds the wrapper library and packs the bundle payload. No signing key
+    # and no write token here: Gradle, its plugins, the SDL clone and the
+    # third-party actions below run in this job
     # (Enginehost docs/security/2026-09-24-ci-supply-chain.md).
     runs-on: ubuntu-latest
     steps:
@@ -65,53 +65,41 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           gradle-version: "8.13"
-      - name: Restore SDL Android sources
-        run: |
-          git clone --depth 1 --branch release-2.30.12 https://github.com/libsdl-org/SDL.git app/src/main/cpp/vendor/SDL
-          mkdir -p app/src/main/java/org/libsdl/app
-          cp app/src/main/cpp/vendor/SDL/android-project/app/src/main/java/org/libsdl/app/*.java app/src/main/java/org/libsdl/app/
-      - name: Build plugin APK
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
-      - name: Verify plugin APK
-        run: |
-          APK=app/build/outputs/apk/debug/app-debug.apk
-          test -f "$APK"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml | grep -q dev.enginehost.plugin.RUN
-          # Both ABIs are the rule, not a preference: the payload step copies
-          # lib/ wholesale out of this APK, so a missing ABI here is a bundle
-          # that installs and then fails to load on half the devices.
-          unzip -l "$APK" | grep -q lib/arm64-v8a/libmain.so
-          unzip -l "$APK" | grep -q lib/x86_64/libmain.so
-      - name: Pack the unsigned bundle inputs
-        if: startsWith(github.ref, 'refs/heads/plugin/')
+      - name: Restore SDL sources
+        # The engine's threads, atomics and surfaces; linked in statically
+        # (app/src/main/cpp/CMakeLists.txt). No SDL Java: the engine runs in
+        # Enginehost's sandbox and owns no Activity.
+        run: git clone --depth 1 --branch release-2.30.12 https://github.com/libsdl-org/SDL.git app/src/main/cpp/vendor/SDL
+      - name: Build the wrapper library
+        run: gradle :app:assembleRelease --no-daemon --stacktrace
+      - name: Pack the bundle inputs
         run: |
           set -euo pipefail
-          apk=app/build/outputs/apk/debug/app-debug.apk
-          test -f "$apk"
+          aar=app/build/outputs/aar/app-release.aar
           mkdir -p build/unsigned/payload
-          cp "$apk" build/unsigned/payload/runtime.apk
-          unzip -q "$apk" 'classes*.dex' 'lib/*' -d build/unsigned/payload
+          unzip -p "$aar" classes.jar > build/classes.jar
+          "$ANDROID_HOME/build-tools/36.0.0/d8" --release --min-api 26 --output build/unsigned/payload build/classes.jar
+          # Every ABI the wrapper build produced; Enginehost hands the isolated
+          # runtime lib/<abi> for the device's own ABI.
+          for abi in $(unzip -Z1 "$aar" 'jni/*/*.so' | cut -d/ -f2 | sort -u); do
+            mkdir -p "build/unsigned/payload/lib/$abi"
+            unzip -j "$aar" "jni/$abi/*.so" -d "build/unsigned/payload/lib/$abi"
+          done
+          # Both ABIs are the rule, not a preference: a bundle that lost one
+          # would install and then fail to load on half the devices. One
+          # library each: the engine, SDL and the file layer are all in it.
+          test -f build/unsigned/payload/lib/arm64-v8a/libmain.so
+          test -f build/unsigned/payload/lib/x86_64/libmain.so
+          test "$(ls build/unsigned/payload/lib/arm64-v8a | wc -l)" -eq 1
+          # The isolated runtime binds the plugin's natives and the file layer
+          # through these two entry points.
+          nm=$(find "$ANDROID_HOME/ndk" -name llvm-nm -path '*linux-x86_64*' | head -1)
+          for abi in arm64-v8a x86_64; do
+            symbols=$("$nm" -D --defined-only "build/unsigned/payload/lib/$abi/libmain.so")
+            grep -q ' enginehost_register_natives$' <<<"$symbols"
+            grep -q ' enginehost_vfs_bind$' <<<"$symbols"
+          done
           cp enginehost/bundle-metadata.json build/unsigned/bundle-metadata.json
-          # The wrapper APK is multidex. enginehost class-loads exactly the
-          # dex files this metadata declares, so a hard-coded single-entry
-          # list silently drops the rest of the wrapper at launch. Declare
-          # what the payload actually contains, in load order.
-          python3 - <<'DEXES'
-          import json, pathlib, re
-          payload = pathlib.Path('build/unsigned/payload')
-          def order(p):
-              # classes.dex, classes2.dex ... classes10.dex is numeric order;
-              # a lexical sort would put 10 ahead of 2.
-              m = re.fullmatch(r'classes(\d*)\.dex', p.name)
-              return int(m.group(1) or 1)
-          dexes = sorted(payload.glob('classes*.dex'), key=order)
-          assert dexes, 'no classes*.dex in the APK payload'
-          meta = pathlib.Path('build/unsigned/bundle-metadata.json')
-          data = json.loads(meta.read_text())
-          data['dexFiles'] = [d.name for d in dexes]
-          meta.write_text(json.dumps(data, indent=2) + '\n')
-          print('dexFiles =', data['dexFiles'])
-          DEXES
           cp enginehost/LICENSES.md build/unsigned/payload/LICENSES.md
           cp LICENSE build/unsigned/payload/LICENSE-GPL-2.0.txt
           cp app/src/main/cpp/vendor/SDL/LICENSE.txt build/unsigned/payload/LICENSE-SDL-zlib.txt
@@ -122,13 +110,6 @@ jobs:
         with:
           name: enginehost-buriko-openbgi-debug-apk-unsigned
           path: build/unsigned.tar
-          if-no-files-found: error
-      # The plain debug APK, for looking at by hand; the signed bundle is the
-      # sign job's enginehost-buriko-openbgi-debug-apk artifact.
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: enginehost-buriko-openbgi-app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
   sign:
