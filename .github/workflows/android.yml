@@ -1,9 +1,6 @@
 name: Android plugin
 
 on:
-  push:
-    branches: ["plugin/**"]
-  pull_request:
   workflow_dispatch:
     inputs:
       publish:
@@ -23,6 +20,9 @@ on:
         description: "Release tag (default: derived from the bundle id; testing adds -testing)"
         type: string
         default: ""
+  push:
+    branches: [plugin-core, "plugin/**"]
+  pull_request:
 
 # Read-only unless a job below says otherwise; only the publishing jobs,
 # which run no build code, get write on contents
@@ -54,7 +54,14 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      # 2026-09-16: setup-android's default package list still asks for the
+      # obsolete "tools" SDK package, which Google has withdrawn from the
+      # repository, so sdkmanager exits 1 and the job dies before Gradle runs.
+      # The runner image already ships platform-tools and the command-line
+      # tools; an empty list makes the action only put them on PATH.
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: ""
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           gradle-version: "8.13"
@@ -70,7 +77,11 @@ jobs:
           APK=app/build/outputs/apk/debug/app-debug.apk
           test -f "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml | grep -q dev.enginehost.plugin.RUN
+          # Both ABIs are the rule, not a preference: the payload step copies
+          # lib/ wholesale out of this APK, so a missing ABI here is a bundle
+          # that installs and then fails to load on half the devices.
           unzip -l "$APK" | grep -q lib/arm64-v8a/libmain.so
+          unzip -l "$APK" | grep -q lib/x86_64/libmain.so
       - name: Pack the unsigned bundle inputs
         if: startsWith(github.ref, 'refs/heads/plugin/')
         run: |
@@ -80,10 +91,30 @@ jobs:
           mkdir -p build/unsigned/payload
           cp "$apk" build/unsigned/payload/runtime.apk
           unzip -q "$apk" 'classes*.dex' 'lib/*' -d build/unsigned/payload
+          cp enginehost/bundle-metadata.json build/unsigned/bundle-metadata.json
+          # The wrapper APK is multidex. enginehost class-loads exactly the
+          # dex files this metadata declares, so a hard-coded single-entry
+          # list silently drops the rest of the wrapper at launch. Declare
+          # what the payload actually contains, in load order.
+          python3 - <<'DEXES'
+          import json, pathlib, re
+          payload = pathlib.Path('build/unsigned/payload')
+          def order(p):
+              # classes.dex, classes2.dex ... classes10.dex is numeric order;
+              # a lexical sort would put 10 ahead of 2.
+              m = re.fullmatch(r'classes(\d*)\.dex', p.name)
+              return int(m.group(1) or 1)
+          dexes = sorted(payload.glob('classes*.dex'), key=order)
+          assert dexes, 'no classes*.dex in the APK payload'
+          meta = pathlib.Path('build/unsigned/bundle-metadata.json')
+          data = json.loads(meta.read_text())
+          data['dexFiles'] = [d.name for d in dexes]
+          meta.write_text(json.dumps(data, indent=2) + '\n')
+          print('dexFiles =', data['dexFiles'])
+          DEXES
           cp enginehost/LICENSES.md build/unsigned/payload/LICENSES.md
           cp LICENSE build/unsigned/payload/LICENSE-GPL-2.0.txt
           cp app/src/main/cpp/vendor/SDL/LICENSE.txt build/unsigned/payload/LICENSE-SDL-zlib.txt
-          cp enginehost/bundle-metadata.json build/unsigned/bundle-metadata.json
           # A tar keeps the file modes the manifest signs; an artifact would not.
           tar -cf build/unsigned.tar -C build/unsigned payload bundle-metadata.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
