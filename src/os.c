@@ -440,6 +440,122 @@ void OS_Present(const uint8_t* pixels, int width, int height, int stride)
 	SDL_RenderPresent(gRenderer);
 }
 
+void OS_SetWindowSize(int width, int height)
+{
+	// Android's window is the whole display and cannot be resized: telling SDL it
+	// is 1280x720 only makes its renderer draw into a 1280x720 corner of the real
+	// surface (seen on the rig, dq-buriko-03). There the frame is scaled to the
+	// display by the renderer's logical size instead (OS_Present).
+#ifndef __ANDROID__
+	if(osEngine != NULL && osEngine->window != NULL)
+		SDL_SetWindowSize(osEngine->window, width, height);
+#else
+	(void)width;
+	(void)height;
+#endif
+}
+
+static SDL_AudioDeviceID gAudioDevice = 0;
+static OS_AudioFill gAudioFill = NULL;
+
+static void SDLCALL OS_AudioCallback(void* user, Uint8* stream, int len)
+{
+	gAudioFill(user, stream, len);
+}
+
+int OS_AudioOpen(int wantRate, int wantFrames, OS_AudioFill fill, int* rate, int* frames)
+{
+	if(!(SDL_WasInit(SDL_INIT_AUDIO) & SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO) < 0)
+	{
+		printf("[OS]: No audio subsystem (%s)\n", SDL_GetError());
+		return 0;
+	}
+	SDL_AudioSpec want, have;
+	SDL_zero(want);
+	want.freq = wantRate;
+	want.format = AUDIO_S16SYS;
+	want.channels = 2;
+	want.samples = (Uint16)wantFrames;
+	want.callback = OS_AudioCallback;
+	gAudioFill = fill;
+	gAudioDevice = SDL_OpenAudioDevice(NULL, 0, &want, &have, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
+	if(gAudioDevice == 0)
+	{
+		printf("[OS]: No audio device (%s)\n", SDL_GetError());
+		return 0;
+	}
+	*rate = have.freq;
+	*frames = have.samples;
+	return 1;
+}
+
+void OS_AudioPause(int paused)
+{
+	if(gAudioDevice != 0)
+		SDL_PauseAudioDevice(gAudioDevice, paused);
+}
+
+void OS_AudioClose(void)
+{
+	if(gAudioDevice != 0)
+		SDL_CloseAudioDevice(gAudioDevice);
+	gAudioDevice = 0;
+}
+
+void OS_AudioLock(void)
+{
+	if(gAudioDevice != 0)
+		SDL_LockAudioDevice(gAudioDevice);
+}
+
+void OS_AudioUnlock(void)
+{
+	if(gAudioDevice != 0)
+		SDL_UnlockAudioDevice(gAudioDevice);
+}
+
+static SDL_AudioDeviceID gMovieAudio = 0;
+
+int OS_MovieAudioOpen(int rate, int channels)
+{
+	if(!(SDL_WasInit(SDL_INIT_AUDIO) & SDL_INIT_AUDIO))
+		SDL_InitSubSystem(SDL_INIT_AUDIO);
+	SDL_AudioSpec want, have;
+	SDL_zero(want);
+	want.freq = rate;
+	want.format = AUDIO_S16SYS;
+	want.channels = (Uint8)channels;
+	want.samples = 2048;
+	gMovieAudio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+	if(gMovieAudio == 0)
+		printf("[OS]: No audio device for a movie's sound (%s)\n", SDL_GetError());
+	return gMovieAudio != 0;
+}
+
+void OS_MovieAudioQueue(const int16_t* samples, int count)
+{
+	if(gMovieAudio != 0)
+		SDL_QueueAudio(gMovieAudio, samples, (Uint32)count * sizeof(int16_t));
+}
+
+uint32_t OS_MovieAudioQueuedBytes(void)
+{
+	return gMovieAudio != 0 ? SDL_GetQueuedAudioSize(gMovieAudio) : 0;
+}
+
+void OS_MovieAudioPause(int paused)
+{
+	if(gMovieAudio != 0)
+		SDL_PauseAudioDevice(gMovieAudio, paused);
+}
+
+void OS_MovieAudioClose(void)
+{
+	if(gMovieAudio != 0)
+		SDL_CloseAudioDevice(gMovieAudio);
+	gMovieAudio = 0;
+}
+
 int OS_Quit()
 {
 	SDL_DestroyWindow(osEngine->window);

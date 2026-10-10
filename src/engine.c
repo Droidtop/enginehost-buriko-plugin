@@ -730,17 +730,8 @@ void Engine_SetDisplayMode(Engine_t* engine, uint32_t sizeIndex, uint32_t pixelM
 	gDisplaySizeIndex = sizeIndex;
 	gDisplayPixelMode = pixelMode;
 	gDisplayModeThirdArgument = third;
-	// A desktop window takes the mode's size, as 0x00461290 sizes the original's.
-	// Android's window is the whole display and cannot be resized: telling SDL it
-	// is 1280x720 only makes its renderer draw into a 1280x720 corner of the real
-	// surface (seen on the rig, dq-buriko-03). There the frame is scaled to the
-	// display by the renderer's logical size instead (OS_Present).
-#ifndef __ANDROID__
-	if(engine != NULL && engine->window != NULL)
-		SDL_SetWindowSize(engine->window,
-		                  (int)gDisplayModeWidth[sizeIndex],
-		                  (int)gDisplayModeHeight[sizeIndex]);
-#endif
+	(void)engine;
+	OS_SetWindowSize((int)gDisplayModeWidth[sizeIndex], (int)gDisplayModeHeight[sizeIndex]);
 	printf("[Engine]: Display mode is size %u (%ux%u), pixel mode %u\n",
 	       sizeIndex, gDisplayModeWidth[sizeIndex], gDisplayModeHeight[sizeIndex], pixelMode);
 }

@@ -5,6 +5,7 @@
 #include <SDL2/SDL.h>
 
 #include "audio.h"
+#include "os.h"
 
 /*
  * stb_vorbis (public domain, vendor/stb_vorbis.c) is compiled into this file so
@@ -152,7 +153,7 @@ typedef struct AudioChannel
 
 static AudioChannel_t    gMusic[AUDIO_MUSIC_CHANNELS];
 static AudioChannel_t    gSE[AUDIO_SE_CHANNELS];
-static SDL_AudioDeviceID gDevice = 0;
+static int               gDeviceOpen = 0;
 static int               gDeviceRate = 44100;
 static int               gDeviceTried = 0;
 static uint32_t          gDeviceFlags = 0;   /* 0x005085A4: bit 0 open, bit 1 timer */
@@ -179,14 +180,14 @@ static int Audio_Ready(void)
 
 static void Audio_Lock(void)
 {
-	if(gDevice != 0)
-		SDL_LockAudioDevice(gDevice);
+	if(gDeviceOpen)
+		OS_AudioLock();
 }
 
 static void Audio_Unlock(void)
 {
-	if(gDevice != 0)
-		SDL_UnlockAudioDevice(gDevice);
+	if(gDeviceOpen)
+		OS_AudioUnlock();
 }
 
 static uint32_t Audio_Now(void)
@@ -531,7 +532,7 @@ static void Channel_Mix(AudioChannel_t* c, int isMusic, float* mix, int frames)
 	}
 }
 
-static void SDLCALL Audio_Callback(void* userdata, Uint8* stream, int len)
+static void Audio_Callback(void* userdata, uint8_t* stream, int len)
 {
 	(void)userdata;
 	int frames = len / 4;
@@ -573,53 +574,42 @@ static void SDLCALL Audio_Callback(void* userdata, Uint8* stream, int len)
 int Audio_Init(void)
 {
 	if(gDeviceTried)
-		return gDevice != 0;
+		return gDeviceOpen;
 	gDeviceTried = 1;
 	for(int i = 0; i < AUDIO_MUSIC_CHANNELS; i++)
 		Channel_Defaults(&gMusic[i]);
 	for(int i = 0; i < AUDIO_SE_CHANNELS; i++)
 		Channel_Defaults(&gSE[i]);
 
-	if(!(SDL_WasInit(SDL_INIT_AUDIO) & SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO) < 0)
+	int rate = 0, frames = 0;
+	if(!OS_AudioOpen(44100, 1024, Audio_Callback, &rate, &frames))
 	{
-		printf("[Audio]: No audio subsystem (%s); the sound library stays uninitialised and answers 0x14\n", SDL_GetError());
+		printf("[Audio]: No audio device; the sound library stays uninitialised and answers 0x14\n");
 		return 0;
 	}
-	SDL_AudioSpec want, have;
-	SDL_zero(want);
-	want.freq = 44100;
-	want.format = AUDIO_S16SYS;
-	want.channels = 2;
-	want.samples = 1024;
-	want.callback = Audio_Callback;
-	gDevice = SDL_OpenAudioDevice(NULL, 0, &want, &have, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
-	if(gDevice == 0)
-	{
-		printf("[Audio]: No audio device (%s); the sound library stays uninitialised and answers 0x14\n", SDL_GetError());
-		return 0;
-	}
-	gDeviceRate = have.freq;
-	gMixFrames = have.samples > 0 ? have.samples : 1024;
+	gDeviceOpen = 1;
+	gDeviceRate = rate;
+	gMixFrames = frames > 0 ? frames : 1024;
 	gMix = (float*)malloc(sizeof(float) * 2 * (size_t)gMixFrames);
 	if(gMix == NULL)
 	{
-		SDL_CloseAudioDevice(gDevice);
-		gDevice = 0;
+		OS_AudioClose();
+		gDeviceOpen = 0;
 		return 0;
 	}
 	gDeviceFlags = 1;          /* 0x004A20E1 */
 	gTimerLast = Audio_Now();
 	gDeviceFlags |= 2;         /* 0x004A3654, the timer */
-	SDL_PauseAudioDevice(gDevice, 0);
+	OS_AudioPause(0);
 	printf("[Audio]: Device open at %d Hz, %d frames per period\n", gDeviceRate, gMixFrames);
 	return 1;
 }
 
 void Audio_Free(void)
 {
-	if(gDevice == 0)
+	if(!gDeviceOpen)
 		return;
-	SDL_PauseAudioDevice(gDevice, 1);
+	OS_AudioPause(1);
 	Audio_Lock();
 	gDeviceFlags = 0;
 	for(int i = 0; i < AUDIO_MUSIC_CHANNELS; i++)
@@ -633,8 +623,8 @@ void Audio_Free(void)
 		Channel_Defaults(&gSE[i]);
 	}
 	Audio_Unlock();
-	SDL_CloseAudioDevice(gDevice);
-	gDevice = 0;
+	OS_AudioClose();
+	gDeviceOpen = 0;
 	gDeviceTried = 0;
 	free(gMix);
 	gMix = NULL;

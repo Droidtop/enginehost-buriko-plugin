@@ -1354,9 +1354,9 @@ void Renderer_DrawScreen(Renderer_t* renderer)
 	// video renderer (0x0045B810) draws onto the device.
 	Movie_Update(back);
 
-	if(renderer->engine->window == NULL)
-		return;
-
+	// Whether there is anything to show it on is the OS layer's to know:
+	// os.c draws nothing without its renderer, and a host that owns the
+	// screen (the Android build's os_enginehost.c) has no window at all.
 	OS_Present(back->bitmap, back->width, back->height, back->stride);
 }
 

@@ -5,6 +5,8 @@
 
 #include <SDL.h>
 
+#include "os.h"
+
 #include "movie.h"
 #include "mpeg1.h"
 #include "object.h"
@@ -22,7 +24,7 @@ typedef struct
 	int               videoDone;
 	uint32_t          startTicks;
 	double            stopSeconds;
-	SDL_AudioDeviceID audio;
+	int               audio;        // its sound has an output
 	int               channels;
 	int               audioDone;
 } Movie_t;
@@ -44,8 +46,8 @@ static double Movie_Now(void)
 
 static void Movie_Free(void)
 {
-	if(gMovie.audio != 0)
-		SDL_CloseAudioDevice(gMovie.audio);
+	if(gMovie.audio)
+		OS_MovieAudioClose();
 	if(gMovie.decoder != NULL)
 		Mpeg1_Close(gMovie.decoder);
 	free(gMovie.data);
@@ -57,12 +59,12 @@ static void Movie_Free(void)
 // Keeps about half a second of the movie's sound queued on its own device.
 static void Movie_FeedAudio(void)
 {
-	if(gMovie.audio == 0 || gMovie.audioDone)
+	if(!gMovie.audio || gMovie.audioDone)
 		return;
 	int rate = Mpeg1_AudioRate(gMovie.decoder);
 	uint32_t want = (uint32_t)(rate / 2) * (uint32_t)gMovie.channels * sizeof(int16_t);
 	int16_t buffer[2048 * 2];
-	while(SDL_GetQueuedAudioSize(gMovie.audio) < want)
+	while(OS_MovieAudioQueuedBytes() < want)
 	{
 		int got = Mpeg1_ReadAudio(gMovie.decoder, buffer, 2048);
 		if(got <= 0)
@@ -74,7 +76,7 @@ static void Movie_FeedAudio(void)
 		if(gGain != 1.0f)
 			for(int i = 0; i < samples; i++)
 				buffer[i] = (int16_t)(buffer[i] * gGain);
-		SDL_QueueAudio(gMovie.audio, buffer, (Uint32)(samples * sizeof(int16_t)));
+		OS_MovieAudioQueue(buffer, samples);
 	}
 }
 
@@ -103,24 +105,16 @@ uint32_t Movie_Play(uint8_t* data, size_t size)
 	gMovie.channels = Mpeg1_AudioChannels(decoder);
 	if(Mpeg1_AudioRate(decoder) > 0 && gMovie.channels > 0)
 	{
-		if(!(SDL_WasInit(SDL_INIT_AUDIO) & SDL_INIT_AUDIO))
-			SDL_InitSubSystem(SDL_INIT_AUDIO);
-		SDL_AudioSpec want, have;
-		SDL_zero(want);
-		want.freq = Mpeg1_AudioRate(decoder);
-		want.format = AUDIO_S16SYS;
-		want.channels = (Uint8)gMovie.channels;
-		want.samples = 2048;
-		gMovie.audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-		if(gMovie.audio == 0)
-			printf("[Movie]: Warning: no audio device for the movie's sound (%s); it plays silent\n", SDL_GetError());
+		gMovie.audio = OS_MovieAudioOpen(Mpeg1_AudioRate(decoder), gMovie.channels);
+		if(!gMovie.audio)
+			printf("[Movie]: Warning: no audio device for the movie's sound; it plays silent\n");
 	}
 	gMovie.haveNext = Mpeg1_NextFrame(decoder, gMovie.next, gMovie.width * 4, &gMovie.nextPts);
 	gMovie.videoDone = !gMovie.haveNext;
 	Movie_FeedAudio();
 	gMovie.startTicks = SDL_GetTicks();
-	if(gMovie.audio != 0)
-		SDL_PauseAudioDevice(gMovie.audio, 0);
+	if(gMovie.audio)
+		OS_MovieAudioPause(0);
 	gPlaying = 1;
 	printf("[Movie]: Playing %dx%d, %.3f s\n", gMovie.width, gMovie.height, gMovie.stopSeconds);
 	// 0x0048F7C3: the stop position (100 ns units) divided by 10000.
