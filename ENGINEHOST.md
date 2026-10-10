@@ -22,3 +22,12 @@ because the original keeps `BGI.gdb` and its saves beside the game.
 
 OpenBGI remains GPL-2.0 licensed. SDL is used under its zlib license. See
 `LICENSE` and `THIRD_PARTY` for upstream attribution and limitations.
+
+Compatibility contexts: the wrapper advertises this incomplete interpreter
+under the `buriko` plugin family. Generic BGI titles use context
+`compiled-script-v1`; AUGUST titles using the same BGI scenario line use the
+explicit `august-compiled-script-v1` context. Both currently target
+compiled-script version `1.0` and share the same experimental opcode
+implementation. The separate context records game-family compatibility
+without pretending AUGUST is a distinct runtime engine or overstating current
+playability.
