@@ -4,4 +4,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "enginehost-buriko-plugin"
-include(":app")
+include(":api", ":app")
