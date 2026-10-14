@@ -1,11 +1,10 @@
 Buriko/OpenBGI plugin for Enginehost
-Enginehost wrapper and integration code: Copyright the Enginehost contributors, GPL-3.0 (this branch's LICENSE).
 
-The merged plugin lines (plugin/*) are different: they carry OpenBGI (https://github.com/Droidtop/enginehost-buriko-plugin,
-branch engine/0.0.1), whose LICENSE is the GPL, version 2. Its README says "GPL-2.0" and its sources carry no
-"or later" grant. The lines therefore keep upstream's GPL-2.0 LICENSE (a per-line root file here) instead of the
-GPL-3.0 text, because GPL-3.0 cannot be put on code that is GPL-2.0-only.
+This branch (plugin-core) holds only the Enginehost wrapper: Copyright the Enginehost contributors, GPL-3.0 (LICENSE).
 
-OPEN QUESTION for the owner: the wrapper in this branch is GPL-3.0, which is not compatible with GPL-2.0-only code
-in one distributed work. Either the wrapper is also offered under GPL-2.0 (or GPL-2.0-or-later) for this line, or
-an "or later" grant is obtained from OpenBGI's authors. Until decided the line is GPL-2.0 as upstream has it.
+The merged line (plugin/0.0.1) carries OpenBGI, whose LICENSE is the GNU General Public License, version 2, with no
+"or later" grant. Licence statement for the line:
+- The plugin as a whole is distributed under GPL-2.0 (the LICENSE file on the line is OpenBGI's, unchanged).
+- The Enginehost wrapper code in it is the owner's own work. Its owner also offers it under GPL-2.0-or-later, which is
+  what lets it be combined with OpenBGI. On plugin-core alone it stays GPL-3.0.
+- OpenBGI is GPL-2.0 and keeps its own notices.

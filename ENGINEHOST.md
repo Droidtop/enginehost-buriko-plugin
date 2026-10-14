@@ -20,8 +20,8 @@ file layer (`plugin-native/`, copied verbatim from Enginehost), which serves
 the game folder by its real path; the bundle declares `writesGameFolder`
 because the original keeps `BGI.gdb` and its saves beside the game.
 
-OpenBGI remains GPL-2.0 licensed, and the merged line keeps its LICENSE for that reason (this wrapper is
-GPL-3.0; see NOTICE for the open compatibility question). SDL is used under its zlib license. See
+OpenBGI remains GPL-2.0 licensed, so the merged plugin is GPL-2.0 and keeps OpenBGI's LICENSE. This wrapper is
+the owner's own code, GPL-3.0 on plugin-core and also offered under GPL-2.0-or-later for the line (see NOTICE). SDL is used under its zlib license. See
 `LICENSE` and `THIRD_PARTY` for upstream attribution and limitations.
 
 Compatibility contexts: the wrapper advertises this incomplete interpreter
