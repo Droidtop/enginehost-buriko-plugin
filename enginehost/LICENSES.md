@@ -1,6 +1,7 @@
 # Enginehost Buriko/OpenBGI bundle notices
 
-The OpenBGI runtime is distributed under GPL-2.0. The complete licence text
+The plugin as a whole is distributed under GPL-2.0, because the OpenBGI runtime it contains is GPL-2.0. The Enginehost
+wrapper code in it is also offered by its owner under GPL-2.0-or-later (it is GPL-3.0 on plugin-core). The complete licence text
 ships in this bundle as `LICENSE-GPL-2.0.txt`. Its complete corresponding
 source is maintained in the same repository and release branch as this bundle.
 
