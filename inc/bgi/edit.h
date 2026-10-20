@@ -24,6 +24,7 @@ void Edit_Show(int show); // "B0 24": show or hide the control
  * control with the current text selected; `focus` gives it the keyboard. */
 int Edit_Setup(int x, int y, int w, int h, int fontNo, int size, int maxLen, int focus);
 void Edit_SetText(const char* s);  // "B0 26": the text applied by the next Edit_Setup
+int Edit_SetFontWidthPct(int pct); // "B0 22" (1.529 on): the next Edit_Setup's glyph width in percent, 25 .. 200; 1 taken, 0 out of range
 int Edit_GetText(char* buf);       // "B0 27": the control's current text (0x100 bytes); its length
 void Edit_GetRect(Rect_t* out);    // the client rectangle of the last setup
 void Edit_SetColour(uint32_t rgb); // "B0 25": text colour 0x00RRGGBB

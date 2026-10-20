@@ -315,6 +315,13 @@ int VmMain(void)
 					Vm_RunPass();
 				BGI_END_TRY(f);
 			}
+			else if(f.value == BGI_SCRIPT_ERROR_VALUE && Error_Keeping() && gSched.cur)
+			{
+				// 1.547 on, "81 6A": only the thread that raised the error
+				// ends; event -1 tells the scripts (the message is kept for "81 6B")
+				MsgQueue_Post(0xffffffff, 0, 0);
+				Thread_KillChild(gRootThread, gSched.cur);
+			}
 			else
 			{
 				// catch (int): a script error, already reported.  The original

@@ -183,6 +183,7 @@ DispObj_t* Gfx_FindGroup(Gfx_t* g, uint32_t h);
 // ---- generic object operations (any handle, 0 = background) ----------------------
 int Gfx_ObjShow(Gfx_t* g, uint32_t h, int on);         // "90 30"
 int Gfx_ObjSetEnabled(Gfx_t* g, uint32_t h, int v);    // "90 31"
+int Gfx_ObjSetHidden(Gfx_t* g, uint32_t h, int v);     // "91 31" (1.573 on)
 int Gfx_ObjSetLevel(Gfx_t* g, uint32_t h, int level);  // "90 32"
 int Gfx_ObjSetPos(Gfx_t* g, uint32_t h, int x, int y); // "90 33"
 int Gfx_ObjGetPos(Gfx_t* g, int32_t out[2], uint32_t h);

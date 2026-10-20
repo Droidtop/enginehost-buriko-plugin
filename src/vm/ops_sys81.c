@@ -27,6 +27,7 @@
 #include "bgi/install.h"
 #include "bgi/strutil.h"
 #include "bgi/sysobj.h"
+#include "bgi/sysobj/database.h"
 
 // whether the auto-repeat of virtual key vk counts as presses; pushes the previous setting
 static int Opcode_Sys81_KeyRepeatNew(Thread_t* t) // 81 10: vk, on → old
@@ -419,6 +420,143 @@ static int Opcode_Sys81_TouchPoints(Thread_t* t) // 81 19 (1.599 on): buf → n
 	return 0;
 }
 
+/* The tracking of the touch points "81 19" reports: the window procedure
+ * keeps up to `count` (at most 0x200) points and starts a new one when a
+ * touch moved farther than `distance` pixels from where it was; "81 17"
+ * copies the tracked points from index `first` on: their positions (two
+ * values each) into xy, the distance to the previous one (-1 for the
+ * first) into dist, at most `count`, and pushes how many it copied.  ok 1,
+ * 0 for a count above 0x200.  Stored only: there is no touch input here,
+ * so nothing is ever tracked. */
+static uint32_t gTouchMaxPoints, gTouchDistance;
+static int Opcode_Sys81_TouchTracking(Thread_t* t) // 81 16 (1.616 on): count, distance → ok
+{
+	uint32_t distance = Thread_Pop(t);
+	uint32_t count = Thread_Pop(t);
+	if(count > 0x200)
+	{
+		Thread_Push(t, 0);
+		return 0;
+	}
+	gTouchMaxPoints = count;
+	gTouchDistance = distance;
+	Thread_Push(t, 1);
+	return 0;
+}
+
+static int Opcode_Sys81_TouchHistory(Thread_t* t) // 81 17 (1.616 on): xy, dist, first, count → n
+{
+	Thread_Pop(t); // count
+	Thread_Pop(t); // first
+	PopPtr(t);     // dist
+	PopPtr(t);     // xy
+	Thread_Push(t, 0);
+	return 0;
+}
+
+/* 1.573 on: on 1 the original takes the Print Screen key for itself
+ * (RegisterHotKey of VK_SNAPSHOT with each of the 16 modifier
+ * combinations), so that the system's screenshot no longer sees it; 0
+ * gives it back.  Stored only: the OS
+ * layer here registers no global keys. */
+static int gPrintScreenTaken;
+static int Opcode_Sys81_TakePrintScreen(Thread_t* t) // 81 69 (1.573 on): on →
+{
+	gPrintScreenTaken = Thread_Pop(t) != 0;
+	return 0;
+}
+
+/* the archive file `name` (base directory, then the alternative one) has
+ * its index read again on its next use: 0 found, 1 not (ReloadArchive) */
+static int Opcode_Sys81_ReloadArchive(Thread_t* t) // 81 3C (1.573 on): name → r
+{
+	const char* name = (const char*)PopPtr(t);
+	Thread_Push(t, (uint32_t)ReloadArchive(name));
+	return 0;
+}
+
+/* start a thread that runs at code offset ip in parts of this thread's
+ * areas (of its lender's, when it runs in borrowed ones): codeSize bytes
+ * cut from the top of the code area for the modules it loads itself,
+ * dataSize bytes from the top of the data area for its frames, the heap
+ * shared, and a stack of stackEntries values of its own
+ * (Thread_SpawnBorrower).  It ends at the latest when the lender does.
+ * Parts that do not fit, or an ip at or past the end of the new thread's
+ * part of the code area, are script errors (the latter with the thread
+ * already started, as in the original). */
+static int Opcode_Sys81_SpawnBorrower(Thread_t* t) // 81 44 (1.599 on): stackEntries, codeSize, dataSize, ip → id
+{
+	uint32_t ip = Thread_Pop(t);
+	uint32_t dataSize = Thread_Pop(t);
+	uint32_t codeSize = Thread_Pop(t);
+	uint32_t stackEntries = Thread_Pop(t);
+	char msg[0x104];
+	Thread_t* c = NULL;
+	switch(Thread_SpawnBorrower(t, stackEntries, codeSize, dataSize, ip, &c))
+	{
+		case 2:
+			sprintf(msg, MSG_CHILD_CODE_FULL, (int)codeSize);
+			ScriptError(msg, t);
+			break;
+		case 3:
+			sprintf(msg, MSG_CHILD_DATA_FULL, (int)dataSize);
+			ScriptError(msg, t);
+			break;
+		default: break;
+	}
+	if(ip >= c->codeSize)
+	{
+		sprintf(msg, MSG_CHILD_IP_OUT_OF_RANGE, (unsigned)ip);
+		ScriptError(msg, t);
+	}
+	Thread_Push(t, Thread_GetId(c));
+	return 0;
+}
+
+/* the engine clock's step limit: a reading more than this above the
+ * previous one is taken for a stall and not counted (GetTicks).  ok 1 for
+ * 50 .. 60000 ms, 0 otherwise. */
+static int Opcode_Sys81_ClockMaxStep(Thread_t* t) // 81 04 (1.616 on): ms → ok
+{
+	Thread_Push(t, (uint32_t)Clock_SetMaxStep(Thread_Pop(t)));
+	return 0;
+}
+
+/* stop the engine clock while the window is inactive, and from 1.547 on
+ * hold the playing sounds with it (Wnd_Activate); the previous setting */
+static int Opcode_Sys81_StopWhenInactive(Thread_t* t) // 81 68 (1.535 on): on → previous
+{
+	Thread_Push(t, (uint32_t)Clock_SetStopWhenInactive((int)Thread_Pop(t)));
+	return 0;
+}
+
+/* the key a gamepad control stands for: index 0 .. 31 the buttons, 32 ..
+ * 35 the directions up, down, left, right (the hat or the stick); 0 none.
+ * ok 1, 0 for an index past the table (Pad_SetKey). */
+static int Opcode_Sys81_PadKey(Thread_t* t) // 81 1B (1.547 on): index, key → ok
+{
+	uint32_t vk = Thread_Pop(t);
+	uint32_t index = Thread_Pop(t);
+	Thread_Push(t, Pad_SetKey(index, vk) == 0);
+	return 0;
+}
+
+/* a fatal script error ends only the thread that raised it, the first
+ * one's message being kept (ThrowScriptError, the scheduler's catch) */
+static int Opcode_Sys81_KeepErrors(Thread_t* t) // 81 6A (1.547 on): on →
+{
+	Error_SetKeep((int)Thread_Pop(t));
+	return 0;
+}
+
+// the kept error message into buf (may be 0); its length + 1, 0 when none was kept
+static int Opcode_Sys81_KeptError(Thread_t* t) // 81 6B (1.547 on): buf → n
+{
+	char* buf = (char*)PopPtr(t);
+	Thread_Push(t, Error_KeptMessage(buf));
+	return 0;
+}
+
 /* which Direct3D adapter the original presents through: mode 1 the
  * adapter of the monitor the window is on, 0 the default adapter.  ok 1
  * for 0 / 1, 0 otherwise.  Only stored here: the OS layer presents
@@ -483,6 +621,112 @@ static int Opcode_Sys81_CreateShortcutArgs(Thread_t* t) // 81 F7 (1.553 on): arg
 	return 0;
 }
 
+/* the open (kind 0) or save (kind 1) file dialog with `count` filters:
+ * descs[] and patterns[] are arrays of `count` string pointers (a name
+ * with its patterns, and the patterns ";"-separated), title and initialDir may be 0; code 0
+ * when a file was chosen (its path in out, 0x30c bytes), -1 cancelled, 4
+ * another kind, 7 count below 1 */
+static int Opcode_Sys81_FileDialogMulti(Thread_t* t) // 81 38 (1.553 on): out, count, descs, patterns, title, initialDir, kind → code
+{
+	int kind = (int)Thread_Pop(t);
+	const char* initialDir = (const char*)PopPtr(t);
+	const char* title = (const char*)PopPtr(t);
+	const uint32_t* pats = (const uint32_t*)PopPtr(t);
+	const uint32_t* descs = (const uint32_t*)PopPtr(t);
+	int count = (int)Thread_Pop(t);
+	char* out = (char*)PopPtr(t);
+	const char** d;
+	const char** p;
+	if(count < 1)
+	{
+		Thread_Push(t, 7);
+		return 0;
+	}
+	d = (const char**)BGI_Alloc((size_t)count * sizeof *d);
+	p = (const char**)BGI_Alloc((size_t)count * sizeof *p);
+	ResolvePtrArray((void**)d, t, descs, count);
+	ResolvePtrArray((void**)p, t, pats, count);
+	Thread_Push(t, (uint32_t)FileDialogN(out, count, d, p, title, initialDir, kind));
+	BGI_Free(d);
+	BGI_Free(p);
+	return 0;
+}
+
+/* merge the SDC-encoded global database image `image` (the bytes of a
+ * BGI.gdb in GDB 3.00 layout) into the live names and flag groups, and
+ * hand its global memory prefix and system area to the script: 0x400
+ * bytes into globals and 0x100000 into sysarea when they are not 0, the
+ * sizes into *gSize and *sSize always; ok 1, 0 when the image is not a
+ * GDB 3.00 database (the online-storage scripts merge a cloud copy this
+ * way) */
+static int Opcode_Sys81_GdbMerge(Thread_t* t) // 81 80 (1.636 on): globals, gSize, sysarea, sSize, image → ok
+{
+	const void* image = PopPtr(t);
+	uint32_t* sSize = (uint32_t*)PopPtr(t);
+	void* sysarea = PopPtr(t);
+	uint32_t* gSize = (uint32_t*)PopPtr(t);
+	void* globals = PopPtr(t);
+	Thread_Push(t, GlobalDB_MergeImage(image, globals, gSize, sysarea, sSize) == 0);
+	return 0;
+}
+
+// ---- the file accessor (src/sys/fileacc.c) -----------------------------------
+
+/* open `path` (as given, relative to the game directory) for reading (mode
+ * 0), writing from scratch (1) or, from 1.573 on, writing into it as it
+ * is (2); the handle number goes to *out; 0, 1 bad mode, 2 already open,
+ * 3 cannot be opened */
+static int Opcode_Sys81_FileOpen(Thread_t* t) // 81 28 (1.547 on): out, path, mode → code
+{
+	int mode = (int)Thread_Pop(t);
+	const char* path = (const char*)PopPtr(t);
+	uint32_t* out = (uint32_t*)PopPtr(t);
+	Thread_Push(t, (uint32_t)FileAcc_Open(out, path, mode));
+	return 0;
+}
+
+// close a handle; *status becomes 1; 0, 4 when the handle is not open
+static int Opcode_Sys81_FileClose(Thread_t* t) // 81 29 (1.573 on): status, handle → code
+{
+	uint32_t handle = Thread_Pop(t);
+	int32_t* status = (int32_t*)PopPtr(t);
+	Thread_Push(t, (uint32_t)FileAcc_Close(status, handle));
+	return 0;
+}
+
+// the same without a status word: 0 closed, -1 when the handle is not open
+static int Opcode_Sys81_FileClose547(Thread_t* t) // 81 29 (1.547, 1.553): handle → code
+{
+	uint32_t handle = Thread_Pop(t);
+	Thread_Push(t, (uint32_t)FileAcc_Close(NULL, handle));
+	return 0;
+}
+
+/* read `size` bytes into buf, or write them from it, as the handle was
+ * opened; *status becomes the number of bytes, or -1 (1.547 / 1.553: -2)
+ * when none were; 0, 4 when the handle is not open, 6 for a size of 0
+ * (1.547 / 1.553) */
+static int Opcode_Sys81_FileTransfer(Thread_t* t) // 81 2A (1.547 on): status, handle, buf, size → code
+{
+	uint32_t size = Thread_Pop(t);
+	void* buf = PopPtr(t);
+	uint32_t handle = Thread_Pop(t);
+	int32_t* status = (int32_t*)PopPtr(t);
+	Thread_Push(t, (uint32_t)FileAcc_Transfer(status, handle, buf, size));
+	return 0;
+}
+
+/* move to byte `pos` from the start, -1 for the end; *status becomes 1,
+ * or -1 for a position past the end; 0, 4 when the handle is not open */
+static int Opcode_Sys81_FileSeek(Thread_t* t) // 81 2B (1.573 on): status, handle, pos → code
+{
+	uint32_t pos = Thread_Pop(t);
+	uint32_t handle = Thread_Pop(t);
+	int32_t* status = (int32_t*)PopPtr(t);
+	Thread_Push(t, (uint32_t)FileAcc_Seek(status, handle, pos));
+	return 0;
+}
+
 /* Fill vm_optable_81 for the selected engine profile; the entries name an
  * opcode, its handler and the generations it exists in (see
  * Vm_Optable80Init in ops_sys.c for the rules) */
@@ -505,9 +749,15 @@ void Vm_Optable81Init(void)
 		{0x14, Opcode_Sys81_KeysWhenInactive, GEN_1_529, GEN_LAST},
 		{0x1E, Opcode_Sys81_SimulateClick, GEN_1_529, GEN_LAST},
 		{0x2F, Opcode_Sys81_DirWritable, GEN_1_616, GEN_LAST},
+		{0x28, Opcode_Sys81_FileOpen, GEN_1_547, GEN_LAST},
+		{0x29, Opcode_Sys81_FileClose547, GEN_1_547, GEN_1_553},
+		{0x29, Opcode_Sys81_FileClose, GEN_1_573, GEN_LAST},
+		{0x2A, Opcode_Sys81_FileTransfer, GEN_1_547, GEN_LAST},
+		{0x2B, Opcode_Sys81_FileSeek, GEN_1_573, GEN_LAST},
 		{0x30, Opcode_Sys81_LoadFileRangeRaw, GEN_1_529, GEN_LAST},
 		{0x31, Opcode_Sys81_HttpGet, GEN_1_529, GEN_LAST},
 		{0x3B, Opcode_Sys81_ArcEntryDialog, GEN_1_529, GEN_LAST},
+		{0x38, Opcode_Sys81_FileDialogMulti, GEN_1_553, GEN_LAST},
 		{0x60, Opcode_Sys81_SetSizeEntry, GEN_1_494, GEN_LAST},
 		{0x63, Opcode_Sys81_SetFullscreenFit, GEN_1_529, GEN_LAST},
 		{0x64, Opcode_Sys81_SetWindowSize, GEN_1_529, GEN_LAST},
@@ -526,6 +776,17 @@ void Vm_Optable81Init(void)
 		{0xF7, Opcode_Sys81_CreateShortcutArgs, GEN_1_553, GEN_LAST},
 		{0x21, Opcode_Sys81_SjisToUtf8, GEN_1_653, GEN_LAST},
 		{0x19, Opcode_Sys81_TouchPoints, GEN_1_599, GEN_LAST},
+		{0x16, Opcode_Sys81_TouchTracking, GEN_1_616, GEN_LAST},
+		{0x17, Opcode_Sys81_TouchHistory, GEN_1_616, GEN_LAST},
+		{0x69, Opcode_Sys81_TakePrintScreen, GEN_1_573, GEN_LAST},
+		{0x04, Opcode_Sys81_ClockMaxStep, GEN_1_616, GEN_LAST},
+		{0x3C, Opcode_Sys81_ReloadArchive, GEN_1_573, GEN_LAST},
+		{0x44, Opcode_Sys81_SpawnBorrower, GEN_1_599, GEN_LAST},
+		{0x80, Opcode_Sys81_GdbMerge, GEN_1_636, GEN_LAST},
+		{0x68, Opcode_Sys81_StopWhenInactive, GEN_1_535, GEN_LAST},
+		{0x1B, Opcode_Sys81_PadKey, GEN_1_547, GEN_LAST},
+		{0x6A, Opcode_Sys81_KeepErrors, GEN_1_547, GEN_LAST},
+		{0x6B, Opcode_Sys81_KeptError, GEN_1_547, GEN_LAST},
 		{0xE9, Opcode_Sys81_HashBuffer, GEN_1_529, GEN_LAST},
 		{0x65, Opcode_Sys81_LockWindowPos, GEN_1_69_472, GEN_LAST},
 	};

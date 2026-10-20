@@ -256,6 +256,8 @@ Thread_t* Thread_New(uint32_t stackEntries, uint32_t codeSize, uint32_t dataSize
 		PixBuf_Ctor(t->dataBuf);
 		t->data = PixBuf_Alloc(t->dataBuf, dataSize);
 		t->heap = Heap_Create(0x8000);
+		t->codeCap = codeSize;
+		t->dataCap = dataSize;
 		t->valid = 1;
 	}
 	else
@@ -277,15 +279,152 @@ Thread_t* Thread_New(uint32_t stackEntries, uint32_t codeSize, uint32_t dataSize
 	return t;
 }
 
+// ---- the areas of "81 44" ----
+
+/* where a loan of `size` bytes goes in an area of `cap` bytes whose loans
+ * are `*head`: the end of the highest gap that holds it, *link where the
+ * loan is to be linked in (the original's first fit from the top) */
+static uint32_t Loan_Top(AreaLoan_t** head, uint32_t cap, uint32_t size, AreaLoan_t*** link)
+{
+	AreaLoan_t** l = head;
+	uint32_t top = cap;
+	while(*l && (*l)->off + (*l)->size + size > top)
+	{
+		top = (*l)->off;
+		l = &(*l)->next;
+	}
+	*link = l;
+	return top;
+}
+
+// link a loan of [off, off + size) to `holder` in at *link; returns off
+static uint32_t Loan_Insert(AreaLoan_t** link, Thread_t* holder, uint32_t off, uint32_t size)
+{
+	AreaLoan_t* n = (AreaLoan_t*)BGI_Alloc(sizeof(AreaLoan_t));
+	n->holder = holder;
+	n->off = off;
+	n->size = size;
+	n->next = *link;
+	*link = n;
+	return off;
+}
+
+// the lowest loan of the list, `cap` when it is empty: the end of what the lender itself may use
+static uint32_t Loan_Lowest(const AreaLoan_t* n, uint32_t cap)
+{
+	for(; n; n = n->next)
+		if(n->off < cap)
+			cap = n->off;
+	return cap;
+}
+
+// drop holder's loan from the list; 1 when it had one
+static int Loan_Remove(AreaLoan_t** l, Thread_t* holder)
+{
+	for(; *l; l = &(*l)->next)
+		if((*l)->holder == holder)
+		{
+			AreaLoan_t* n = *l;
+			*l = n->next;
+			BGI_Free(n);
+			return 1;
+		}
+	return 0;
+}
+
+/* Lend `holder` codeSize bytes of l's code area and dataSize bytes of its
+ * data area, each from the top of the highest gap that holds it; their
+ * offsets into *codeOff, *dataOff.  What l may use itself ends below its
+ * lowest loans from then on.  0; 2 when the code part would reach into
+ * the modules l has loaded, 3 when the data area is smaller than dataSize
+ * (the frames of l are not looked at, as in the original). */
+static int Thread_Lend(Thread_t* l, Thread_t* holder, uint32_t codeSize, uint32_t dataSize, uint32_t* codeOff, uint32_t* dataOff)
+{
+	AreaLoan_t **cl, **dl;
+	uint32_t ctop = Loan_Top(&l->codeLoans, l->codeCap, codeSize, &cl);
+	uint32_t dtop = Loan_Top(&l->dataLoans, l->dataCap, dataSize, &dl);
+	if((int32_t)(ctop - codeSize) < (int32_t)l->codeUsed)
+		return 2;
+	if(dtop < dataSize)
+		return 3;
+	l->loanCount++;
+	*codeOff = Loan_Insert(cl, holder, ctop - codeSize, codeSize);
+	l->codeSize = Loan_Lowest(l->codeLoans, l->codeCap);
+	*dataOff = Loan_Insert(dl, holder, dtop - dataSize, dataSize);
+	l->dataSize = Loan_Lowest(l->dataLoans, l->dataCap);
+	return 0;
+}
+
+/* take holder's loans back; what l may use itself stays where it was
+ * until its next loan (as in the original) */
+static void Thread_TakeBack(Thread_t* l, Thread_t* holder)
+{
+	int code = Loan_Remove(&l->codeLoans, holder);
+	if(Loan_Remove(&l->dataLoans, holder) || code)
+		l->loanCount--;
+}
+
+int Thread_SpawnBorrower(Thread_t* t, uint32_t stackEntries, uint32_t codeSize, uint32_t dataSize, uint32_t ip, Thread_t** out)
+{
+	Thread_t* l = t->lender ? t->lender : t;
+	Thread_t* c = (Thread_t*)BGI_Calloc(sizeof(Thread_t));
+	Thread_t* end;
+	uint32_t codeOff, dataOff;
+	int r;
+
+	c->stackEntries = stackEntries ? stackEntries : 1; // the original has no stack at all for 0
+	c->stackBuf = (PixBuf_t*)BGI_Alloc(sizeof(PixBuf_t));
+	PixBuf_Ctor(c->stackBuf);
+	c->stack = (uint32_t*)PixBuf_Alloc(c->stackBuf, c->stackEntries * 4);
+	c->valid = 1;
+	c->id = gThreadSerial++;
+	r = Thread_Lend(l, c, codeSize, dataSize, &codeOff, &dataOff);
+	if(r != 0)
+	{
+		Thread_Delete(c);
+		return r;
+	}
+	c->lender = l;
+	c->code = l->code;
+	c->codeBase = c->codeUsed = codeOff;
+	c->codeSize = codeOff + codeSize;
+	c->data = l->data;
+	c->dataBase = c->fp = dataOff;
+	c->dataSize = dataOff + dataSize;
+	c->heap = l->heap;
+	Thread_SetIP(c, ip);
+	for(end = t; end->next; end = end->next)
+		;
+	end->next = c;
+	*out = c;
+	return 0;
+}
+
 /*
  * Destroy a thread: its three areas and heap (when it has them), the module
  * records, the wait object it may be blocked in and the unread messages of
  * its queue, then the thread itself.  The caller unlinks it from the list
- * first (Thread_KillChild does both).
+ * first (Thread_KillChild does both).  A thread in borrowed areas gives
+ * them back; the loans of a lender whose borrowers still exist (which
+ * Thread_KillChild does not leave) are cut loose.
  */
 void Thread_Delete(Thread_t* t)
 {
 	uint32_t dummy;
+	if(t->lender)
+	{
+		Thread_TakeBack(t->lender, t);
+		t->heap = NULL; // the lender's
+	}
+	while(t->codeLoans)
+	{
+		Thread_t* h = t->codeLoans->holder;
+		h->lender = NULL;
+		h->heap = NULL; // not its own
+		Loan_Remove(&t->codeLoans, h);
+	}
+	while(t->dataLoans)
+		Loan_Remove(&t->dataLoans, t->dataLoans->holder);
 	if(t->valid)
 	{
 		if(t->stackBuf)
@@ -338,6 +477,9 @@ int Thread_KillChild(Thread_t* root, Thread_t* victim)
 	}
 	if(!t)
 		return 0;
+	// the threads that run in areas it lent end first, while it still links them in
+	while(victim->codeLoans && Thread_KillChild(victim, victim->codeLoans->holder))
+		;
 	prev->next = Thread_Next(victim);
 	Thread_Delete(victim);
 	return 1;
@@ -384,7 +526,7 @@ void Thread_FreeModules(Thread_t* t)
 	}
 	t->modules = NULL;
 	t->moduleCount = 0;
-	t->codeUsed = 0;
+	t->codeUsed = t->codeBase;
 }
 
 /*

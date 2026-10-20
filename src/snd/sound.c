@@ -19,6 +19,7 @@
 #include "bgi/msg.h"
 #include "bgi/error.h"
 #include "bgi/os.h"
+#include "bgi/version.h"
 
 int gSoundOff;                           // 1 while Sound_StopAll has muted everything
 uint32_t gBgmMasterVolume[BGM_CHANNELS]; // 0 .. 0x80 per channel, kept across the mute
@@ -39,6 +40,18 @@ int Bgm_SetMasterVolume(int ch, uint32_t vol)
 	if(!gSoundOff)
 		Wm_BgmSetMasterVolume(ch, vol);
 	return 1;
+}
+
+// "A0 1C" (1.553 on): the channel's own volume, straight to the library (not remembered, not muted); its result
+int Bgm_SetChannelVolume(int ch, uint32_t vol)
+{
+	return Wm_BgmSetChannelVolume(ch, vol);
+}
+
+// "A0 2C" (1.588 on): the same for an effect slot
+int Se_SetChannelVolume(int slot, uint32_t vol)
+{
+	return Wm_SeSetChannelVolume(slot, vol);
 }
 
 // "A0 09": the same for an effect slot
@@ -94,6 +107,14 @@ void Sound_ResumeAll(void)
 		Sound_ApplyMasterVolumes();
 		gSoundOff = 0;
 	}
+}
+
+/* 1.547 on: the window lost the focus while "81 68" is set - every
+ * playing sound stops where it is - or got it back - the held ones play
+ * on (Wm_HoldAll) */
+void Sound_HoldAll(int hold)
+{
+	Wm_HoldAll(hold);
 }
 
 // ---- BGM -----------------------------------------------------------------------
@@ -305,14 +326,21 @@ void Sound_ClearTable(void)
 	memset(gSeDesc, 0, sizeof gSeDesc);
 }
 
-/* "A0 20" / "A0 21" through the loader: copy the BW header of the file
- * in memory to the slot's descriptor and hand the file to the library;
- * the library's result (the slot's descriptor is kept even when the load
- * fails) */
-uint32_t Sound_LoadSe(int slot, const void* desc, int fadeInMs, double gain)
+/* "A0 20" / "A0 21" / "A0 27" through the loader: copy the BW header of
+ * the file in memory to the slot's descriptor and hand the file to the
+ * library; the library's result (the slot's descriptor is kept even when
+ * the load fails).  From 1.547 on the descriptor's word at +0x3c becomes
+ * 65536 / rate, which scales the length Se_GetLength reports. */
+uint32_t Sound_LoadSe(int slot, const void* desc, int fadeInMs, double gain, double rate)
 {
 	memcpy(gSeDesc[slot], desc, SE_DESC_SIZE);
-	return Wm_SeLoad(slot, desc, fadeInMs, gain);
+	if(gEngine->gen >= GEN_1_547)
+	{
+		double step = 65536.0 / rate;
+		uint32_t v = step >= -9.2e18 && step <= 9.2e18 ? (uint32_t)(int64_t)step : 0x80000000u; // (the x87's "indefinite" otherwise)
+		memcpy(gSeDesc[slot] + 0x3c, &v, 4);
+	}
+	return Wm_SeLoad(slot, desc, fadeInMs, gain, rate);
 }
 
 // "A0 22"
@@ -340,14 +368,21 @@ int Se_FadeOut(int slot, int ms)
 }
 
 /* the effect's length in ms from its descriptor (the BW header): frames
- * * 1000 / sample rate, truncated; 0 for an empty slot.  "A0 24" pushes
- * it when the effect started. */
+ * * 1000 / sample rate, truncated; 0 for an empty slot.  From 1.547 on it
+ * is scaled by the descriptor's word at +0x3c (65536 / the load's rate,
+ * Sound_LoadSe): ms * that, in its low 32 bits, shifted down by 16 - so
+ * the length of a sound longer than 65.5 s wraps, as in the original.
+ * "A0 24" pushes it when the effect started, "A0 2F" always. */
 int32_t Se_GetLength(int slot)
 {
 	const uint32_t* d = (const uint32_t*)gSeDesc[slot];
+	double ms;
 	if(d[4] == 0) // the sample rate
 		return 0;
-	return BGI_Ftol((double)(uint64_t)d[3] * 1000.0 / (double)(uint64_t)d[4]);
+	ms = (double)(uint64_t)d[3] * 1000.0 / (double)(uint64_t)d[4];
+	if(gEngine->gen >= GEN_1_547)
+		return (int32_t)((uint32_t)(int64_t)(ms * (double)(uint64_t)d[15]) >> 16);
+	return BGI_Ftol(ms);
 }
 
 // "A0 C0": play a wave file of the base directory through the OS (PlaySound); 1 when accepted

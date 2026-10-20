@@ -44,7 +44,7 @@ Every channel and slot has a record (`WmRecord_t` in `src/snd/wm/wm_internal.h`)
 | `voice` | the voice (the DirectSound wrapper object in the original) |
 | `stream` | the decoder object |
 | `master` | 0 .. 0x80, `Wm_*SetMasterVolume` |
-| `aux` | 0x80, never written anywhere |
+| `aux` | 0 .. 0x80, the channel's or slot's own volume: `Wm_BgmSetChannelVolume` ("A0 1C", 1.553 on) and `Wm_SeSetChannelVolume` ("A0 2C", 1.588 on), clamped to 0x80, applied at once, kept when something else is loaded; 0x80 until then |
 | `fadeVol` | fade of the channel volume, `Wm_BgmFadeVolume` |
 | `volume` | 0 .. 0x80 (the play / open argument) |
 | `fade` | fade of the fade level, `Wm_*FadeIn` / `FadeOut` |
@@ -60,7 +60,11 @@ The level (`Record_Level`) is an attenuation in dB:
     level = int((0x200 - fadeLevel - volume - aux - master) * 0.375)
     level >= 48  ->  0x80 (silence)
 
-so every volume step is 0.375 dB and anything 48 dB down is cut.  The voice
+so every volume step is 0.375 dB and anything 48 dB down is cut.  From
+1.588 on the sum is not cut: the level is
+`int((0x200 - master - aux - volume - fadeLevel) / 2.66666666)` and only
+a single volume at 0 (its own 48 dB) silences, so two volumes at half
+give 48 dB rather than silence; the voice floors a deep level.  The voice
 turns it into DirectSound units `-100 * level` clamped at -10000
 (`Voice_SetVolume`).  Pans are 0 .. 0x80 (0x40 centred) and become
 `(pan - 0x40) * 2` (-128 .. 128), which the voice maps to
@@ -92,11 +96,21 @@ result:
 the message pump calls `Wm_TimerPoll()` whenever it has nothing else to
 do.
 
-Effects: `Wm_SeLoad(slot, file, fadeInMs, gain)` takes a whole BW file in
-memory (the background loader read it), decodes it completely, and burns a
-linear fade-in of `fadeInMs` into the samples (`WmStream_FadeIn`; the
-`fadeInMs` argument of "A0 21", 0 for "A0 20").  `Wm_SePlay` resets the
-pan and volume, stops and restarts the voice.  Effects never loop.
+Effects: `Wm_SeLoad(slot, file, fadeInMs, gain, rate)` takes a whole BW
+file in memory (the background loader read it), decodes it completely,
+and burns a linear fade-in of `fadeInMs` into the samples
+(`WmStream_FadeIn`; the `fadeInMs` argument of "A0 21", 0 for "A0 20").
+A rate other than 1 ("A0 27" / "A0 28", 1.547 on: the scripts' voice
+speed) then stretches the decoded sound in time at the same pitch
+(`WmStream_TimeStretch`): it is cut into chunks of 30 ms, a chunk is
+taken from the source every `chunk * rate` frames (rounded towards zero)
+and starts with a 5 ms crossfade from where the chunk before would have
+gone on; the result holds `trunc(frames / rate + 0.9)` frames rounded up
+to the next whole chunk past it, silence after the last one.  The length
+the scripts read (`Se_GetLength`, "A0 24" / "A0 2F") is divided by the
+rate from 1.547 on: the descriptor keeps `65536 / rate` and the length is
+`ms * that >> 16` in 32 bits.  `Wm_SePlay` resets the pan and volume,
+stops and restarts the voice.  Effects never loop.
 
 Music: `Wm_BgmOpenFile` / `OpenArc` stream one file; the "pair" forms take
 an intro and a loop part.  When both names are the same the single file is

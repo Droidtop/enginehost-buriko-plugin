@@ -215,6 +215,26 @@ int Wm_BgmSetMasterVolume(int ch, uint32_t vol)
 	return res;
 }
 
+/* the channel's own volume ("A0 1C", 1.553 on; clamped to 0x80), applied
+ * at once whether or not anything is loaded and kept across loads; 0,
+ * 0x14 not running, 0x15 bad channel */
+int Wm_BgmSetChannelVolume(int ch, uint32_t vol)
+{
+	int res = 0;
+	Wm_Lock();
+	if(!Wm_Running())
+		res = WM_E_NOT_RUNNING;
+	else if((uint32_t)ch >= WM_BGM_CHANNELS)
+		res = WM_E_BAD_CHANNEL;
+	else
+	{
+		gBgm[ch].aux = (int32_t)(vol > 0x80 ? 0x80 : vol);
+		Voice_SetVolume(gBgm[ch].voice, Record_Level(&gBgm[ch]));
+	}
+	Wm_Unlock();
+	return res;
+}
+
 // fade the channel's fade level from where it is to silence over `ms`; 0, or the check's code
 int Wm_BgmFadeOut(int ch, int ms)
 {

@@ -4,8 +4,9 @@
  *
  * sys.h - small engine-wide services: the engine lock, ticks, idle sleep
  *         (src/core/sysutil.c), the global memory block, dynamic blocks
- *         and tagged-pointer resolution (src/core/dynmem.c) and the
- *         processor identification (src/sys/cpu.c).
+ *         and tagged-pointer resolution (src/core/dynmem.c), the
+ *         processor identification (src/sys/cpu.c) and the scripts' file
+ *         accessor (src/sys/fileacc.c).
  */
 #ifndef BGI_SYS_H_
 #define BGI_SYS_H_
@@ -24,7 +25,15 @@ void EngineLock_Leave(void);
 // ---- time ------------------------------------------------
 void Timer_Begin(void);  // raise the timer resolution (timeBeginPeriod in the original)
 void Timer_End(void);    // restore it
-uint32_t GetTicks(void); // ms since boot, wrapping at 2^32 ("80 04")
+uint32_t GetTicks(void); // ms, wrapping at 2^32 ("80 04"): since boot; from 1.535 on less the stopped time
+
+int Clock_Stop(int force);             // 1.535 on: stop the clock (force, 1.547 on: whatever "81 68" says); 1 when stopped here
+int Clock_Resume(void);                // let it run on; 1 when it had been stopped
+void Clock_BoxBegin(void);             // 1.547 on: Clock_Stop(1) around a message box or a dialog
+void Clock_BoxEnd(void);               // ... and Clock_Resume after it
+int Clock_SetStopWhenInactive(int on); // "81 68": the previous setting
+int Clock_StopsWhenInactive(void);     // the "81 68" setting
+int Clock_SetMaxStep(uint32_t ms);     // "81 04" (1.616 on): 50 .. 60000; 1 when accepted
 void Idle_Init(void);
 void Idle_Shutdown(void);
 void Sys_Idle(void); // ~0.5 ms sleep, the end of a pass
@@ -92,5 +101,15 @@ int Cpu_BrandString(char* out); // "81 0A" (1.529 on): the brand string, spaces 
 int Cpu_HasMmx(void);           // (bit 23)
 int Cpu_HasSse(void);           // (bit 25)
 int Cpu_HasSse2(void);          // (bit 26)
+
+// ---- file accessor (fileacc.c) ---------------------------------------------
+/* "81 28" .. "81 2B" (1.547 on): files a script opens by path and reads
+ * or writes in blocks.  The results are the codes the opcodes push; the
+ * status words receive the final value of each request (see fileacc.c). */
+int FileAcc_Open(uint32_t* outHandle, const char* path, int mode);                // "81 28": 0, 1 bad mode, 2 already open, 3 cannot open
+int FileAcc_Close(int32_t* status, uint32_t handle);                              // "81 29": 0, 4 unknown (1.547 / 1.553: no status; 0, -1 unknown)
+int FileAcc_Transfer(int32_t* status, uint32_t handle, void* buf, uint32_t size); // "81 2A": 0, 4 unknown, 6 size 0 (1.547 / 1.553)
+int FileAcc_Seek(int32_t* status, uint32_t handle, uint32_t pos);                 // "81 2B" (1.573 on): 0, 4 unknown; pos -1 = the end
+void FileAcc_CloseAll(void);                                                      // at engine exit
 
 #endif // BGI_SYS_H_

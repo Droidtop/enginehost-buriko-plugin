@@ -80,8 +80,17 @@ typedef struct ProgramHeader // start of a "._bp" file
 } ProgramHeader_t;
 
 struct Wait;
+struct Thread;
 
-typedef struct Thread // 0x64 bytes in the original
+typedef struct AreaLoan // a part of a thread's code or data area lent to another thread ("81 44")
+{
+	struct Thread* holder; // the thread that runs in it
+	uint32_t off;          // its first byte in the area
+	uint32_t size;         // bytes
+	struct AreaLoan* next; // the loan below it: the list runs from the top of the area down
+} AreaLoan_t;
+
+typedef struct Thread // 0x64 bytes in the original (0x90 from 1.599)
 {
 	int32_t valid;          // 1 when the buffers below were allocated (0 for the root thread)
 	uint32_t id;            // serial number; the handle scripts see
@@ -94,19 +103,29 @@ typedef struct Thread // 0x64 bytes in the original
 	uint32_t stackEntries;  // capacity of `stack`, entries
 	PixBuf_t* stackBuf;     // owns `stack`
 	uint32_t* stack;        // the evaluation stack
-	uint32_t codeSize;      // capacity of the code area, bytes
+	uint32_t codeSize;      // the end of the part of the code area this thread may use, bytes from `code`
 	PixBuf_t* codeBuf;      // owns `code`
 	uint8_t* code;          // the code area: the loaded modules, back to back
 	ModuleNode_t* modules;  // most recently loaded first
 	uint32_t moduleCount;   // length of `modules`
 	uint32_t codeUsed;      // bytes of the code area the modules occupy
-	uint32_t dataSize;      // capacity of the data area, bytes
+	uint32_t dataSize;      // the end of the part of the data area this thread may use, bytes from `data`
 	PixBuf_t* dataBuf;      // owns `data`
 	uint8_t* data;          // call stack and locals
 	Heap_t* heap;           // local heap, 0x8000 bytes initially
 	struct Wait* wait;      // owned; polled while THR_FLAG_WAITING is set
 	uint32_t timerDeadline; // the thread timer ("80 58" .. "80 5A"), in GetTicks milliseconds
 	ThreadMsg_t* msgHead;   // the message queue, oldest first (the original keeps a list pseudo-node in front of it)
+	// a thread of "81 44" (1.599 on) runs in parts of another thread's areas:
+	struct Thread* lender; // the thread whose code area, data area and heap it uses; NULL when it has its own
+	uint32_t codeBase;     // the start of its part of the code area, where its own modules go (0 with its own area)
+	uint32_t dataBase;     // the start of its part of the data area, where its frame stack begins
+	// and a thread with areas of its own lends them out from the top down:
+	uint32_t codeCap;      // the size of its code area
+	uint32_t dataCap;      // the size of its data area
+	AreaLoan_t* codeLoans; // the parts of the code area lent out, highest first
+	AreaLoan_t* dataLoans; // the parts of the data area lent out, highest first
+	uint32_t loanCount;    // the threads holding them
 } Thread_t;
 
 #define THR_FLAG_WAITING 1u // blocked on `wait`: the scheduler polls it instead of running the thread
@@ -119,11 +138,21 @@ extern uint32_t gThreadSerial; // the id the next thread gets
  * 0 the result is a buffer-less list head (the root thread).  The thread
  * is not linked into any list. */
 Thread_t* Thread_New(uint32_t stackEntries, uint32_t codeSize, uint32_t dataSize);
-// release the buffers, modules, wait object and messages, then the thread itself (not unlinked)
+/* release the buffers, modules, wait object and messages, then the thread
+ * itself (not unlinked); a thread in borrowed areas gives them back */
 void Thread_Delete(Thread_t* t);
 // Thread_New appended to the end of the list that starts at `root`
 Thread_t* Thread_SpawnChild(Thread_t* root, uint32_t stackEntries, uint32_t codeSize, uint32_t dataSize);
-// unlink and delete `t` from root's list; 1 when it was found
+/* "81 44" (1.599 on): a thread with a stack of stackEntries values of its
+ * own that runs in codeSize and dataSize bytes cut from the tops of the
+ * code and data areas of t's lender (t itself when t has areas of its
+ * own) and uses the lender's heap; it starts at code offset ip with its
+ * frame stack at the start of its part of the data area, and is appended
+ * at the end of t's list.  0 with the thread in *out; 2 when the code
+ * area has no room for the part above the modules loaded in it, 3 when
+ * the data area has none (nothing is made then). */
+int Thread_SpawnBorrower(Thread_t* t, uint32_t stackEntries, uint32_t codeSize, uint32_t dataSize, uint32_t ip, Thread_t** out);
+// unlink and delete `t` from root's list, the threads that run in areas it lent first; 1 when it was found
 int Thread_KillChild(Thread_t* root, Thread_t* t);
 // delete every thread after `root`, the last one first
 void Thread_KillAllChildren(Thread_t* root);
@@ -391,7 +420,7 @@ void CheckVirtualKey(int32_t vk);                    // 0.. 255, no thread conte
 // the bitmap table: 4096 entries, 16384 from 1.69 build 472 on (the manager always has 16384 here)
 #define BMP_NO_LIMIT (gEngine->gen >= GEN_1_69_472 ? 0x4000 : 0x1000)
 void CheckBitmapNo(int32_t no, Thread_t* t);          // 0.. BMP_NO_LIMIT - 1
-void CheckPriority(uint32_t prio, Thread_t* t);       // 0.. 4095
+void CheckPriority(uint32_t prio, Thread_t* t);       // 0.. 4095; 0 .. 65535 from 1.529 on
 void ErrBitmapNotRegistered(int32_t no, Thread_t* t); // always raises
 void CheckEffectMode(uint32_t mode, Thread_t* t);     // one of the blitters' effect modes (checks.c lists them)
 void CheckAlpha(uint32_t level, Thread_t* t);         // 0.. 256

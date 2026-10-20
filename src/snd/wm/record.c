@@ -7,6 +7,7 @@
  *            timer steps, and the checks every call makes (wm_internal.h)
  */
 #include "wm_internal.h"
+#include "bgi/version.h"
 
 // every volume at full (0x80), no fades, nothing loaded; the voice pointer is cleared as well
 void Record_Reset(WmRecord_t* r)
@@ -19,10 +20,23 @@ void Record_Reset(WmRecord_t* r)
 }
 
 /* the attenuation in dB from the four volumes (each 0x80 = full),
- * 0.375 dB per step below full; 48 dB or more is cut to silence (0x80) */
+ * 0.375 dB per step below full; 48 dB or more is cut to silence (0x80).
+ * From 1.588 on the sum is not cut: only one volume at 0 silences (each
+ * is tested on its own, 48 dB = its full range), and the voice floors a
+ * deep attenuation itself. */
 int Record_Level(const WmRecord_t* r)
 {
-	int level = BGI_Ftol((double)(0x200 - r->fadeLevel - r->volume - r->aux - r->master) * 0.375);
+	int level;
+	if(gEngine->gen >= GEN_1_588)
+	{
+		const int32_t v[4] = {r->master, r->aux, r->volume, r->fadeLevel};
+		int i;
+		for(i = 0; i < 4; i++)
+			if((double)(0x80 - v[i]) / 2.66666666 >= 48.0)
+				return 0x80;
+		return BGI_Ftol((double)(0x200 - r->master - r->aux - r->volume - r->fadeLevel) / 2.66666666);
+	}
+	level = BGI_Ftol((double)(0x200 - r->fadeLevel - r->volume - r->aux - r->master) * 0.375);
 	return level < 0x30 ? level : 0x80;
 }
 

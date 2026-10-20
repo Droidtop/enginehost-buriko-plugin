@@ -309,6 +309,26 @@ static int Opcode_Gfx0_BmpLoad(Thread_t* t) // 90 10: bmp, arc, name →
 	return 0;
 }
 
+/* the slot made a zero-filled bitmap shaped like the picture file arc:name
+ * - its size, pixel mode and base size, read from the header as stored
+ * (BmpOp_CreateLikeFile); a missing file, or one that is not a
+ * CompressedBG or a raw image, is a script error; a slot that cannot be
+ * made passes silently */
+static int Opcode_Gfx0_BmpCreateLikeFile(Thread_t* t) // 90 C0 (1.547 on): bmp, arc, name →
+{
+	const char* name = (const char*)PopPtr(t);
+	const char* arc = (const char*)PopPtr(t);
+	int bmp = (int)Thread_Pop(t);
+	CheckBitmapNo(bmp, t);
+	switch(BmpOp_CreateLikeFile(bmp, arc, name))
+	{
+		case -1: GFX_ERROR(t, MSG_ARC_FILE_NOT_FOUND, arc, name); break;
+		case(int)BMP_ERR_NOT_BG: GFX_ERROR(t, MSG_ARC_FILE_NOT_BG, arc, name); break;
+		default: break;
+	}
+	return 0;
+}
+
 // allocate an empty bitmap of w x h pixels in pixel mode `mode` (0 .. 6) in the slot
 static int Opcode_Gfx0_BmpCreate(Thread_t* t) // 90 11: bmp, w, h, mode →
 {
@@ -2040,7 +2060,7 @@ static int Opcode_Gfx0_TextOut(Thread_t* t) // 90 90: h, str, param, instant, wa
  * inc/bgi/gfx/text.h); they take effect with the next output. */
 
 /* which input layer the text output listens on: `mode` 0 the standard
- * layer 2, 1 the fixed layer `layerNo` (below 0x1000), 2 the window's
+ * layer 2, 1 the fixed layer `layerNo` (a priority), 2 the window's
  * priority */
 static int Opcode_Gfx0_TextSetMode(Thread_t* t) // 90 91: mode, layerNo →
 {
@@ -2706,6 +2726,86 @@ static int Opcode_Gfx0_KnobRelease(Thread_t* t) // 90 DF: h →
 }
 
 // -------------------------------------------------------------------------
+// 90 CA : the aspect-keeping bicubic fit (1.616 on)
+// -------------------------------------------------------------------------
+
+/* src scaled into dst keeping its aspect ratio, centred, the bars beside
+ * it cleared (BmpOp_FitBicubic) */
+static int Opcode_Gfx0_FitBicubic(Thread_t* t) // 90 CA (1.616 on): dst, src →
+{
+	int src = (int)Thread_Pop(t);
+	int dst = (int)Thread_Pop(t);
+	switch(BmpOp_FitBicubic(dst, src))
+	{
+		case 0x80000009u: GFX_ERROR(t, MSG_TONE_DST_INVALID, dst); break;
+		case 0x8000000au: GFX_ERROR(t, MSG_GEN_SRC_INVALID, src); break;
+		default: break;
+	}
+	return 0;
+}
+
+// -------------------------------------------------------------------------
+// 90 C3 : a bitmap at half the size (1.599 on)
+// -------------------------------------------------------------------------
+
+// dst made src at half its size, 2 x 2 pixels averaged (BmpOp_HalfSize); the save thumbnails
+static int Opcode_Gfx0_HalfSize(Thread_t* t) // 90 C3 (1.599 on): dst, src →
+{
+	int src = (int)Thread_Pop(t);
+	int dst = (int)Thread_Pop(t);
+	CheckBitmapNo(dst, t);
+	CheckBitmapNo(src, t);
+	switch(BmpOp_HalfSize(dst, src))
+	{
+		case 0x80000006u: GFX_ERROR(t, MSG_SRC_TOO_SMALL, src); break;
+		case 0x80000009u: GFX_ERROR(t, MSG_TONE_DST_INVALID, dst); break;
+		case 0x8000000au: GFX_ERROR(t, MSG_GEN_SRC_INVALID, src); break;
+		default: break;
+	}
+	return 0;
+}
+
+// -------------------------------------------------------------------------
+// 90 C4, 90 C5 : picture files outside the archives (1.553 on)
+// -------------------------------------------------------------------------
+
+/* the picture file at `path` (BMP, PNG, JPEG, GIF; a path of the file
+ * system, not an archive name) into bmp at its own size: mode 1 RGB32, 2
+ * ARGB32, 3 GRAY8 (palette indices), -1 as the file is.  r 0 ok, with
+ * mode -1 1 no such file and 2 not readable, -1 any other failure (also
+ * a missing file with mode 1 .. 3) */
+static int Opcode_Gfx0_BmpLoadPicture(Thread_t* t) // 90 C4 (1.553 on): bmp, path, mode → r
+{
+	int mode = (int)Thread_Pop(t);
+	const char* path = (const char*)PopPtr(t);
+	int bmp = (int)Thread_Pop(t);
+	uint32_t r;
+	CheckBitmapNo(bmp, t);
+	r = (uint32_t)BmpOp_LoadPicture(bmp, path, mode);
+	Thread_Push(t, r == 0 ? 0 : r == 0x80000001u ? 1
+			: r == 0x80000002u                   ? 2
+												 : 0xFFFFFFFFu);
+	return 0;
+}
+
+/* bmp as a picture file at `path` (the whole name, nothing added): format
+ * 0 BMP, 1 JPEG at `quality`, 2 GIF, 3 TIFF, 4 PNG.  r 0 ok, 3 no bitmap,
+ * 4 another format, 5 not written (GIF and TIFF are never written here) */
+static int Opcode_Gfx0_BmpSavePicture(Thread_t* t) // 90 C5 (1.553 on): path, format, quality, bmp → r
+{
+	int bmp = (int)Thread_Pop(t);
+	int quality = (int)Thread_Pop(t);
+	uint32_t format = Thread_Pop(t);
+	const char* path = (const char*)PopPtr(t);
+	uint32_t r;
+	CheckBitmapNo(bmp, t);
+	r = (uint32_t)BmpOp_SavePicture(bmp, path, format, quality);
+	Thread_Push(t, r == 0 ? 0 : (r & 0xffu) >= 3 && (r & 0xffu) <= 5 ? (r & 0xffu)
+																	 : 0xFFFFFFFFu);
+	return 0;
+}
+
+// -------------------------------------------------------------------------
 // 90 CC, 90 CD : tone curves (1.616 on; src/gfx/tonecurve.c)
 // -------------------------------------------------------------------------
 
@@ -3225,6 +3325,11 @@ void Vm_Optable90Init(void)
 		{0xDD, Opcode_Gfx0_KnobSwapGlobal, GEN_FIRST, GEN_LAST},
 		{0xDE, Opcode_Gfx0_KnobCapture, GEN_FIRST, GEN_LAST},
 		{0xDF, Opcode_Gfx0_KnobRelease, GEN_FIRST, GEN_LAST},
+		{0xC0, Opcode_Gfx0_BmpCreateLikeFile, GEN_1_547, GEN_LAST},
+		{0xC3, Opcode_Gfx0_HalfSize, GEN_1_599, GEN_LAST},
+		{0xC4, Opcode_Gfx0_BmpLoadPicture, GEN_1_553, GEN_LAST},
+		{0xC5, Opcode_Gfx0_BmpSavePicture, GEN_1_553, GEN_LAST},
+		{0xCA, Opcode_Gfx0_FitBicubic, GEN_1_616, GEN_LAST},
 		{0xCC, Opcode_Gfx0_ToneCurveRegister, GEN_1_616, GEN_LAST},
 		{0xCD, Opcode_Gfx0_ToneCurveApply, GEN_1_616, GEN_LAST},
 		{0xE0, Opcode_Gfx0_GroupCreate, GEN_FIRST, GEN_LAST},

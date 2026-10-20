@@ -22,12 +22,18 @@ struct OsFile
 	char path[PATH_MAX]; // the POSIX path it was opened with
 };
 
-// fopen "rb" of the converted path; NULL when it cannot be opened
+// fopen "rb" of the converted path; NULL when it cannot be opened or is a directory (as CreateFile)
 OsFile_t* OS_FileOpenRead(const char* path)
 {
 	OsFile_t* f = (OsFile_t*)calloc(1, sizeof *f);
+	struct stat st;
 	OsPosix_Path(path, f->path, sizeof f->path);
 	f->f = fopen(f->path, "rb");
+	if(f->f && fstat(fileno(f->f), &st) == 0 && S_ISDIR(st.st_mode))
+	{
+		fclose(f->f);
+		f->f = NULL;
+	}
 	if(!f->f)
 	{
 		free(f);
@@ -42,6 +48,22 @@ OsFile_t* OS_FileCreate(const char* path)
 	OsFile_t* f = (OsFile_t*)calloc(1, sizeof *f);
 	OsPosix_Path(path, f->path, sizeof f->path);
 	f->f = fopen(f->path, "w+b");
+	if(!f->f)
+	{
+		free(f);
+		return NULL;
+	}
+	return f;
+}
+
+// OPEN_ALWAYS for writing: an existing file keeps its contents (at position 0), a missing one is created; NULL on failure
+OsFile_t* OS_FileOpenWrite(const char* path)
+{
+	OsFile_t* f = (OsFile_t*)calloc(1, sizeof *f);
+	OsPosix_Path(path, f->path, sizeof f->path);
+	f->f = fopen(f->path, "r+b");
+	if(!f->f && errno == ENOENT)
+		f->f = fopen(f->path, "w+b");
 	if(!f->f)
 	{
 		free(f);
@@ -74,10 +96,11 @@ int OS_FileSeek(OsFile_t* f, uint32_t pos)
 	return fseek(f->f, (long)pos, SEEK_SET) == 0;
 }
 
-// the size from fstat, cut to 32 bits; 0 on failure
+// the size from fstat, cut to 32 bits, with what is still buffered for writing; 0 on failure
 uint32_t OS_FileSize(OsFile_t* f)
 {
 	struct stat st;
+	fflush(f->f);
 	if(fstat(fileno(f->f), &st) != 0)
 		return 0;
 	return (uint32_t)st.st_size;
@@ -150,11 +173,15 @@ int OS_FileDelete(const char* path)
 	return unlink(p) == 0;
 }
 
+// MoveFile: 0 when `to` exists already (rename() would replace it), unless it is `from` itself under another case
 int OS_FileMove(const char* from, const char* to)
 {
 	char a[PATH_MAX], b[PATH_MAX];
+	struct stat sa, sb;
 	OsPosix_Path(from, a, sizeof a);
 	OsPosix_Path(to, b, sizeof b);
+	if(lstat(b, &sb) == 0 && !(lstat(a, &sa) == 0 && sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino))
+		return 0;
 	return rename(a, b) == 0;
 }
 

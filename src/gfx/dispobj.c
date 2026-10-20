@@ -67,6 +67,7 @@ void DispObj_Ctor(DispObj_t* o, int classOrder, int slotId)
 	o->proc = NULL;
 	o->pad84[0] = 0;
 	o->children = NULL;
+	o->hidden = o->enabledToChildren = o->hiddenToChildren = 0;
 	DispObj_SetEnabled(o, 1);
 	DispObj_SetVisible(o, 0);
 	DispObj_SetFlat(o, 1);
@@ -293,9 +294,24 @@ int DispObj_UpdateChildOffset(DispObj_t* o, DispObj_t* child)
 // plain fields
 // ========================================================================
 
+// "90 31"; passed on to the children when setParam 0xC0 asked for it (1.573 on)
 void DispObj_SetEnabled(DispObj_t* o, int f)
 {
+	ChildNode_t* n;
 	o->enabled = f;
+	if(o->enabledToChildren)
+		for(n = o->children; n; n = n->next)
+			DispObj_SetEnabled(n->obj, f);
+}
+
+// "91 31" (1.573 on); passed on to the children when setParam 0xC1 asked for it
+void DispObj_SetHidden(DispObj_t* o, int v)
+{
+	ChildNode_t* n;
+	o->hidden = v;
+	if(o->hiddenToChildren)
+		for(n = o->children; n; n = n->next)
+			DispObj_SetHidden(n->obj, v);
 }
 
 // the caller re-sorts the object in the compositor afterwards ("90 3A")
@@ -476,10 +492,11 @@ void DispObj_SetVisible(DispObj_t* o, int on)
 		n->obj->vt->setVisible(n->obj, on);
 }
 
-// shown, enabled, not faded out completely and (1.599 on) not fully transparent
+/* shown, enabled, not hidden (1.573 on), not faded out completely and
+ * (1.599 on) not fully transparent */
 int DispObj_IsVisible(DispObj_t* o)
 {
-	return o->visible && o->enabled && (uint32_t)o->fade < 0x100u && o->opacity > 0;
+	return o->visible && o->enabled && !o->hidden && (uint32_t)o->fade < 0x100u && o->opacity > 0;
 }
 
 /* Hand the object's screen rectangle and sort key to the compositor as a
@@ -501,13 +518,17 @@ void DispObj_Invalidate(DispObj_t* o)
 /* The key the compositor orders the objects by, ascending: the priority,
  * then the class order, then the creation order (flat objects) or the depth
  * (farther away sorts lower).  1.69/472 adds the bias of setParam 0x8100.
- * 1.640 adds sort mode 1 (setParam 0x8101): the priority, then the depth
- * over its whole 16-bit range, no class order. */
+ * 1.636 adds sort mode 1 (setParam 0x8101): the priority, then the depth
+ * over its whole 16-bit range, no class order; from 1.640 on the bias of
+ * setParam 0x8100 is added to that key too. */
 uint32_t DispObj_SortKey(DispObj_t* o)
 {
 	uint32_t hi;
-	if(o->sortMode == 1 && gEngine->gen >= GEN_1_640)
-		return ((uint32_t)o->priority << 16) + (uint32_t)(o->sortBias - (o->fz >> 16) + 0x7fff);
+	if(o->sortMode == 1 && gEngine->gen >= GEN_1_636)
+	{
+		int32_t bias = gEngine->gen >= GEN_1_640 ? o->sortBias : 0;
+		return ((uint32_t)o->priority << 16) + (uint32_t)(bias - (o->fz >> 16) + 0x7fff);
+	}
 	hi = ((uint32_t)(o->priority * 16 + o->classOrder) << 16) + (uint32_t)o->sortBias;
 	if(o->flat)
 		return hi + (uint32_t)o->slotId;
@@ -626,8 +647,9 @@ void DispObj_SetLevel(DispObj_t* o, int level)
  *   0x8000      snap to pixel; 1.494 on takes a second value, the snap mode
  *   0x8001      1.494 on: no perspective scaling of a projected sprite
  *   0x8100      1.69/472 on: the sort bias
- *   0x8101      1.640 on: the sort mode, 0 or 1
- *   0xC0, 0xC1  1.573 on: the visible flag and the priority, set directly
+ *   0x8101      1.636 on: the sort mode, 0 or 1
+ *   0xC0        1.573 on: pass "90 31" on to the children (enabledToChildren)
+ *   0xC1        1.573 on: pass "91 31" on to the children (hiddenToChildren)
  *   0xC4        1.616 on: follow the "91 06" offset (default)
  *   0xC5        1.640 on: a switch, default 1 (stored; its use was not found)
  *   0xFFFF      1.640 on: a = the bits (0: all), b = set or clear them
@@ -646,12 +668,12 @@ int DispObj_SetParam(DispObj_t* o, int no, int a, int b)
 		case 0xc0:
 			if(gEngine->gen < GEN_1_573)
 				break;
-			o->visible = a;
+			o->enabledToChildren = a;
 			return 0;
 		case 0xc1:
 			if(gEngine->gen < GEN_1_573)
 				break;
-			o->priority = a;
+			o->hiddenToChildren = a;
 			return 0;
 		case 0xc4:
 			if(gEngine->gen < GEN_1_616)
@@ -675,7 +697,7 @@ int DispObj_SetParam(DispObj_t* o, int no, int a, int b)
 			o->sortBias = a;
 			return 0;
 		case 0x8101:
-			if(gEngine->gen < GEN_1_640)
+			if(gEngine->gen < GEN_1_636)
 				break;
 			if((uint32_t)a > 1)
 				return (int)0xffff0002;

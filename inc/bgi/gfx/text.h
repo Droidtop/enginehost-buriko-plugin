@@ -127,7 +127,7 @@ void Text_SetRubyFont(const char* face, int size, int widthPct, int dx, int dy);
 extern int32_t gTextFunc[TEXT_FUNC_MAX]; // [0] = function 0, [1 + n] = function 0x80000000 + n
 uint32_t Text_SetFunction(uint32_t func, int32_t param);
 int Text_SetScaleDivisor(int32_t v); // "91 99" (1.529 on): 1 ok, 0 bad
-/* 1.640 on, "92 9B": what the last rich layout into a bitmap ("91 9C" /
+/* 1.636 on, "92 9B": what the last rich layout into a bitmap ("91 9C" /
  * "91 9D" / "92 9C") left behind - the pen position after its last
  * character and the colour in effect there (after the colour tags) */
 extern int32_t gTextLastPos[2];

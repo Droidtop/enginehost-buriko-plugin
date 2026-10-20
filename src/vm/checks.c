@@ -75,9 +75,9 @@ void CheckBitmapNo(int32_t no, Thread_t* t) // 0.. 4095; 0.. 16383 from 1.69 bui
 		CHECK_ERROR(t, MSG_BAD_BITMAP_NO, no);
 }
 
-void CheckPriority(uint32_t prio, Thread_t* t) // 0.. 4095: a display priority
+void CheckPriority(uint32_t prio, Thread_t* t) // a display priority: 0.. 4095; 0 .. 65535 from 1.529 on
 {
-	if(prio >= 0x1000)
+	if(prio >= (gEngine->gen >= GEN_1_529 ? 0x10000u : 0x1000u))
 		CHECK_ERROR(t, MSG_BAD_PRIORITY, (int)prio);
 }
 

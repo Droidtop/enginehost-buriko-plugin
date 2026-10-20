@@ -325,6 +325,125 @@ int BmpOp_Stretch(int dst, int x, int y, int w, int h, int src, int sx, int sy, 
 	}
 }
 
+/* the view narrowed to r, or left whole when r misses it (the original's
+ * crop, which "90 CA" relies on for a bar of no height) */
+static void Bmp_CropOrKeep(Bmp_t* b, const Rect_t* r)
+{
+	Rect_t c;
+	Rect_FromBmp(&c, b);
+	if(Rect_Clip(&c, r))
+		Bmp_Crop(b, &c);
+}
+
+// x rounded down, a fraction of 1023/1024 or more counting as the next whole number
+static int32_t FloorSnap(double x)
+{
+	double f = floor(x);
+	return BGI_Ftol(x - f >= 1.0 - 0.0009765625 ? ceil(x) : f);
+}
+
+/* "90 CA" (1.616 on): src scaled into dst with its aspect ratio kept -
+ * the smaller of the ratios dst / src - and centred, through the bicubic
+ * scaler (Blit_Bicubic); the bars above and below it, or beside it, are
+ * cleared to 0 - each bar being (dst - src * scale) / 2 pixels rounded
+ * down (FloorSnap), and a bar of no height clearing the whole picture,
+ * which the scaled source then covers.  0 ok, 0x80000009 no destination,
+ * 0x8000000a no source. */
+uint32_t BmpOp_FitBicubic(int dst, int src)
+{
+	Bmp_t d, s, mid;
+	Rect_t full, a, b, m;
+	double rx, ry, scale;
+	int32_t bar;
+	if(!BmpMgr_GetInfo(gBmpMgr, &d, dst))
+		return 0x80000009u;
+	if(!BmpMgr_GetInfo(gBmpMgr, &s, src))
+		return 0x8000000au;
+	rx = (double)(uint32_t)d.w / (double)(uint32_t)s.w;
+	ry = (double)(uint32_t)d.h / (double)(uint32_t)s.h;
+	Rect_FromBmp(&full, &d);
+	a = b = m = full;
+	if(ry < rx)
+	{ // bars left and right
+		scale = ry;
+		bar = FloorSnap(((double)(uint32_t)d.w - (double)(uint32_t)s.w * scale) * 0.5);
+		a.r = bar - 1;
+		b.l = full.r - bar + 1;
+		m.l = bar;
+		m.r = full.r - bar;
+	}
+	else
+	{ // bars above and below
+		scale = rx;
+		bar = FloorSnap(((double)(uint32_t)d.h - (double)(uint32_t)s.h * scale) * 0.5);
+		a.b = bar - 1;
+		b.t = full.b - bar + 1;
+		m.t = bar;
+		m.b = full.b - bar;
+	}
+	mid = d;
+	Bmp_CropOrKeep(&mid, &a);
+	Bmp_Clear(&mid, NULL);
+	mid = d;
+	Bmp_CropOrKeep(&mid, &b);
+	Bmp_Clear(&mid, NULL);
+	mid = d;
+	Bmp_CropOrKeep(&mid, &m);
+	Blit_Bicubic(&mid, (float)((double)(uint32_t)mid.w * 0.5), (float)((double)(uint32_t)mid.h * 0.5), &s,
+		(float)((double)(uint32_t)s.w * 0.5), (float)((double)(uint32_t)s.h * 0.5), (float)scale, (float)scale);
+	return 0;
+}
+
+// the rounded-up mean of two bytes (the SSE2 pavgb the original filters with)
+static inline uint8_t Avg2(uint8_t a, uint8_t b)
+{
+	return (uint8_t)((a + b + 1) >> 1);
+}
+
+uint32_t BmpOp_HalfSize(int dst, int src)
+{
+	Bmp_t s, d;
+	int32_t outW, outH, x, y, c, oddW, oddH;
+	if(!BmpMgr_GetInfo(gBmpMgr, &s, src))
+		return 0x8000000au;
+	if((uint32_t)s.w < 2 || (uint32_t)s.h < 2)
+		return 0x80000006u;
+	if(!BmpMgr_Create(gBmpMgr, dst, (int)(((uint32_t)s.w + 1) >> 1), (int)(((uint32_t)s.h + 1) >> 1), s.mode))
+		return 0x80000009u;
+	BmpMgr_GetInfo(gBmpMgr, &d, dst);
+	if(dst == src)
+		s = d; // the original reads the replaced bitmap here
+	if(d.mode != s.mode || (s.mode != PM_RGB32 && s.mode != PM_ARGB32) || !s.pixels || !d.pixels)
+		return 0;
+	outW = (uint32_t)d.w <= (uint32_t)s.w >> 1 ? d.w : (int32_t)((uint32_t)s.w >> 1);
+	outH = (uint32_t)d.h <= (uint32_t)s.h >> 1 ? d.h : (int32_t)((uint32_t)s.h >> 1);
+	oddW = (uint32_t)d.w * 2 > (uint32_t)s.w ? s.w & 1 : 0;
+	oddH = (uint32_t)d.h * 2 > (uint32_t)s.h ? s.h & 1 : 0;
+	for(y = 0; y < outH; y++)
+	{
+		const uint8_t* r0 = s.pixels + (ptrdiff_t)(2 * y) * s.pitch;
+		const uint8_t* r1 = r0 + s.pitch;
+		uint8_t* o = d.pixels + (ptrdiff_t)y * d.pitch;
+		for(x = 0; x < outW; x++, r0 += 8, r1 += 8, o += 4)
+			for(c = 0; c < 4; c++)
+				o[c] = Avg2(Avg2(r0[4 + c], r1[4 + c]), Avg2(r0[c], r1[c]));
+		if(oddW)
+			for(c = 0; c < 4; c++)
+				o[c] = Avg2(r0[c], r1[c]);
+	}
+	if(oddH)
+	{
+		const uint8_t* r0 = s.pixels + (ptrdiff_t)(2 * outH) * s.pitch;
+		uint8_t* o = d.pixels + (ptrdiff_t)outH * d.pitch;
+		for(x = 0; x < outW; x++, r0 += 8, o += 4)
+			for(c = 0; c < 4; c++)
+				o[c] = Avg2(r0[4 + c], r0[c]);
+		if(oddW)
+			memcpy(o, r0, 4);
+	}
+	return 0;
+}
+
 /* "90 1D": src rotated by angle (16.16 degrees) and zoomed (16.16) about
  * its centre into dst, nearest sampling (Blit_RotateCentred).  0 ok, 1 /
  * 2 no destination / source, 3 modes differ, 4 zoom <= 0. */

@@ -38,10 +38,10 @@
 #define PTCL_MAX  0x8000
 #define PtclMax() (gEngine->gen >= GEN_1_529 ? 0x8000 : gEngine->gen >= GEN_1_494 ? 0x4000 \
 																				  : 0x1000)
-/* 8 patterns per type until 1.616; 1.640 has 64.
+/* 8 patterns per type until 1.616; 64 from 1.636 on.
  * The tables are sized for 64, the checks use the generation's count. */
 #define PTCL_PATTERNS  64
-#define PtclPatterns() ((uint32_t)(gEngine->gen >= GEN_1_640 ? 64 : 8))
+#define PtclPatterns() ((uint32_t)(gEngine->gen >= GEN_1_636 ? 64 : 8))
 #define PTCL_SCALES    32 // pre-scaled copies per pattern: 32/32 down to 1/32
 
 typedef struct Particle Particle_t;
@@ -57,7 +57,7 @@ struct Particle // base, 0x28 bytes
 {
 	const ParticleVtbl_t* vt;
 	int32_t type;       // 0 or 1
-	int32_t pattern;    // 0 .. 7 (0 .. 63 from 1.640)
+	int32_t pattern;    // 0 .. 7 (0 .. 63 from 1.636)
 	int32_t alive;      // 0 once dead; the next tick removes it from its slot
 	int32_t x, y, z;    // 24.8
 	int32_t windWeight; // 24.8: how strongly the wind moves it
@@ -66,7 +66,7 @@ struct Particle // base, 0x28 bytes
 	/* 1.494 on: the frame of an animated pattern ("C0 18"): 16.16 frame
 	 * position and its advance per tick */
 	int32_t framePos, frameRate;
-	// 1.640 on: the same for the pattern's alternate image ("C0 1A", type 1)
+	// 1.636 on: the same for the pattern's alternate image ("C0 1A", type 1)
 	int32_t altPos, altRate;
 };
 
@@ -133,7 +133,7 @@ typedef struct PatternAnim
 	int32_t rate1, rate2;       // frames per tick, 16.16: base and random spread
 } PatternAnim_t;
 extern PatternAnim_t gPatternAnim[2][PTCL_PATTERNS]; // [type][pattern]
-/* 1.640 on: the "alternate image" of a type 1 pattern ("C0 1A"): a second
+/* 1.636 on: the "alternate image" of a type 1 pattern ("C0 1A"): a second
  * animation, mixed into the picture by a level of 0 .. 0x100 ("C0 1B";
  * 0 shows the picture alone, 0x100 the alternate frame alone) */
 extern PatternAnim_t gPatternAlt[PTCL_PATTERNS];

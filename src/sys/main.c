@@ -39,24 +39,34 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int show)
 
 #else
 
-// the POSIX entry point: the arguments are rejoined into one command line
+/* the POSIX entry point: the arguments are rejoined into one command line,
+ * as GetCommandLine would give it without the program name - joined by
+ * single spaces, an argument with a space or a tab in it (a game directory
+ * "VN/[August] Fortune Arterial", Do not use mutex.) in double quotes
+ * unless it already is in them.  Arguments that do not fit the buffer are
+ * dropped. */
 int main(int argc, char** argv)
 {
-	// the arguments joined by single spaces, as GetCommandLine would give them without the program name;
-	// arguments that do not fit the buffer are dropped
 	char cmdLine[0x1000];
 	size_t len = 0;
 	int i, r;
 	cmdLine[0] = 0;
 	for(i = 1; i < argc; i++)
 	{
-		size_t n = strlen(argv[i]);
-		if(len + n + 2 >= sizeof cmdLine)
+		const char* a = argv[i];
+		size_t n = strlen(a);
+		int quote = strpbrk(a, " \t") != NULL && !(n >= 2 && a[0] == '"' && a[n - 1] == '"');
+		if(len + n + 4 >= sizeof cmdLine)
 			break;
 		if(len)
 			cmdLine[len++] = ' ';
-		memcpy(cmdLine + len, argv[i], n + 1);
+		if(quote)
+			cmdLine[len++] = '"';
+		memcpy(cmdLine + len, a, n);
 		len += n;
+		if(quote)
+			cmdLine[len++] = '"';
+		cmdLine[len] = 0;
 	}
 	OS_SetArgv0(argv[0]);
 	if(!OS_Init())

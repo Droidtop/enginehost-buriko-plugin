@@ -493,14 +493,16 @@ static int Opcode_Gfx2_SetRubyFontEx(Thread_t* t)
 	return 0;
 }
 
-/* 92 9D (1.529 on): face, size, width, bold, italic → code
- * The font the "<l>" link markup switches to (an empty face keeps the
- * text's own).  code: 0 ok, 1 bad size (not 4 .. 200), 2 bad width (not
- * 25 .. 200), 3 the face cannot be opened, -1 anything else. */
+/* 92 9D (1.529 on): fontNo, size, width, bold, italic → code
+ * The font the "<l>" link markup switches to: a number of the font
+ * registry ("B0 C0"), as in "92 97"; an unknown number, such as the -1 of
+ * Sen no Hatou's ipl._bp, keeps the text's own face.  code: 0 ok, 1 bad
+ * size (not 4 .. 200), 2 bad width (not 25 .. 200), 3 the face cannot be
+ * opened, -1 anything else. */
 static int Opcode_Gfx2_SetLinkFont(Thread_t* t)
 {
 	int italic = (int)Thread_Pop(t), bold = (int)Thread_Pop(t), width = (int)Thread_Pop(t), size = (int)Thread_Pop(t);
-	const char* face = (const char*)PopPtr(t);
+	const char* face = FontNameByNo((int)Thread_Pop(t));
 	uint32_t code;
 	switch(Text_SetLinkFont(face, size, width, bold, italic))
 	{
@@ -553,7 +555,7 @@ static int Opcode_Gfx2_TextAbcWidths(Thread_t* t)
 	return 0;
 }
 
-/* 92 9B (1.640 on): no, out →
+/* 92 9B (1.636 on): no, out →
  * A parameter of the last rich text layout into a bitmap ("91 9C" / "91
  * 9D" / "92 9C") into *out: 0x100 the pen position after its last
  * character (two words), 0x101 the text colour in effect there (the colour
@@ -716,7 +718,7 @@ void Vm_Optable92Init(void)
 		{0x9D, Opcode_Gfx2_SetLinkFont, GEN_1_529, GEN_LAST},
 		{0x9E, Opcode_Gfx2_TakeLinks, GEN_1_529, GEN_LAST},
 		{0x99, Opcode_Gfx2_TextAbcWidths, GEN_1_653, GEN_LAST},
-		{0x9B, Opcode_Gfx2_TextLayoutParam, GEN_1_640, GEN_LAST},
+		{0x9B, Opcode_Gfx2_TextLayoutParam, GEN_1_636, GEN_LAST},
 		{0x9F, Opcode_Gfx2_SetLinkColour, GEN_1_529, GEN_LAST},
 		{0xF0, Opcode_Gfx2_MoviePlayArc, GEN_1_494, GEN_LAST},
 		{0xF1, Opcode_Gfx2_SeqLoad, GEN_1_547, GEN_LAST},

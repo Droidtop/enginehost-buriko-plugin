@@ -275,11 +275,30 @@ static void Wnd_MouseWheel(int delta)
 	Input_OnKeyUp(vk);
 }
 
-/* The window gained or lost the focus.  Coming back after a scripted
- * minimise ("80 65") resumes the sound and restores the display mode. */
+/* The window gained or lost the focus.  From 1.535 on, once the engine is
+ * up, the clock stops while the window is inactive when "81 68" asked for
+ * that, and from 1.547 on the sound is held with it (Sound_HoldAll; the
+ * activation lets whatever was held play on).  Coming back after a
+ * scripted minimise ("80 65") resumes the sound and restores the display
+ * mode. */
 static void Wnd_Activate(int active)
 {
 	gWindowActive = active != 0;
+	if(gEngine->gen >= GEN_1_535 && gEngineUp)
+	{
+		if(active)
+		{
+			Clock_Resume();
+			if(gEngine->gen >= GEN_1_547)
+				Sound_HoldAll(0);
+		}
+		else
+		{
+			Clock_Stop(0);
+			if(gEngine->gen >= GEN_1_547 && Clock_StopsWhenInactive())
+				Sound_HoldAll(1);
+		}
+	}
 	if(active && gMinimizedByScript && !OS_WindowMinimized())
 	{
 		Sound_ResumeAll();

@@ -74,12 +74,45 @@ int FontNames_Register(const char* name, int kind)
 	return FontNames_Add(name);
 }
 
-// "B0 C2": add a font file next to the game to the system; 1 when the system took it
+/* From 1.494 on the font files added to the system are remembered by the
+ * name the script gave ("B0 C2" and "B0 C3" share the list): adding one
+ * again answers 1 without touching the system. */
+typedef struct FontFile
+{
+	char* name;
+	struct FontFile* next;
+} FontFile_t;
+static FontFile_t* gFontFiles;
+
+static int FontFiles_Known(const char* file)
+{
+	FontFile_t* f;
+	for(f = gFontFiles; f; f = f->next)
+		if(strcmp(f->name, file) == 0)
+			return 1;
+	return 0;
+}
+
+static void FontFiles_Remember(const char* file)
+{
+	FontFile_t* f = (FontFile_t*)BGI_Alloc(sizeof *f);
+	f->name = BGI_Strdup(file);
+	f->next = gFontFiles;
+	gFontFiles = f;
+}
+
+// "B0 C2": add a font file next to the game to the system; 1 when the system took it (or, 1.494 on, had it already)
 int FontNames_AddFile(const char* file)
 {
 	char path[0x208];
+	int r;
+	if(gEngine->gen >= GEN_1_494 && FontFiles_Known(file))
+		return 1;
 	snprintf(path, sizeof path, "%s%s", gBaseDir, file);
-	return OS_FontAddFile(path);
+	r = OS_FontAddFile(path);
+	if(r && gEngine->gen >= GEN_1_494)
+		FontFiles_Remember(file);
+	return r;
 }
 
 /* "B0 C7" of 1.535 on: the face to use when a face is
@@ -132,17 +165,30 @@ const char* FontNames_Resolve(const char* face)
 
 /* "B0 C3" (1.494 on): add a font file of an archive to the system (a NULL
  * archive means the game directory, as "B0 C2"); 1 when the system took
- * it, 0 when the file is missing or refused */
+ * it or had it already.  The size is asked first, the way "80 35" finds
+ * it (a loose copy wins), so an entry that is not there answers 0 instead
+ * of the loader's "does not exist" error - a translation patch's boot
+ * program names a font that no archive holds to keep the game's own
+ * faces out and get the fallbacks; 0 also when the entry cannot be read
+ * whole or the system refuses it. */
 int FontNames_AddFileFromArc(const char* arc, const char* file)
 {
 	uint8_t* buf;
 	uint32_t n;
-	int r;
+	int r = 0;
 	if(!arc)
 		return FontNames_AddFile(file);
-	buf = (uint8_t*)BGI_Alloc(0x2000000);
-	n = LoadFile(buf, arc, file);
-	r = n ? OS_FontAddMemory(buf, n) : 0;
+	if(FontFiles_Known(file))
+		return 1;
+	n = GetFileSize_(arc, file);
+	if(!n)
+		return 0;
+	buf = (uint8_t*)BGI_Alloc(n);
+	if(LoadFile(buf, arc, file) == n && OS_FontAddMemory(buf, n))
+	{
+		FontFiles_Remember(file);
+		r = 1;
+	}
 	BGI_Free(buf);
 	return r;
 }

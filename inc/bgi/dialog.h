@@ -19,12 +19,15 @@
 
 /* "B0 84": one text field; `out` (0x100 bytes) receives the entry when
  * confirmed.  NULL title / initial text are allowed (title: "comment
- * input").  1 ok, 0 cancelled. */
+ * input"); from 1.616 on a negative maxLen asks for a digits-only field
+ * of -maxLen characters.  1 ok, 0 cancelled. */
 int Dialog_Input1(char* out, const char* title, const char* initial, int maxLen);
-/* "B0 85": two labelled text fields (defaults: title "data input", labels
- * "first string" / "second string").  1 ok, 0 cancelled. */
+/* "B0 85" / "B0 87": two labelled text fields (defaults: title "data
+ * input", labels "first string" / "second string"); "B0 87" (1.573 on)
+ * can place them side by side (`compact`) and make either digits-only.
+ * 1 ok, 0 cancelled. */
 int Dialog_Input2(char* out1, char* out2, const char* title, const char* label1, const char* initial1, int maxLen1,
-	const char* label2, const char* initial2, int maxLen2);
+	int digits1, const char* label2, const char* initial2, int maxLen2, int digits2, int compact);
 /* "B0 8F": the player profile - surname, given name, nickname, first
  * person pronoun (0x100 byte buffers holding the initial texts, at most 10
  * bytes are used) and a birthday as month / day indices (0 based, in and

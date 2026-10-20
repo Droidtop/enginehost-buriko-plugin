@@ -12,7 +12,7 @@
  * order, "a, b → r" means b is on top of the stack, the Check* validators
  * raise and never return (channels are 0 .. 15, slots 0 .. 63, volumes
  * and pans 0 .. 0x80), library result codes map to script errors.  The
- * effect loads (A0 20, A0 21) install a wait object and return scheduler
+ * effect loads (A0 20, A0 21, A0 27, A0 28) install a wait object and return scheduler
  * code 2 (end of turn, the thread blocked until the load completes);
  * everything else returns 0.
  */
@@ -60,6 +60,30 @@ static int Opcode_Snd_SeMasterVolume(Thread_t* t) // A0 09: slot, vol →
 	CheckVolume(vol, t);
 	CheckSeSlot(slot, t);
 	Se_SetMasterVolume(slot, vol);
+	return 0;
+}
+
+/* the channel's own volume (0 .. 0x80), a fourth factor besides the
+ * master, track and fade volumes, applied at once and kept across tracks
+ * (the time signals' volume); the volume is checked before the channel */
+static int Opcode_Snd_BgmChannelVolume(Thread_t* t) // A0 1C (1.553 on): ch, vol →
+{
+	uint32_t vol = Thread_Pop(t);
+	int ch = (int)Thread_Pop(t);
+	CheckVolume(vol, t);
+	CheckBgmChannel(ch, t);
+	Bgm_SetChannelVolume(ch, vol);
+	return 0;
+}
+
+// the slot's own volume (0 .. 0x80), kept when the slot is loaded again; the volume is checked first
+static int Opcode_Snd_SeChannelVolume(Thread_t* t) // A0 2C (1.588 on): slot, vol →
+{
+	uint32_t vol = Thread_Pop(t);
+	int slot = (int)Thread_Pop(t);
+	CheckVolume(vol, t);
+	CheckSeSlot(slot, t);
+	Se_SetChannelVolume(slot, vol);
 	return 0;
 }
 
@@ -196,7 +220,7 @@ static int Opcode_Snd_SeLoad(Thread_t* t) // A0 20: slot, arc, name →
 	const char* arc = (const char*)PopPtr(t);
 	int slot = (int)Thread_Pop(t);
 	CheckSeSlot(slot, t);
-	Thread_SetWait(t, WaitSeLoad_New(t, slot, arc, name, 0, 1.0));
+	Thread_SetWait(t, WaitSeLoad_New(t, slot, arc, name, 0, 1.0, 1.0));
 	return 2;
 }
 
@@ -212,30 +236,53 @@ static int Opcode_Snd_SeLoadEx(Thread_t* t)
 	const char* arc = (const char*)PopPtr(t);
 	int slot = (int)Thread_Pop(t);
 	CheckSeSlot(slot, t);
-	Thread_SetWait(t, WaitSeLoad_New(t, slot, arc, name, fadeInMs, gain16 / 65536.0));
+	Thread_SetWait(t, WaitSeLoad_New(t, slot, arc, name, fadeInMs, gain16 / 65536.0, 1.0));
 	return 2;
 }
 
-/* A0 28 (1.547 on): slot, data, mode, gain16, rate16 →
- * "A0 21" for a BW file the script holds in memory (bsctrl2._bp reads a
+/* A0 27 (1.547 on): slot, arc, name, fadeInMs, gain16, rate16 →
+ * "A0 21" with a 16.16 playback rate: the effect plays that many times as
+ * fast at the same pitch (the scripts' voice speed; the library stretches
+ * the decoded samples in 30 ms chunks, WmStream_TimeStretch), and the
+ * length "A0 24" / "A0 2F" report is divided by it.  Neither the rate nor
+ * the gain is range-checked; a rate that is not above 0 plays the effect
+ * unstretched (the original's loader hangs on 0). */
+static int Opcode_Snd_SeLoadRate(Thread_t* t)
+{
+	int32_t rate16 = (int32_t)Thread_Pop(t);
+	int32_t gain16 = (int32_t)Thread_Pop(t);
+	int fadeInMs = (int)Thread_Pop(t);
+	const char* name = (const char*)PopPtr(t);
+	const char* arc = (const char*)PopPtr(t);
+	int slot = (int)Thread_Pop(t);
+	CheckSeSlot(slot, t);
+	Thread_SetWait(t, WaitSeLoad_New(t, slot, arc, name, fadeInMs, gain16 / 65536.0, rate16 / 65536.0));
+	return 2;
+}
+
+/* A0 28 (1.547 on): slot, data, fadeInMs, gain16, rate16 →
+ * "A0 27" for a BW file the script holds in memory (bsctrl2._bp reads a
  * voice file into a heap block and plays it as an effect): the data is
- * decoded whole before the wait ends, so the script may free it after.
- * `mode` (1 in every script) and the 16.16 playback rate (1.0 there; the
- * original's "A0 21" of these builds passes 1.0 for it as well) are
- * accepted and left alone - the effect plays at the file's rate. */
+ * decoded whole before the wait ends, so the script may free it after. */
 static int Opcode_Snd_SeLoadMem(Thread_t* t)
 {
-	int32_t gain16;
-	const void* data;
-	int slot;
-	Thread_Pop(t); // rate16
-	gain16 = (int32_t)Thread_Pop(t);
-	Thread_Pop(t); // mode
-	data = PopPtr(t);
-	slot = (int)Thread_Pop(t);
+	int32_t rate16 = (int32_t)Thread_Pop(t);
+	int32_t gain16 = (int32_t)Thread_Pop(t);
+	int fadeInMs = (int)Thread_Pop(t);
+	const void* data = PopPtr(t);
+	int slot = (int)Thread_Pop(t);
 	CheckSeSlot(slot, t);
-	Thread_SetWait(t, WaitSeMem_New(t, slot, data, gain16 / 65536.0));
+	Thread_SetWait(t, WaitSeMem_New(t, slot, data, fadeInMs, gain16 / 65536.0, rate16 / 65536.0));
 	return 2;
+}
+
+// A0 2F (1.573 on): the effect's length in ms as "A0 24" reports it, without starting it
+static int Opcode_Snd_SeLength(Thread_t* t) // A0 2F: slot → length
+{
+	int slot = (int)Thread_Pop(t);
+	CheckSeSlot(slot, t);
+	Thread_Push(t, (uint32_t)Se_GetLength(slot));
+	return 0;
 }
 
 static int Opcode_Snd_SeUnload(Thread_t* t) // A0 22: slot →
@@ -345,13 +392,17 @@ void Vm_OptableA0Init(void)
 		{0x17, Opcode_Snd_BgmPan, GEN_FIRST, GEN_LAST},
 		{0x18, Opcode_Snd_BgmFadeIn, GEN_FIRST, GEN_LAST},
 		{0x19, Opcode_Snd_BgmFadeOut, GEN_FIRST, GEN_LAST},
+		{0x1C, Opcode_Snd_BgmChannelVolume, GEN_1_553, GEN_LAST},
 		{0x20, Opcode_Snd_SeLoad, GEN_FIRST, GEN_LAST},
 		{0x21, Opcode_Snd_SeLoadEx, GEN_FIRST, GEN_LAST},
 		{0x22, Opcode_Snd_SeUnload, GEN_FIRST, GEN_LAST},
 		{0x24, Opcode_Snd_SePlay, GEN_FIRST, GEN_LAST},
 		{0x25, Opcode_Snd_SeStop, GEN_FIRST, GEN_LAST},
 		{0x26, Opcode_Snd_SeFadeOut, GEN_FIRST, GEN_LAST},
+		{0x27, Opcode_Snd_SeLoadRate, GEN_1_547, GEN_LAST},
 		{0x28, Opcode_Snd_SeLoadMem, GEN_1_547, GEN_LAST},
+		{0x2C, Opcode_Snd_SeChannelVolume, GEN_1_588, GEN_LAST},
+		{0x2F, Opcode_Snd_SeLength, GEN_1_573, GEN_LAST},
 		{0x80, Opcode_Snd_CdOpen, GEN_FIRST, GEN_LAST},
 		{0x81, Opcode_Snd_CdClose, GEN_FIRST, GEN_LAST},
 		{0x84, Opcode_Snd_CdPlay, GEN_FIRST, GEN_LAST},

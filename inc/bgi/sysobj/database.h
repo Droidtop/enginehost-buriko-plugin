@@ -8,9 +8,10 @@
  * 0x400 bytes of global memory, the system area (gSysArea, which "80 82"
  * writes and "80 83" reads), the global names and the flag groups.
  * "80 80" loads it, "80 81" saves it; the engine reads the window
- * position from it when it creates the window.  The file is SDC-encoded
- * (codec.h); it lives next to the game until 1.69 build 444 and in the
- * user's data directory ("80 39") from build 472 on.
+ * position from it when it creates the window; "81 80" merges another
+ * copy into the live state.  The file is SDC-encoded (codec.h); it lives
+ * next to the game until 1.69 build 444 and in the user's data directory
+ * ("80 39") from build 451 on.
  */
 #ifndef BGI_SYSOBJ_DATABASE_H_
 #define BGI_SYSOBJ_DATABASE_H_
@@ -24,7 +25,14 @@ int GlobalDB_Save(void);
 uint32_t GlobalDB_Load(void);
 /* the window position the database holds, when the window would still be
  * on the screen from there; 1 and the position in *x, *y, else 0 */
-int SavedWindowPos_Load(int* x, int* y);
+int SavedWindowPos_Load(int* x, int* y); /* "81 80" (1.636 on): merge the SDC-encoded GDB 3.00 file image `img`
+ * into the live state - its names added to the live ones, its flag groups
+ * OR'ed into them - and copy its global memory prefix (0x400 bytes) to
+ * `globals` and its system area (0x100000 bytes) to `sysarea` when those
+ * are not NULL, zero-padded; *globalsSize = 0x400 and *sysareaSize =
+ * 0x100000 always.  0 ok, 0x80000002 not SDC, a wrong decoded size, not
+ * GDB 3.00 */
+uint32_t GlobalDB_MergeImage(const void* img, void* globals, uint32_t* globalsSize, void* sysarea, uint32_t* sysareaSize);
 
 // create the pieces the database covers (the system area, the flag manager, the names) / free them
 void SysArea_Init(void);

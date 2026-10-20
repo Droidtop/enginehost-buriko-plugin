@@ -34,6 +34,20 @@
  *   heap         - lalloc / lfree: tagged, non-overlapping blocks
  *   errors       - a jump to NULL raises a script error; an undefined
  *                  opcode has no handler
+ *   extensions   - the "EF xx" family of OpenBGI's own instructions exists
+ *                  in the profile, reports its level and sets the text
+ *                  switches it is there for
+ *   later builds - the services that instructions of the later builds rely
+ *                  on: the priority limit by generation, the kept error of
+ *                  "81 6A" / "81 6B", the gamepad table of "81 1B" and the
+ *                  clock settings of "81 68" / "81 04"
+ *   borrowed areas - the threads of "81 44" in parts of another thread's
+ *                  code and data areas: where the parts go, what the
+ *                  lender keeps, frames and modules of a borrower, the
+ *                  order in which they end, the instruction itself
+ *   files        - "80 27" moving a file, the file accessor "81 28" ..
+ *                  "81 2B" in both of its generations, the result codes
+ *                  of the file dialog "81 38"
  *
  * A failure means an instruction computes, pushes or pops differently
  * from the original, which every script would notice.
@@ -42,7 +56,10 @@
 #include "bgi/sys.h"
 #include "bgi/error.h"
 #include "bgi/strutil.h"
+#include "bgi/input.h"
+#include "bgi/gfx/text.h"
 #include "bgi/os.h"
+#include "bgi/version.h"
 
 #include <stdio.h>
 #include <math.h>
@@ -761,6 +778,464 @@ static void TestErrors(void)
 	}
 }
 
+/* The "EF xx" family (src/vm/ops_obgi.c, docs/obgi.md): "EF 00" pushes
+ * the level of the extensions; the switches take their arguments off the
+ * stack, push nothing, and land in the text engine's variables - a
+ * direction other than 1 or 2 is 0, an encoding other than 0 or 1 changes
+ * nothing, a scroll time of 0 keeps the one that is set.  A number the
+ * family does not have is an undefined instruction, which the dispatcher
+ * raises as a script error. */
+static void TestExtensions(void)
+{
+	Asm_t a;
+	BgiTryFrame_t f;
+	int mode;
+	static const int dirs[][2] = {{1, 1}, {2, 2}, {0, 0}, {5, 0}, {-1, 0}};
+	printf("extensions\n");
+	a.len = 0;
+	Op(&a, 0xef);
+	A8(&a, 0x00); // obgi.version
+	CHECK(Eval(&a) == 1);
+	for(mode = 0; mode < 5; mode++)
+	{
+		a.len = 0;
+		PushI8(&a, dirs[mode][0]);
+		Op(&a, 0xef);
+		A8(&a, 0x01);  // obgi.text_direction
+		PushI8(&a, 7); // (what Eval expects to find: the instruction itself pushes nothing)
+		CHECK(Eval(&a) == 7);
+		CHECK(gTextDirection == dirs[mode][1]);
+	}
+	a.len = 0;
+	PushI8(&a, 1);
+	Op(&a, 0xef);
+	A8(&a, 0x02); // obgi.text_encoding(1): UTF-8
+	PushI8(&a, 7);
+	CHECK(Eval(&a) == 7);
+	CHECK(gTextUtf8 == 1);
+	a.len = 0;
+	PushI8(&a, 9); // not an encoding: nothing changes
+	Op(&a, 0xef);
+	A8(&a, 0x02);
+	PushI8(&a, 0);
+	Op(&a, 0xef);
+	A8(&a, 0x02); // and back to Shift-JIS
+	PushI8(&a, 7);
+	CHECK(Eval(&a) == 7);
+	CHECK(gTextUtf8 == 0);
+	a.len = 0;
+	PushI8(&a, 1);
+	Op(&a, 0xef);
+	A8(&a, 0x03); // obgi.text_word_wrap(1)
+	PushI8(&a, 1);
+	PushI16(&a, 200);
+	Op(&a, 0xef);
+	A8(&a, 0x08); // obgi.text_scroll(1, 200)
+	PushI8(&a, 7);
+	CHECK(Eval(&a) == 7);
+	CHECK(gTextWordWrap == 1 && gTextScroll == 1 && gTextScrollMs == 200);
+	a.len = 0;
+	PushI8(&a, 0);
+	Op(&a, 0xef);
+	A8(&a, 0x03);
+	PushI8(&a, 0);
+	PushI8(&a, 0); // a time of 0 keeps the 200
+	Op(&a, 0xef);
+	A8(&a, 0x08);
+	PushI8(&a, 7);
+	CHECK(Eval(&a) == 7);
+	CHECK(gTextWordWrap == 0 && gTextScroll == 0 && gTextScrollMs == 200);
+	a.len = 0;
+	Op(&a, 0xef);
+	A8(&a, 0x7f); // no such instruction in the family
+	Ret(&a);
+	if(BGI_TRY(f))
+	{
+		Run(&a);
+		BGI_END_TRY(f);
+		CHECK(!"an undefined EF instruction must raise");
+	}
+	else
+	{
+		CHECK(f.value == BGI_SCRIPT_ERROR_VALUE);
+	}
+}
+
+/* 1 when CheckPriority accepts prio, 0 when it raises the script error */
+static int PriorityAccepted(uint32_t prio)
+{
+	BgiTryFrame_t f;
+	if(BGI_TRY(f))
+	{
+		CheckPriority(prio, gT);
+		BGI_END_TRY(f);
+		return 1;
+	}
+	CHECK(f.value == BGI_SCRIPT_ERROR_VALUE);
+	return 0;
+}
+
+/* ThrowScriptError(text) in a try frame; 1 when it threw the script error */
+static int Throws(const char* text)
+{
+	BgiTryFrame_t f;
+	if(BGI_TRY(f))
+	{
+		ThrowScriptError(text);
+		BGI_END_TRY(f);
+		return 0;
+	}
+	return f.value == BGI_SCRIPT_ERROR_VALUE;
+}
+
+/* The services the instructions of the later builds rely on.  A display
+ * priority is below 0x1000, from 1.529 on below 0x10000.  While "81 6A"
+ * keeps errors the first one's message is kept and a later error does
+ * not replace it ("81 6B" reads it: its length + 1, 0 when none).  The
+ * gamepad table of "81 1B" has 36 entries; "81 04" takes a step limit of
+ * 50 .. 60000 ms and "81 68" answers the previous setting. */
+static void TestLaterBuilds(void)
+{
+	char buf[32];
+	printf("later builds\n");
+	CHECK(PriorityAccepted(0xfff));
+	CHECK(!PriorityAccepted(0x1000));
+	CHECK(Engine_SelectProfile("1.636"));
+	CHECK(PriorityAccepted(0xffff));
+	CHECK(!PriorityAccepted(0x10000));
+	CHECK(Error_KeptMessage(NULL) == 0);
+	Error_SetKeep(1);
+	CHECK(Throws("first"));
+	CHECK(Throws("the second one"));
+	CHECK(Error_KeptMessage(NULL) == 6);
+	memset(buf, 0x55, sizeof buf);
+	CHECK(Error_KeptMessage(buf) == 6 && strcmp(buf, "first") == 0);
+	Error_FreeKept();
+	Error_SetKeep(0);
+	CHECK(Error_KeptMessage(NULL) == 0);
+	CHECK(Pad_SetKey(35, 0x0d) == 0 && gPadKeys[35] == 0x0d);
+	CHECK(Pad_SetKey(36, 0x0d) == 0x80000002u);
+	CHECK(Clock_SetMaxStep(49) == 0 && Clock_SetMaxStep(60001) == 0);
+	CHECK(Clock_SetMaxStep(60000) == 1 && Clock_SetMaxStep(500) == 1);
+	CHECK(Clock_SetStopWhenInactive(1) == 0 && Clock_SetStopWhenInactive(0) == 1);
+	CHECK(Engine_SelectProfile("1.69/444"));
+}
+
+// step thread t from where it is until a handler returns a non-zero scheduler code; -1 for an opcode without a handler
+static int Step(Thread_t* t)
+{
+	int rc = 0, steps = 0;
+	while(rc == 0 && steps++ < 100000)
+	{
+		uint8_t op = Thread_FetchOp(t);
+		if(!vm_optable_main[op])
+			return -1;
+		rc = vm_optable_main[op](t);
+	}
+	return rc;
+}
+
+// load the program into t's code area at offset 0 and step it from there with an empty stack
+static int RunOn(Thread_t* t, const Asm_t* a)
+{
+	memcpy(t->code, a->code, a->len);
+	t->codeUsed = a->len;
+	Thread_SetIP(t, 0);
+	t->sp = 0;
+	return Step(t);
+}
+
+/* "81 44": threads in parts of another thread's areas.  The parts are cut
+ * from the tops of the lender's code and data areas, and what the lender
+ * may use itself ends below them; a second borrower goes below the first,
+ * and a borrower's own borrower borrows from the first lender.  A code
+ * part that would reach into the lender's modules fails with 2, a data
+ * part larger than the room left with 3.  A borrower shares the lender's
+ * buffers and heap, loads its modules into its part (and may unload them
+ * all with "80 41", which is an error for a thread's main program), keeps
+ * its frames in its part of the data area and ends with a return at the
+ * start of that part.  A borrower that ends gives its parts back (the lender's limits
+ * stay until its next loan); a lender that ends takes its borrowers with
+ * it.  Through the instruction: the id is pushed, an ip past the part is
+ * a script error. */
+static void TestBorrower(void)
+{
+	Thread_t* root = Thread_New(0, 0, 0);
+	Thread_t *l, *a, *b, *g = NULL;
+	uint8_t prog[16 + 0x40];
+	ProgramHeader_t* h = (ProgramHeader_t*)prog;
+	Asm_t s;
+	BgiTryFrame_t f;
+	printf("borrowed areas\n");
+	CHECK(Engine_SelectProfile("1.636"));
+	Vm_TablesInit();
+	l = Thread_SpawnChild(root, 0x100, 0x1000, 0x1000);
+	memset(prog, 0, sizeof prog);
+	h->codeOffset = 16;
+	h->codeSize = 0x40;
+	CHECK(Thread_LoadModule(l, prog, "lender") == 0 && l->codeUsed == 0x40);
+	CHECK(Thread_SpawnBorrower(l, 0x40, 0x400, 0x300, 0x10, &a) == 0);
+	CHECK(a->lender == l && a->code == l->code && a->data == l->data && a->heap == l->heap);
+	CHECK(a->codeBase == 0xc00 && a->codeUsed == 0xc00 && a->codeSize == 0x1000);
+	CHECK(a->dataBase == 0xd00 && a->fp == 0xd00 && a->dataSize == 0x1000 && a->ip == 0x10);
+	CHECK(l->codeSize == 0xc00 && l->dataSize == 0xd00 && l->loanCount == 1 && l->next == a);
+	CHECK(a->id == l->id + 1 && a->stackEntries == 0x40);
+	CHECK(Thread_SpawnBorrower(a, 0x40, 0x200, 0x100, 0x20, &b) == 0); // from a's lender
+	CHECK(b->lender == l && b->codeBase == 0xa00 && b->dataBase == 0xc00 && a->next == b);
+	CHECK(l->codeSize == 0xa00 && l->dataSize == 0xc00 && l->loanCount == 2);
+	CHECK(Thread_SpawnBorrower(l, 0x40, 0x9c1, 0x10, 0, &g) == 2 && g == NULL);                      // into the lender's module
+	CHECK(Thread_SpawnBorrower(l, 0x40, 0x10, 0xc01, 0, &g) == 3 && g == NULL && l->loanCount == 2); // more data than is left
+	CHECK(Thread_LoadModule(a, prog, "borrower") == 0xc00 && a->codeUsed == 0xc40);
+	CHECK(Thread_LoadModule(l, prog, "lender2") == 0x40); // the lender's own loads stay below its loans
+
+	// a call and the returns of a borrower: its frames are in the lender's data area
+	s.len = 0;
+	PushI32(&s, 0xa0);
+	Op(&s, 0x16); // call 0xa0
+	PushI32(&s, 9);
+	Op(&s, 0x17); // the outermost return: the thread ends
+	while(s.len < 0x20)
+		Op(&s, 0xff);
+	PushI32(&s, 7);
+	Op(&s, 0x17);
+	memcpy(l->code + 0x80, s.code, s.len);
+	Thread_SetIP(b, 0x80);
+	b->sp = 0;
+	CHECK(Step(b) == 4 && b->sp == 2 && b->stack[0] == 7 && b->stack[1] == 9 && b->fp == 0xc00);
+	CHECK(l->data[0xc00] == 0x86); // the return address, at the start of b's part
+
+	// a borrower that ends gives its parts back, the lender's limits stay; a lender takes its borrowers along
+	CHECK(Thread_SpawnBorrower(l, 0x40, 0x100, 0x100, 0, &g) == 0 && g->codeBase == 0x900 && l->loanCount == 3);
+	CHECK(Thread_KillChild(root, g) && l->loanCount == 2 && l->codeSize == 0x900);
+	CHECK(Thread_SpawnBorrower(l, 0x40, 0x80, 0x80, 0, &g) == 0 && g->codeBase == 0x980 && g->dataBase == 0xb80);
+	CHECK(l->codeSize == 0x980 && l->dataSize == 0xb80);
+	CHECK(Thread_KillChild(root, l) && root->next == NULL);
+	Thread_Delete(root);
+
+	// the instruction: stackEntries, codeSize, dataSize, ip -> id; an ip past the new part is a script error
+	l = Thread_New(0x100, 0x1000, 0x1000);
+	s.len = 0;
+	PushI32(&s, 0x40);
+	PushI32(&s, 0x200);
+	PushI32(&s, 0x200);
+	PushI32(&s, 0x10);
+	A8(&s, 0x81);
+	A8(&s, 0x44);
+	Op(&s, 0x17);
+	CHECK(RunOn(l, &s) == 4 && l->sp == 1 && l->next && l->stack[0] == l->next->id);
+	CHECK(l->next && l->next->codeBase == 0xe00 && l->next->ip == 0x10);
+	// "80 41": a borrower may unload its last module (its main program is the lender's), the lender may not
+	g = l->next;
+	CHECK(Thread_LoadModule(g, prog, "sub") == 0xe00);
+	s.len = 0;
+	A8(&s, 0x80);
+	A8(&s, 0x41);
+	A8(&s, 0x80);
+	A8(&s, 0x41);
+	Op(&s, 0x17);
+	memcpy(l->code + 0x100, s.code, s.len);
+	Thread_SetIP(g, 0x100);
+	g->sp = 0;
+	CHECK(Step(g) == 4 && g->sp == 2 && g->stack[0] == 0 && g->stack[1] == 0x80000001u && g->codeUsed == 0xe00);
+	CHECK(Thread_LoadModule(l, prog, "main") != 0x80000000u);
+	if(BGI_TRY(f))
+	{
+		RunOn(l, &s);
+		BGI_END_TRY(f);
+		CHECK(!"no script error for unloading the main program");
+	}
+	else
+		CHECK(f.value == BGI_SCRIPT_ERROR_VALUE);
+	s.len = 0;
+	PushI32(&s, 0x40);
+	PushI32(&s, 0x200);
+	PushI32(&s, 0x200);
+	PushI32(&s, 0xe00); // the end of the new part, 0xc00 .. 0xe00
+	A8(&s, 0x81);
+	A8(&s, 0x44);
+	Op(&s, 0x17);
+	if(BGI_TRY(f))
+	{
+		RunOn(l, &s);
+		BGI_END_TRY(f);
+		CHECK(!"no script error for an ip past the part");
+	}
+	else
+		CHECK(f.value == BGI_SCRIPT_ERROR_VALUE && l->next && l->next->next && l->next->next->codeBase == 0xc00);
+	while(l->next)
+		Thread_KillChild(l, l->next);
+	CHECK(l->loanCount == 0 && !l->codeLoans && !l->dataLoans);
+	Thread_Delete(l);
+	CHECK(Engine_SelectProfile("1.69/444"));
+	Vm_TablesInit();
+}
+
+// a pointer to byte `off` of the data area, with the selected profile's tag
+static uint32_t DataPtr(uint32_t off)
+{
+	return off | (gEngine->tagData << VM_TAG_SHIFT);
+}
+
+/* push the n arguments, run family `fam` instruction `op` and return what it pushed */
+static uint32_t Call(uint32_t fam, uint32_t op, const uint32_t* args, int n)
+{
+	Asm_t a;
+	int i;
+	a.len = 0;
+	for(i = 0; i < n; i++)
+		PushI32(&a, args[i]);
+	A8(&a, fam);
+	A8(&a, op);
+	return Eval(&a);
+}
+
+// the contents of a file as a string (at most 63 bytes); "" when it cannot be read
+static const char* Slurp(const char* path)
+{
+	static char buf[64];
+	FILE* f = fopen(path, "rb");
+	size_t n = 0;
+	if(f)
+	{
+		n = fread(buf, 1, sizeof buf - 1, f);
+		fclose(f);
+	}
+	buf[n] = 0;
+	return buf;
+}
+
+// write a string to a file
+static void Spit(const char* path, const char* text)
+{
+	FILE* f = fopen(path, "wb");
+	if(f)
+	{
+		fputs(text, f);
+		fclose(f);
+	}
+}
+
+/* Files, through the instructions, with two files under bin/ (the test
+ * runs from the project root).  "80 27" moves the operand pushed last to
+ * the one pushed first and, as MoveFile, fails when the destination
+ * exists.  "81 28" opens (0 read, 1 write from scratch, 2 write into the
+ * file as it is) and refuses a bad mode (1), a path already open in
+ * another case (2) and a missing file (3); the status words of "81 29" ..
+ * "81 2B" get the bytes transferred, 1 for a seek or a close, -1 for
+ * nothing transferred or a seek past the end, and an unknown handle is
+ * 4.  In 1.553 there is no mode 2, "81 29" takes only the handle (-1 when
+ * unknown), a transfer of 0 bytes is 6, one that transfers nothing gives
+ * -2, and there is no "81 2B".  "81 38" answers 7 without filters, 4 for
+ * an unknown kind (the path zeroed) and -1 when nothing was chosen. */
+static void TestFiles(void)
+{
+	static const char* A = "bin/test_vm_a.tmp";
+	static const char* B = "bin/test_vm_b.tmp";
+	uint8_t* d = gT->data;
+	uint32_t pa, pb, pbUpper, out, st, buf, h, h2;
+	int32_t status;
+	printf("files\n");
+	CHECK(Engine_SelectProfile("1.636"));
+	Vm_TablesInit();
+	pa = DataPtr(0x400), pb = DataPtr(0x480), pbUpper = DataPtr(0x500);
+	out = DataPtr(0x200), st = DataPtr(0x210), buf = DataPtr(0x300);
+	remove(A);
+	remove(B);
+	strcpy((char*)d + 0x400, A);
+	strcpy((char*)d + 0x480, B);
+	strcpy((char*)d + 0x500, "BIN/TEST_VM_B.TMP");
+	Spit(A, "hello");
+	{
+		const uint32_t mv[] = {pb, pa}; // newPath, existing
+		CHECK(Call(0x80, 0x27, mv, 2) == 1 && strcmp(Slurp(B), "hello") == 0 && strcmp(Slurp(A), "") == 0);
+		Spit(A, "again");
+		CHECK(Call(0x80, 0x27, mv, 2) == 0 && strcmp(Slurp(B), "hello") == 0); // the destination exists
+		remove(A);
+	}
+	{
+		const uint32_t badMode[] = {out, pb, 3}, missing[] = {out, pa, 0}, rd[] = {out, pb, 0}, again[] = {out, pbUpper, 0};
+		CHECK(Call(0x81, 0x28, badMode, 3) == 1);
+		CHECK(Call(0x81, 0x28, missing, 3) == 3);
+		CHECK(Call(0x81, 0x28, rd, 3) == 0);
+		memcpy(&h, d + 0x200, 4);
+		CHECK(h != 0);
+		CHECK(Call(0x81, 0x28, again, 3) == 2); // the same file in another case
+	}
+	{
+		const uint32_t rd4[] = {st, h, buf, 4}, rd9[] = {st, h, buf + 4, 9}, rd1[] = {st, h, buf, 1};
+		const uint32_t end[] = {st, h, 0xffffffffu}, past[] = {st, h, 6}, start[] = {st, h, 1}, close[] = {st, h};
+		const uint32_t unknown[] = {st, h + 100, buf, 4};
+		memset(d + 0x300, 0, 16);
+		CHECK(Call(0x81, 0x2a, rd4, 4) == 0 && (memcpy(&status, d + 0x210, 4), status == 4) && memcmp(d + 0x300, "hell", 4) == 0);
+		CHECK(Call(0x81, 0x2a, rd9, 4) == 0 && (memcpy(&status, d + 0x210, 4), status == 1) && d[0x304] == 'o');
+		CHECK(Call(0x81, 0x2a, rd1, 4) == 0 && (memcpy(&status, d + 0x210, 4), status == -1)); // at the end
+		CHECK(Call(0x81, 0x2a, unknown, 4) == 4);
+		CHECK(Call(0x81, 0x2b, past, 3) == 0 && (memcpy(&status, d + 0x210, 4), status == -1));
+		CHECK(Call(0x81, 0x2b, end, 3) == 0 && (memcpy(&status, d + 0x210, 4), status == 1));
+		CHECK(Call(0x81, 0x2b, start, 3) == 0 && (memcpy(&status, d + 0x210, 4), status == 1));
+		CHECK(Call(0x81, 0x2a, rd4, 4) == 0 && memcmp(d + 0x300, "ello", 4) == 0);
+		CHECK(Call(0x81, 0x29, close, 2) == 0 && (memcpy(&status, d + 0x210, 4), status == 1));
+		CHECK(Call(0x81, 0x29, close, 2) == 4);
+	}
+	{
+		const uint32_t keep[] = {out, pb, 2}, create[] = {out, pb, 1};
+		uint32_t w2[4], end[3], w1[4], close[2];
+		memcpy(d + 0x300, "XYZ", 3);
+		CHECK(Call(0x81, 0x28, keep, 3) == 0);
+		memcpy(&h2, d + 0x200, 4);
+		CHECK(h2 > h); // a new number
+		w2[0] = st, w2[1] = h2, w2[2] = buf, w2[3] = 2;
+		end[0] = st, end[1] = h2, end[2] = 0xffffffffu;
+		w1[0] = st, w1[1] = h2, w1[2] = buf + 2, w1[3] = 1;
+		close[0] = 0, close[1] = h2; // no status word
+		CHECK(Call(0x81, 0x2a, w2, 4) == 0 && (memcpy(&status, d + 0x210, 4), status == 2));
+		CHECK(Call(0x81, 0x2b, end, 3) == 0 && Call(0x81, 0x2a, w1, 4) == 0);
+		CHECK(Call(0x81, 0x29, close, 2) == 0 && strcmp(Slurp(B), "XYlloZ") == 0);
+		CHECK(Call(0x81, 0x28, create, 3) == 0);
+		memcpy(&h2, d + 0x200, 4);
+		close[1] = h2;
+		CHECK(Call(0x81, 0x29, close, 2) == 0 && strcmp(Slurp(B), "") == 0); // truncated
+	}
+	{
+		uint32_t list = DataPtr(0x700), str = DataPtr(0x780), path = DataPtr(0x800);
+		const uint32_t none[] = {path, 0, list, list, 0, 0, 0}, kind[] = {path, 1, list, list, 0, 0, 2}, open[] = {path, 1, list, list, 0, 0, 0};
+		memcpy(d + 0x700, &str, 4); // a one-entry list: the string at 0x780
+		strcpy((char*)d + 0x780, "*.txt");
+		memset(d + 0x800, 0x55, 0x30c);
+		CHECK(Call(0x81, 0x38, none, 7) == 7 && d[0x800] == 0x55); // the path untouched
+		CHECK(Call(0x81, 0x38, kind, 7) == 4 && d[0x800] == 0 && d[0x800 + 0x30b] == 0);
+		CHECK(Call(0x81, 0x38, open, 7) == 0xffffffffu); // nothing chosen (no dialog here)
+	}
+
+	// 1.553: two modes, a close without a status word, no seek
+	CHECK(Engine_SelectProfile("1.553"));
+	Vm_TablesInit();
+	pb = DataPtr(0x480), out = DataPtr(0x200), st = DataPtr(0x210), buf = DataPtr(0x300);
+	CHECK(!vm_optable_81[0x2b]);
+	Spit(B, "abc");
+	{
+		const uint32_t keep[] = {out, pb, 2}, rd[] = {out, pb, 0};
+		uint32_t zero[4], all[4], more[4], close[1];
+		CHECK(Call(0x81, 0x28, keep, 3) == 1);
+		CHECK(Call(0x81, 0x28, rd, 3) == 0);
+		memcpy(&h, d + 0x200, 4);
+		zero[0] = st, zero[1] = h, zero[2] = buf, zero[3] = 0;
+		all[0] = st, all[1] = h, all[2] = buf, all[3] = 8;
+		more[0] = st, more[1] = h, more[2] = buf, more[3] = 8;
+		close[0] = h;
+		CHECK(Call(0x81, 0x2a, zero, 4) == 6);
+		CHECK(Call(0x81, 0x2a, all, 4) == 0 && (memcpy(&status, d + 0x210, 4), status == 3));
+		CHECK(Call(0x81, 0x2a, more, 4) == 0 && (memcpy(&status, d + 0x210, 4), status == -2));
+		CHECK(Call(0x81, 0x29, close, 1) == 0);
+		CHECK(Call(0x81, 0x29, close, 1) == 0xffffffffu);
+	}
+	FileAcc_CloseAll();
+	remove(A);
+	remove(B);
+	CHECK(Engine_SelectProfile("1.69/444"));
+	Vm_TablesInit();
+}
+
 // make the thread, run every group; exit status 1 when any check failed
 int main(void)
 {
@@ -776,6 +1251,10 @@ int main(void)
 	TestControl();
 	TestHeap();
 	TestErrors();
+	TestExtensions();
+	TestLaterBuilds();
+	TestBorrower();
+	TestFiles();
 	Thread_Delete(gT);
 	OS_Shutdown();
 	if(gFails)

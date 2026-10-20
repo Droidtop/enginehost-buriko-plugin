@@ -108,6 +108,14 @@ int WmStream_LoopCount(const WmStream_t* s);
  * whole-file stream; 0 ok, -1 when the stream is not a whole-file one or
  * the fade is longer than the sound */
 int WmStream_FadeIn(WmStream_t* s, uint32_t ms);
+/* Play a whole-file stream `rate` times as fast at the same pitch (the
+ * sound effects of "A0 27" / "A0 28", 1.547 on): the decoded samples are
+ * replaced by 30 ms chunks taken from the source every 30 * rate ms, each
+ * after the first faded in over 5 ms from the natural continuation of
+ * the one before; Frames() is then about Frames() / rate, rounded up to
+ * a whole chunk (the end of the last chunk silent).  0 ok, -1 not a
+ * whole-file stream or a rate that is not above 0 (nothing changes). */
+int WmStream_TimeStretch(WmStream_t* s, double rate);
 /* the decoded samples of a whole-file stream (16-bit interleaved,
  * Frames() frames); NULL for a music stream */
 const int16_t* WmStream_Samples(const WmStream_t* s);

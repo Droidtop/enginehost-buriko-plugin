@@ -332,6 +332,13 @@ static int Opcode_Ext0_EditRejectAscii(Thread_t* t) // B0 29 (1.69/472 on): on �
 	return 0;
 }
 
+// the glyph width of the entry control's font from the next "B0 20" on, in percent (25 .. 200; 100 the normal); ok 0 out of range
+static int Opcode_Ext0_EditFontWidth(Thread_t* t) // B0 22 (1.529 on): pct → ok
+{
+	Thread_Push(t, (uint32_t)Edit_SetFontWidthPct((int)Thread_Pop(t)));
+	return 0;
+}
+
 /* position, size and show the text entry control with its current text
  * selected; `focus` gives it the keyboard.  A size outside 8 .. the picture
  * size, an unknown font number, a font size outside 8 .. 0x40 and a maxLen
@@ -428,7 +435,8 @@ static int Opcode_Ext0_MsgBoxConfirm(Thread_t* t) // B0 82: text, style, default
 }
 
 /* a dialog with one text field of at most maxLen characters, preset to
- * `initial`; `out` (0x100 bytes) receives the entry.  1 ok, 0 cancelled. */
+ * `initial` (from 1.616 on a negative maxLen: a digits-only field of
+ * -maxLen); `out` (0x100 bytes) receives the entry.  1 ok, 0 cancelled. */
 static int Opcode_Ext0_DialogInput1(Thread_t* t) // B0 84: out, title, initial, maxLen → ok
 {
 	int maxLen = (int)Thread_Pop(t);
@@ -452,7 +460,28 @@ static int Opcode_Ext0_DialogInput2(Thread_t* t) // B0 85: out1, out2, title, la
 	const char* title = (const char*)PopPtr(t);
 	char* out2 = (char*)PopPtr(t);
 	char* out1 = (char*)PopPtr(t);
-	Thread_Push(t, (uint32_t)Dialog_Input2(out1, out2, title, label1, initial1, maxLen1, label2, initial2, maxLen2));
+	Thread_Push(t, (uint32_t)Dialog_Input2(out1, out2, title, label1, initial1, maxLen1, 0, label2, initial2, maxLen2, 0, 0));
+	return 0;
+}
+
+/* "B0 85" with a layout (non-zero: the two fields side by side, resource
+ * 0x7E) and a digits-only switch per field (only digits are typed in, and
+ * a '-' while the field is empty).  1 ok, 0 cancelled. */
+static int Opcode_Ext0_DialogInput2Ex(Thread_t* t) // B0 87 (1.573 on): layout, out1, out2, title, label1, initial1, maxLen1, digits1, label2, initial2, maxLen2, digits2 → ok
+{
+	int digits2 = (int)Thread_Pop(t);
+	int maxLen2 = (int)Thread_Pop(t);
+	const char* initial2 = (const char*)PopPtr(t);
+	const char* label2 = (const char*)PopPtr(t);
+	int digits1 = (int)Thread_Pop(t);
+	int maxLen1 = (int)Thread_Pop(t);
+	const char* initial1 = (const char*)PopPtr(t);
+	const char* label1 = (const char*)PopPtr(t);
+	const char* title = (const char*)PopPtr(t);
+	char* out2 = (char*)PopPtr(t);
+	char* out1 = (char*)PopPtr(t);
+	int layout = (int)Thread_Pop(t);
+	Thread_Push(t, (uint32_t)Dialog_Input2(out1, out2, title, label1, initial1, maxLen1, digits1 != 0, label2, initial2, maxLen2, digits2 != 0, layout != 0));
 	return 0;
 }
 
@@ -642,6 +671,7 @@ void Vm_OptableB0Init(void)
 		{0xC7, Opcode_Ext0_FontSetFallback, GEN_1_535, GEN_LAST},
 		{0x20, Opcode_Ext0_EditSetup, GEN_FIRST, GEN_LAST},
 		{0x21, Opcode_Ext0_EditDestroy, GEN_1_69_472, GEN_LAST},
+		{0x22, Opcode_Ext0_EditFontWidth, GEN_1_529, GEN_LAST},
 		{0x23, Opcode_Ext0_EditImeOpen, GEN_1_69_472, GEN_LAST},
 		{0x24, Opcode_Ext0_EditShow, GEN_FIRST, GEN_LAST},
 		{0x25, Opcode_Ext0_EditSetColour, GEN_FIRST, GEN_LAST},
@@ -654,6 +684,7 @@ void Vm_OptableB0Init(void)
 		{0x82, Opcode_Ext0_MsgBoxConfirm, GEN_FIRST, GEN_LAST},
 		{0x84, Opcode_Ext0_DialogInput1, GEN_FIRST, GEN_LAST},
 		{0x85, Opcode_Ext0_DialogInput2, GEN_FIRST, GEN_LAST},
+		{0x87, Opcode_Ext0_DialogInput2Ex, GEN_1_573, GEN_LAST},
 		{0x8C, Opcode_Ext0_DialogSelect, GEN_1_616, GEN_LAST},
 		{0x8F, Opcode_Ext0_DialogProfile, GEN_FIRST, GEN_LAST},
 		{0xF0, Opcode_Ext0_SetWallpaper, GEN_FIRST, GEN_LAST},

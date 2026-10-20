@@ -74,6 +74,10 @@ static void TestDefaults(void)
 	n = gDefaultGames = Engine_GameCount();
 	CHECK(n >= 23);
 	CHECK(ProfileNamed("1.69/451") != NULL && ProfileNamed("1.69/451")->gen == GEN_1_69_451 && ProfileNamed("1.69/451")->tagShift == 25);
+	// the trial of Sen no Hatou, Tsukisome no Kouki: build 1.636, found by its product name in ipl._bp
+	CHECK(ProfileNamed("1.636") != NULL && ProfileNamed("1.636")->gen == GEN_1_636 && ProfileNamed("1.636")->dynCount == 0 &&
+		ProfileNamed("1.636")->bootCode == 0x800000 && ProfileNamed("1.616")->bootCode == 0x80000);
+	CHECK(Engine_DetectGame((const uint8_t*)"x\0SenNoHatouTsukisomeNoKouki\0", 29) != NULL && gEngine->gen == GEN_1_636);
 	CHECK(Engine_GameAt(0, &g) && strcmp(g.match, "NurseryRhymeTrial") == 0 && strcmp(g.product, "NurseryRhyme") == 0);
 	CHECK(Engine_GameAt(1, &g) && strcmp(g.product, g.match) == 0 && strcmp(g.name, g.match) == 0 && g.directory == NULL);
 	CHECK(!Engine_GameAt(n, &g));

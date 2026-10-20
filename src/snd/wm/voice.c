@@ -63,7 +63,7 @@ void Voice_Attach(Voice_t* v, WmStream_t* s)
 	v->stream = s;
 	v->rate = WmStream_Rate(s);
 	v->channels = WmStream_Channels(s);
-	v->playing = v->paused = 0;
+	v->playing = v->paused = v->held = 0;
 	v->pos = v->posFrac = 0;
 	v->dsVolume = -100 * 0x80; // the original's voice holds the level 0x80 after a load
 	if(v->isBgm)
@@ -90,7 +90,7 @@ void Voice_Detach(Voice_t* v)
 	v->stream = NULL;
 	v->samples = NULL;
 	v->frames = 0;
-	v->playing = v->paused = 0;
+	v->playing = v->paused = v->held = 0;
 	BGI_Free(v->ring);
 	v->ring = NULL;
 	v->ringFrames = v->ringRead = v->ringCount = 0;
@@ -101,6 +101,7 @@ void Voice_Stop(Voice_t* v)
 {
 	v->playing = 0;
 	v->paused = 0;
+	v->held = 0;
 	v->pos = v->posFrac = 0;
 	if(v->stream)
 		WmStream_Rewind(v->stream);
@@ -117,11 +118,13 @@ void Voice_Play(Voice_t* v, int level)
 	Voice_SetVolume(v, level);
 	v->playing = 1;
 	v->paused = 0;
+	v->held = 0;
 }
 
 // `paused` stops a playing voice without moving its position; 0 lets a stopped one play on
 void Voice_Pause(Voice_t* v, int paused)
 {
+	v->held = 0; // a script's pause or resume takes over from Wm_HoldAll
 	if(v->playing && paused)
 	{
 		v->paused = 1; // Stop() without moving the position
@@ -278,6 +281,30 @@ void Wm_SetExternalMix(WmExternalMix_t fn, void* user)
 int Wm_MixRunning(void)
 {
 	return gAudioRunning;
+}
+
+/* hold every playing voice where it is (`hold` non-zero), or let the held
+ * ones play on; the original stops each sound buffer and marks it paused,
+ * then plays the paused ones again */
+void Wm_HoldAll(int hold)
+{
+	int i;
+	OS_LockEnter(gWmLock);
+	for(i = 0; i < WM_BGM_CHANNELS + WM_SE_SLOTS; i++)
+	{
+		Voice_t* v = i < WM_BGM_CHANNELS ? &gBgmVoices[i] : &gSeVoices[i - WM_BGM_CHANNELS];
+		if(hold && v->playing)
+		{
+			v->playing = 0;
+			v->held = 1;
+		}
+		else if(!hold && v->held)
+		{
+			v->playing = 1;
+			v->held = 0;
+		}
+	}
+	OS_LockLeave(gWmLock);
 }
 
 void Mixer_Fill(void* user, int16_t* out, int frames)

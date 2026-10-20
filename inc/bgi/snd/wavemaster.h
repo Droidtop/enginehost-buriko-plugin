@@ -46,14 +46,17 @@ int Wm_Init(void); // start the library and the audio device; 0, 1 already start
 typedef void (*WmExternalMix_t)(void* user, int32_t* acc, int frames);
 void Wm_SetExternalMix(WmExternalMix_t fn, void* user);
 int Wm_MixRunning(void);
+void Wm_HoldAll(int hold); // every playing voice held where it is (non-zero) / the held ones play on
+
 int Wm_StartTimer(void); // start the 20 ms fade timer; 0, or 0x14 when the library is not started
 int Wm_StopTimer(void);  // stop the fade timer; 0, or 0x14 when it was not running
 int Wm_Shutdown(void);   // stop everything, release the device; always 0
 int Wm_TimerPoll(void);  // run the 20 ms fade tick when it is due; 1 when it ran
 
 // BGM channels
-int Wm_BgmSetMasterVolume(int ch, uint32_t vol); // the channel's master volume (not clamped)
-int Wm_BgmStop(int ch);                          // stop and rewind the channel's stream
+int Wm_BgmSetMasterVolume(int ch, uint32_t vol);  // the channel's master volume (not clamped)
+int Wm_BgmSetChannelVolume(int ch, uint32_t vol); // 1.553 on ("A0 1C"): the channel's own volume, clamped to 0x80
+int Wm_BgmStop(int ch);                           // stop and rewind the channel's stream
 /* the openers: a loose file, an archive entry, and the intro / loop
  * pairs of both (the same name twice: one file, looping while `mode` is
  * non-zero); the channel's previous sound is replaced */
@@ -71,10 +74,12 @@ int Wm_BgmIsPlaying(int ch, uint32_t* out);       // *out = the voice is playing
 int Wm_BgmLoopCount(int ch, uint32_t* out);       // *out = loop restarts so far (see WmStream_LoopCount)
 
 // sound effect slots
-int Wm_SeSetMasterVolume(int slot, uint32_t vol); // the slot's master volume, clamped to 0x80
+int Wm_SeSetMasterVolume(int slot, uint32_t vol);  // the slot's master volume, clamped to 0x80
+int Wm_SeSetChannelVolume(int slot, uint32_t vol); // 1.588 on ("A0 2C"): the slot's own volume, clamped to 0x80
 /* load a whole BW file held in memory into the slot, decoded at once,
- * with a fade-in of `fadeInMs` burnt into the samples */
-uint32_t Wm_SeLoad(int slot, const void* bwFile, int fadeInMs, double gain);
+ * with a fade-in of `fadeInMs` burnt into the samples, `gain` applied
+ * and the sound played `rate` times as fast at the same pitch */
+uint32_t Wm_SeLoad(int slot, const void* bwFile, int fadeInMs, double gain, double rate);
 int Wm_SeUnload(int slot);                    // drop the slot's sound
 int Wm_SePlay(int slot, int volume, int pan); // from the start, at `volume` and `pan`
 int Wm_SeStop(int slot);                      // stop and rewind

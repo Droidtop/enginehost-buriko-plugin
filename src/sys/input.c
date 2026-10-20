@@ -401,6 +401,23 @@ uint32_t Input_TweenKeyMask(void)
 	return gTweenKeyMask | 0x180;
 }
 
+/* 1.547 on ("81 1B"): the keys of a gamepad's controls - the buttons 0 ..
+ * 31 and the directions up, down, left, right as 32 .. 35 (the hat, or
+ * the stick past a quarter of its travel).  The original reads a
+ * DirectInput joystick and taps the key of a control (a press and a
+ * release) when it goes down; 0 is none.  The OS layer here reads no
+ * gamepad, so the table is only kept. */
+uint32_t gPadKeys[PAD_CONTROLS];
+
+// 0 ok, 0x80000002 an index past the table
+uint32_t Pad_SetKey(uint32_t index, uint32_t vk)
+{
+	if(index >= PAD_CONTROLS)
+		return 0x80000002;
+	gPadKeys[index] = vk;
+	return 0;
+}
+
 // "80 1C": the counters of every key in the groups of `mask`, summed
 int CountKeysByMask(uint32_t mask)
 {

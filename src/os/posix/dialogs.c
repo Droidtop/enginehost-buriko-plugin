@@ -26,7 +26,7 @@
 #define DLG_FIELD_W 320 // pixels: the text fields of the input dialogs
 
 // dialog 0x71: a caption, one field, OK / cancel
-int OS_DialogInput1(const char* title, const char* initial, int maxLen, char* out)
+int OS_DialogInput1(const char* title, const char* initial, int maxLen, int digits, char* out)
 {
 	UiDialog_t d;
 	int r, y = UI_MARGIN;
@@ -36,6 +36,7 @@ int OS_DialogInput1(const char* title, const char* initial, int maxLen, char* ou
 	d.w = DLG_FIELD_W + 2 * UI_MARGIN;
 	Ui_FieldAdd(&d, UI_MARGIN, y, DLG_FIELD_W, initial, maxLen);
 	d.fields[0].f.selAll = 0; // the original leaves the caret at the end (EM_SETSEL len, len)
+	d.fields[0].digits = digits;
 	y += UI_FIELD_H + UI_MARGIN;
 	Ui_ButtonAdd(&d, d.w - UI_MARGIN - 2 * UI_BTN_W - 8, y, "OK", 1);
 	Ui_ButtonAdd(&d, d.w - UI_MARGIN - UI_BTN_W, y, "Cancel", 0);
@@ -50,24 +51,41 @@ int OS_DialogInput1(const char* title, const char* initial, int maxLen, char* ou
 	return r == 1;
 }
 
-// dialog 0x72: two labelled fields, OK / cancel
-int OS_DialogInput2(const char* title, const char* label1, const char* initial1, int maxLen1, char* out1,
-	const char* label2, const char* initial2, int maxLen2, char* out2)
+/* dialog 0x72: two labelled fields, OK / cancel; `compact` (0x7E, "B0 87")
+ * puts the fields side by side */
+int OS_DialogInput2(const char* title, const char* label1, const char* initial1, int maxLen1, int digits1, char* out1,
+	const char* label2, const char* initial2, int maxLen2, int digits2, char* out2, int compact)
 {
 	UiDialog_t d;
 	int r, y = UI_MARGIN;
 	if(!X11_Open())
 		return 0;
 	memset(&d, 0, sizeof d);
-	d.w = DLG_FIELD_W + 2 * UI_MARGIN;
-	Ui_LabelAdd(&d, UI_MARGIN, y, label1 ? label1 : MSG_DLG_STRING1); // NULL pointers select the defaults
-	y += UI_FONT_H + 4;
-	Ui_FieldAdd(&d, UI_MARGIN, y, DLG_FIELD_W, initial1, maxLen1);
-	y += UI_FIELD_H + 8;
-	Ui_LabelAdd(&d, UI_MARGIN, y, label2 ? label2 : MSG_DLG_STRING2);
-	y += UI_FONT_H + 4;
-	Ui_FieldAdd(&d, UI_MARGIN, y, DLG_FIELD_W, initial2, maxLen2);
-	y += UI_FIELD_H + UI_MARGIN;
+	if(compact)
+	{
+		const int fw = DLG_FIELD_W / 2 - 8;
+		d.w = DLG_FIELD_W + 2 * UI_MARGIN;
+		Ui_LabelAdd(&d, UI_MARGIN, y, label1 ? label1 : MSG_DLG_STRING1);
+		Ui_LabelAdd(&d, UI_MARGIN + fw + 16, y, label2 ? label2 : MSG_DLG_STRING2);
+		y += UI_FONT_H + 4;
+		Ui_FieldAdd(&d, UI_MARGIN, y, fw, initial1, maxLen1);
+		Ui_FieldAdd(&d, UI_MARGIN + fw + 16, y, fw, initial2, maxLen2);
+		y += UI_FIELD_H + UI_MARGIN;
+	}
+	else
+	{
+		d.w = DLG_FIELD_W + 2 * UI_MARGIN;
+		Ui_LabelAdd(&d, UI_MARGIN, y, label1 ? label1 : MSG_DLG_STRING1); // NULL pointers select the defaults
+		y += UI_FONT_H + 4;
+		Ui_FieldAdd(&d, UI_MARGIN, y, DLG_FIELD_W, initial1, maxLen1);
+		y += UI_FIELD_H + 8;
+		Ui_LabelAdd(&d, UI_MARGIN, y, label2 ? label2 : MSG_DLG_STRING2);
+		y += UI_FONT_H + 4;
+		Ui_FieldAdd(&d, UI_MARGIN, y, DLG_FIELD_W, initial2, maxLen2);
+		y += UI_FIELD_H + UI_MARGIN;
+	}
+	d.fields[0].digits = digits1;
+	d.fields[1].digits = digits2;
 	Ui_ButtonAdd(&d, d.w - UI_MARGIN - 2 * UI_BTN_W - 8, y, "OK", 1);
 	Ui_ButtonAdd(&d, d.w - UI_MARGIN - UI_BTN_W, y, "Cancel", 0);
 	d.h = y + UI_BTN_H + UI_MARGIN;
@@ -222,6 +240,12 @@ int OS_DialogProfile(char* surname, char* givenName, char* nickname, char* prono
 
 // the file dialogs are not provided by this back end: "nothing chosen"
 int OS_FileDialog(int save, char* path, size_t n, const char* filter, const char* defExt, const char* initialDir, const char* title)
+{
+	return 0;
+}
+
+int OS_FileDialogN(int save, char* path, size_t n, const char* const* descs, const char* const* pats, int count,
+	const char* defExt, const char* initialDir, const char* title)
 {
 	return 0;
 }

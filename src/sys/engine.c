@@ -36,6 +36,7 @@
 int gLauncherMode;                       // "Execute as a launcher.": no sound, no saved window position
 int gNoMutex;                            // "Do not use mutex.": several instances may run
 int gDiscMarker;                         // --disc-marker: "80 34" reports the disc marker file
+int gNoDiscCheck;                        // --no-disc-check: "80 EC" counts the game as registered
 int gBootDefault;                        // no boot path on the command line: the game directory is where the engine runs
 int gEngineUp;                           // between Engine_Init's success and Engine_Shutdown
 char *gExitArg0, *gExitFile, *gExitArg2; // "80 E1": the program to start after the shutdown (dir, file, message)
@@ -106,13 +107,44 @@ static int CmdLine_Split(char** bufs, const char* s)
 	return count;
 }
 
+/* The boot path is the host's own path, which cannot be the base
+ * directory as it stands where paths have no drive letter: the engine's
+ * file checks ("80 34" and the search list, the sound and movie lookups)
+ * pass only a path on a drive that is ready (DriveReady), so a game run
+ * by its path would find no loose file and no archive outside the boot
+ * archive.  The directory the path names - the path itself, or the one
+ * that holds the archive or program file it names - becomes the game
+ * directory instead (OS_SetGameDir: the drive the OS layer presents as
+ * "C:\"), and `rest` is what is booted from there ("." for a
+ * directory).  0 when the path names no existing directory; it is then
+ * used as the original uses it. */
+static int Boot_EnterGameDir(const char* path, char* rest, size_t n)
+{
+	char full[0x400];
+	char *p, *sep = NULL;
+	OS_NativeAbsolute(path, full, sizeof full);
+	if(OS_NativeStat(full, NULL) == OS_NATIVE_DIR)
+	{
+		snprintf(rest, n, ".");
+		return OS_SetGameDir(full);
+	}
+	for(p = full; *p; p++)
+		if(*p == '/' || *p == '\\')
+			sep = p;
+	if(!sep || !sep[1])
+		return 0;
+	snprintf(rest, n, "%s", sep + 1);
+	sep[1] = 0;
+	return OS_NativeStat(full, NULL) == OS_NATIVE_DIR && OS_SetGameDir(full);
+}
+
 /* The original's command line, "<boot path> [option]": the path names the
  * directory, the archive or the program file to boot from ("." and
  * ipl._bp without one); the option is "Execute as a launcher." or "Do not
  * use mutex.", anything else is ignored. */
 void Boot_ParseCmdLine(const char* cmdLine)
 {
-	char a[0x104], b[0x104];
+	char a[0x104], b[0x104], rest[0x104];
 	char* bufs[3] = {a, b, NULL};
 	int n = CmdLine_Split(bufs, cmdLine);
 	gBootDefault = n == 0 || strcmp(a, ".") == 0; // where the engine runs, as the original's "." means
@@ -121,7 +153,7 @@ void Boot_ParseCmdLine(const char* cmdLine)
 		SetBootProgram(".", "ipl._bp");
 		return;
 	}
-	SetBootProgram(a, "ipl._bp");
+	SetBootProgram(!gBootDefault && Boot_EnterGameDir(a, rest, sizeof rest) ? rest : a, "ipl._bp");
 	if(n == 2)
 	{
 		gLauncherMode = strcmp(b, "Execute as a launcher.") == 0;
@@ -226,6 +258,7 @@ void Engine_Shutdown(void)
 	Gfx_Destroy(); // Gfx, BmpMgr, ArcMgr, pools
 	SysArea_Shutdown();
 	Sound_Shutdown();
+	FileAcc_CloseAll(); // the files "81 28" left open
 	DynMem_FreeAll();
 	UserOp_Clear();
 	History_Reset(0);
@@ -245,6 +278,7 @@ void Engine_Shutdown(void)
 	Loader_Stop();
 	EngineLock_Delete();
 	FileSearch_Clear();
+	Error_FreeKept(); // the error message "81 6A" kept (1.547 on)
 }
 
 // ---- the reimplementation's own command-line options ---------------------------
@@ -254,6 +288,9 @@ void Engine_Shutdown(void)
 // Boot_ParseCmdLine:
 //   --engine=NAME      select the engine profile (docs/versions.md) instead
 //                      of detecting the game; BGI_ENGINE=NAME does the same
+//   --productname=NAME the product name the game's scripts ask for ("80 E8")
+//                      instead of the one of its games.json entry; with
+//                      --engine= a game games.json does not know runs
 //   --games=PATH       the games.json to detect the game with (default: the
 //                      game directory's own, else the one next to the
 //                      executable, written there when missing; BGI_GAMES=PATH)
@@ -277,7 +314,13 @@ void Engine_Shutdown(void)
 //                      named after the product that the discs carry; every
 //                      boot program quits at once when it finds one next to
 //                      the game, so it is hidden from "80 34" by default
+//   --no-disc-check    the game counts as registered ("80 EC") without a
+//                      comap.dat made for this machine - the games' own
+//                      registration program (reg.exe) wants the disc and
+//                      Windows, and an unregistered game's boot program
+//                      asks for the disc until it is given up
 static char gOptEngine[32];     // --engine=
+static char gOptProduct[0x100]; // --productname=
 static char gOptGames[0x104];   // --games=
 static int gOptList;            // --list-engines
 static int gOptListMissing;     // --list-missing: the opcodes of the profile without a handler
@@ -290,7 +333,11 @@ static int gOptDebug;           // --debug: 1 open the debugger, 2 open it pause
 
 /* Take the "--" options out of the command line (they are blanked in
  * place) into the gOpt* variables; an unknown option is reported on
- * stderr and ignored.  BGI_LANG is applied first so that --lang= wins. */
+ * stderr and ignored.  BGI_LANG is applied first so that --lang= wins.
+ * A token runs to the next space or tab outside double quotes, and the
+ * quotes are not part of an option's text, so that a value may hold
+ * spaces (--games="VN/my games.json") and a quoted path is a
+ * single token that is left alone. */
 static void Engine_ParseOptions(char* cmd)
 {
 	char* p = cmd;
@@ -298,60 +345,68 @@ static void Engine_ParseOptions(char* cmd)
 		fprintf(stderr, "bgi: unknown language in BGI_LANG (en or ja)\n");
 	while(*p)
 	{
+		char opt[0x400];
 		char* start;
-		char* end;
-		char c;
+		size_t k = 0;
+		int quoted = 0;
 		while(*p == ' ' || *p == '\t')
 			p++;
+		if(!*p)
+			break;
 		start = p;
-		while(*p && *p != ' ' && *p != '\t')
-			p++;
-		end = p;
-		if(end - start < 2 || start[0] != '-' || start[1] != '-')
+		for(; *p && (quoted || (*p != ' ' && *p != '\t')); p++)
+		{
+			if(*p == '"')
+				quoted = !quoted;
+			else if(k + 1 < sizeof opt)
+				opt[k++] = *p;
+		}
+		opt[k] = 0;
+		if(k < 2 || opt[0] != '-' || opt[1] != '-')
 			continue;
-		c = *end;
-		*end = 0;
-		if(strncmp(start, "--engine=", 9) == 0)
-			snprintf(gOptEngine, sizeof gOptEngine, "%s", start + 9);
-		else if(strncmp(start, "--games=", 8) == 0)
-			snprintf(gOptGames, sizeof gOptGames, "%s", start + 8);
-		else if(strncmp(start, "--enable=", 9) == 0 || strncmp(start, "--disable=", 10) == 0)
+		if(strncmp(opt, "--engine=", 9) == 0)
+			snprintf(gOptEngine, sizeof gOptEngine, "%s", opt + 9);
+		else if(strncmp(opt, "--productname=", 14) == 0)
+			snprintf(gOptProduct, sizeof gOptProduct, "%s", opt + 14);
+		else if(strncmp(opt, "--games=", 8) == 0)
+			snprintf(gOptGames, sizeof gOptGames, "%s", opt + 8);
+		else if(strncmp(opt, "--enable=", 9) == 0 || strncmp(opt, "--disable=", 10) == 0)
 		{
-			int enable = start[2] == 'e';
-			if(!Engine_OverrideOpcode(start + (enable ? 9 : 10), enable))
-				fprintf(stderr, "bgi: bad opcode in %s (expected FAMILY:HEX, e.g. 80:63)\n", start);
+			int enable = opt[2] == 'e';
+			if(!Engine_OverrideOpcode(opt + (enable ? 9 : 10), enable))
+				fprintf(stderr, "bgi: bad opcode in %s (expected FAMILY:HEX, e.g. 80:63)\n", opt);
 		}
-		else if(strncmp(start, "--lang=", 7) == 0)
+		else if(strncmp(opt, "--lang=", 7) == 0)
 		{
-			if(!Msg_SetLanguage(start + 7))
-				fprintf(stderr, "bgi: unknown language in %s (en or ja)\n", start);
+			if(!Msg_SetLanguage(opt + 7))
+				fprintf(stderr, "bgi: unknown language in %s (en or ja)\n", opt);
 		}
-		else if(strcmp(start, "--list-engines") == 0)
+		else if(strcmp(opt, "--list-engines") == 0)
 			gOptList = 1;
-		else if(strcmp(start, "--list-missing") == 0)
+		else if(strcmp(opt, "--list-missing") == 0)
 			gOptListMissing = 1;
-		else if(strcmp(start, "--debug") == 0 || strcmp(start, "--debug=pause") == 0)
-			gOptDebug = start[7] ? 2 : 1;
-		else if(strcmp(start, "--disc-marker") == 0)
+		else if(strcmp(opt, "--debug") == 0 || strcmp(opt, "--debug=pause") == 0)
+			gOptDebug = opt[7] ? 2 : 1;
+		else if(strcmp(opt, "--disc-marker") == 0)
 			gDiscMarker = 1;
-		else if(strncmp(start, "--list=", 7) == 0)
-			snprintf(gOptListArc, sizeof gOptListArc, "%s", start + 7);
-		else if(strncmp(start, "--extract=", 10) == 0)
-			snprintf(gOptExtract, sizeof gOptExtract, "%s", start + 10);
-		else if(strncmp(start, "--entry=", 8) == 0)
-			snprintf(gOptEntry, sizeof gOptEntry, "%s", start + 8);
-		else if(strncmp(start, "--out=", 6) == 0)
-			snprintf(gOptOut, sizeof gOptOut, "%s", start + 6);
-		else if(strcmp(start, "--raw") == 0)
+		else if(strcmp(opt, "--no-disc-check") == 0)
+			gNoDiscCheck = 1;
+		else if(strncmp(opt, "--list=", 7) == 0)
+			snprintf(gOptListArc, sizeof gOptListArc, "%s", opt + 7);
+		else if(strncmp(opt, "--extract=", 10) == 0)
+			snprintf(gOptExtract, sizeof gOptExtract, "%s", opt + 10);
+		else if(strncmp(opt, "--entry=", 8) == 0)
+			snprintf(gOptEntry, sizeof gOptEntry, "%s", opt + 8);
+		else if(strncmp(opt, "--out=", 6) == 0)
+			snprintf(gOptOut, sizeof gOptOut, "%s", opt + 6);
+		else if(strcmp(opt, "--raw") == 0)
 			gOptExtractMode = EXTRACT_RAW;
-		else if(strcmp(start, "--convert") == 0)
+		else if(strcmp(opt, "--convert") == 0)
 			gOptExtractMode = EXTRACT_CONVERT;
 		else
-			fprintf(stderr, "bgi: unknown option %s\n", start);
+			fprintf(stderr, "bgi: unknown option %s\n", opt);
 		// blank the option out of the command line the original parser sees
-		memset(start, ' ', (size_t)(end - start));
-		*end = c ? ' ' : 0;
-		p = c ? end + 1 : end;
+		memset(start, ' ', (size_t)(p - start));
 	}
 }
 
@@ -425,11 +480,17 @@ static void Engine_DetectVersion(void)
 		if(prof && !(forced && *forced))
 			fprintf(stderr, "bgi: engine profile %s selected for this game\n", prof);
 		else if(!prof && !(forced && *forced))
-			fprintf(stderr, "bgi: game not in %s: assuming engine %s\n", gGamesPath, gEngine->name);
+			fprintf(stderr, "bgi: game not in %s: assuming engine %s%s\n", gGamesPath, gEngine->name,
+				gOptProduct[0] ? "" : " (--engine= and --productname= name a game it does not know)");
 	}
 	BGI_Free(buf);
 	if(forced && *forced && !Engine_SelectProfile(forced))
 		fprintf(stderr, "bgi: unknown engine profile \"%s\" (see --list-engines), using %s\n", forced, gEngine->name);
+	if(gOptProduct[0])
+	{ // --productname= replaces the product name of the games.json entry (or the default)
+		Engine_SetProductName(gOptProduct);
+		fprintf(stderr, "bgi: product name \"%s\"\n", gOptProduct);
+	}
 }
 
 /* Started outside a game directory - no boot path given and neither

@@ -22,7 +22,7 @@ Bmp_t gPatternBmpA[PTCL_PATTERNS][PTCL_SCALES]; // type 0
 PatternA_t gPatternA[PTCL_PATTERNS];
 int gPatternsReady;
 PatternAnim_t gPatternAnim[2][PTCL_PATTERNS]; // [type][pattern]
-PatternAnim_t gPatternAlt[PTCL_PATTERNS];     // 1.640 on: the alternate images of the type 1 patterns
+PatternAnim_t gPatternAlt[PTCL_PATTERNS];     // 1.636 on: the alternate images of the type 1 patterns
 int32_t gPatternAltLevel[PTCL_PATTERNS];      // and their mix levels
 static Bmp_t gAltMix, gAltTmp;                // the picture mixed with the alternate image (one particle at a time), and the centred copy
 
@@ -100,7 +100,7 @@ uint32_t Pattern_SetAnimation(int type, int pattern, int count, const Bmp_t* fra
 	return r;
 }
 
-/* "C0 1A" (1.640 on): make `count` frames the alternate image of type 1
+/* "C0 1A" (1.636 on): make `count` frames the alternate image of type 1
  * pattern `pattern`, mixed in by `level` (0 .. 0x100; see PatternAnim_Set
  * for the frames and rates).  0 ok, 0x80000001 the type is not 1,
  * 0x80000002 bad pattern, 0x80000005 a frame does not conform,
@@ -122,7 +122,7 @@ uint32_t Pattern_SetAltAnimation(int type, int pattern, int count, const Bmp_t* 
 	return 0;
 }
 
-/* "C0 1B" (1.640 on): the mix level of the alternate image of type 1
+/* "C0 1B" (1.636 on): the mix level of the alternate image of type 1
  * pattern `pattern`.  0 ok, 0x80000001 the type is not 1, 0x80000002 the
  * pattern has no alternate image, 0x80000007 bad pattern. */
 uint32_t Pattern_SetAltLevel(int type, int pattern, int level)
@@ -262,7 +262,7 @@ void Ptcl_FreeGlobals(void)
 	Bmp_Free(&gAltTmp);
 }
 
-/* 1.640 on: the picture of a type 1 particle whose pattern mixes in an
+/* 1.636 on: the picture of a type 1 particle whose pattern mixes in an
  * alternate image: the base picture `base` and the alternate frame `alt`
  * centred in a bitmap of the larger of their sizes, cross-faded by the
  * pattern's level (lerp(base, alt, level / 256)).  The result lives until
