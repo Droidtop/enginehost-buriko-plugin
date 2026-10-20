@@ -185,6 +185,11 @@ static const struct
 	{"Tayutama2AS", "1.640", NULL},
 	{"WakabaironoQuartet", "1.653", NULL},
 	{"NekoTsukuSakura", "1.654", NULL},
+	// Yoake mae yori Ruri iro na (August), 1.658.2: the Windows 10 release, its PS2 and
+	// Moonlight Cradle versions; 1.659's opcodes less "81 01" and its behaviour, so 1.659's profile
+	{"YoakemaeyoriRuriironaWin10", "1.659", NULL},
+	{"YoakemaeyoriRuriironaPS2Win10", "1.659", NULL},
+	{"YoakemaeyoriRuriironaMCWin10", "1.659", NULL},
 	{"MadoiShirokinoKamikakushi", "1.659", NULL},
 	{"Yumahorome", "1.662", NULL},
 	{"ArcanaAlchemia", "1.667", NULL},

@@ -48,6 +48,9 @@ build 472 on" in the source comments), all keyed on the generation
 | Tayutama2AS.exe | Tayutama2AS | 2017-04-05 | 1.640.10 | 1.72 | VS2010 (LTCG) |
 | WakabaironoQuartet.exe | WakabaironoQuartet | 2019-05-17 | 1.653.3 | 1.72 | VS2017 |
 | Nekotsuku.exe | NekoTsukuSakura | 2019-11-21 | 1.654.3 | 1.72 | VS2017 |
+| yoake.exe | YoakemaeyoriRuriironaWin10 (August) | 2020-06-25 | 1.658.2 | 1.72 | VS2017 |
+| yoake2.exe | YoakemaeyoriRuriironaPS2Win10 (August) | 2020-06-25 | 1.658.2 | 1.72 | VS2017 |
+| yoake3.exe | YoakemaeyoriRuriironaMCWin10 (August) | 2020-06-25 | 1.658.2 | 1.72 | VS2017 |
 | madokino.exe | MadoiShirokinoKamikakushi | 2020-11-04 | 1.659.2 | 1.72 | VS2017 |
 | yumahorome.exe | Yumahorome | 2021-09-26 | 1.662.1 | 1.72 | VS2017 |
 | arcana.exe | ArcanaAlchemia | 2022-08-19 | 1.667 | 1.72 | VS2017 |
@@ -62,7 +65,12 @@ that build 472 also has (see below), on the build 444 pointer layout.
 Fortune Arterial's build 438 has the pointer layout of build 444 and a
 subset of its opcodes (`74` `75` `90 53` `90 7A` `90 91` `90 B7` `91 B8`
 `91 BA` came with 444), so it runs on profile `1.69/444`, which its
-`games.json` entry names.
+`games.json` entry names.  The three Yoake mae yori Ruri iro na builds
+(August's Windows 10 release, its PS2 version and Moonlight Cradle) are
+one engine build, 1.658.2, with the same opcode tables; they define
+1.659's opcodes less `81 01` and have 1.659's picture-size table and its
+eleven "91 9A" text functions, so they run on profile `1.659`, which
+their `games.json` entries name.
 
 The profile names of `--engine` are the version numbers of the table
 without the minor build number (`1.69/444`, `1.69/451`, `1.69/472`, `1.529`, ...);
