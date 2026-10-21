@@ -118,6 +118,8 @@ WmSource_t* WmSource_FromMemory(const void* data, uint32_t size)
 	s->mem = (uint8_t*)BGI_Alloc(size ? size : 1);
 	if(data)
 		memcpy(s->mem, data, size);
+	else
+		memset(s->mem, 0, size);
 	s->size = size;
 	return s;
 }

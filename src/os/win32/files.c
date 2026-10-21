@@ -53,6 +53,19 @@ OsFile_t* OS_FileCreate(const char* path)
 	return f;
 }
 
+// GENERIC_WRITE, no sharing, OPEN_ALWAYS (an existing file keeps its contents); NULL on failure
+OsFile_t* OS_FileOpenWrite(const char* path)
+{
+	WPATH(wide, path);
+	HANDLE h = CreateFileW(wide, GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+	OsFile_t* f;
+	if(h == INVALID_HANDLE_VALUE)
+		return NULL;
+	f = (OsFile_t*)calloc(1, sizeof *f);
+	f->h = h;
+	return f;
+}
+
 void OS_FileClose(OsFile_t* f)
 {
 	if(!f)

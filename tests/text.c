@@ -30,6 +30,11 @@
  *                ruby tags, colours, bold / italic, links with their
  *                table, delays, the "91 9E" / "91 9F" string helpers, and
  *                the tags treated as plain text in an older build
+ *   extensions - the layout that OpenBGI adds (docs/obgi.md): lines broken
+ *                between words in an old generation, the width of a
+ *                string, right-to-left and mixed-direction lines, the
+ *                font's own width for characters that are not East Asian,
+ *                and the full-width forms in UTF-8 text
  */
 #include "bgi/gfx/font.h"
 #include "bgi/gfx/text.h"
@@ -385,6 +390,160 @@ static void TestMarkup(void)
 	BmpMgr_Delete(mgr);
 }
 
+// the node of the character at byte `ofs` of the laid-out string, NULL when it has none
+static RichChar_t* NodeAt(const RichState_t* r, int ofs)
+{
+	RichChar_t* c;
+	for(c = r->head; c; c = c->next)
+		if(c->srcOfs == ofs && c->kind == 0)
+			return c;
+	return NULL;
+}
+
+/* The layout extensions.  All checks are about where the glyphs go, not
+ * what they look like, so they hold for any font:
+ *
+ *   word wrap  - a line of 10 cells and words of 7 letters: the original
+ *                1.64 layout fills the line and breaks inside the third
+ *                word; with "EF 03" every line starts with a word
+ *   width      - Text_LineWidth grows with the string, 0 for none
+ *   direction  - "shalom abc 12" in Hebrew letters: in a right-to-left
+ *                paragraph the Hebrew word starts at the right edge and
+ *                runs leftwards, and "abc 12" stands left of it, read
+ *                left to right; in a left-to-right paragraph the Hebrew
+ *                word still runs leftwards but stands first
+ *   own width  - an accented Latin letter takes a full cell in the
+ *                original layout and at most that in direction 2
+ *   full width - U+FF01 is drawn from the font in UTF-8 text (its code is
+ *                in the range of the private glyph-sheet codes)
+ *
+ * Skipped when no Japanese font can be opened. */
+static void TestLayoutExtensions(void)
+{
+	BmpMgr_t* mgr = BmpMgr_New(8);
+	RichState_t rich;
+	RubyDict_t dict;
+	Rect_t area = {0, 0, 239, 199}; // ten full cells of 24 pixels
+	int32_t cur[2], lines, style[5] = {0, 0, 0, 0, 0};
+	int font = 0, mode, starts, inWord, y, gap0, gap2;
+	const char* face = "\x82\x6c\x82\x72 \x83\x53\x83\x56\x83\x62\x83\x4e"; // ＭＳ ゴシック (MS Gothic)
+	static const char words[] = "aaaaaaa bbbbbbb ccccccc ddddddd";
+	static const char mixed[] = "\xd7\xa9\xd7\x9c\xd7\x95\xd7\x9d abc 12"; // שלום abc 12
+	RichChar_t* c;
+	RichChar_t *shin, *mem, *a, *b, *one, *two;
+
+	printf("extensions\n");
+	Text_SetBmpMgrPtr(mgr);
+	if(BmpMgr_FontOpen(mgr, &font, face, 24, 100, 0) != 0)
+	{
+		printf("  (no Japanese font available: layout checks skipped)\n");
+		BmpMgr_Delete(mgr);
+		return;
+	}
+	Engine_SelectProfile("1.64");
+	Gfx_SetScreenMode(PM_ARGB32);
+	memset(&rich, 0, sizeof rich);
+	memset(&dict, 0, sizeof dict);
+
+	// word wrap off, then on: where the lines start
+	for(mode = 0; mode < 2; mode++)
+	{
+		Text_SetWordWrap(mode);
+		cur[0] = 0;
+		cur[1] = 0;
+		CHECK(Text_LayoutCoreH(&rich, &lines, words, 0, &dict, cur, &area, 24, font, 0, 1, 0xffffff, style) == 1);
+		starts = 0;
+		inWord = 0;
+		y = -1;
+		for(c = rich.head; c; c = c->next)
+		{
+			CHECK(c->x >= 0 && c->x + 12 <= 240);
+			if(c->y != y)
+			{
+				y = c->y;
+				starts++;
+				if(c->srcOfs % 8 != 0) // the words start at 0, 8, 16, 24
+					inWord++;
+			}
+		}
+		CHECK(starts == 2);
+		CHECK(mode ? inWord == 0 : inWord > 0);
+		RichState_Free(&rich);
+	}
+	Text_SetWordWrap(0);
+
+	CHECK(Text_LineWidth("", font, 0) == 0);
+	CHECK(Text_LineWidth("ab", font, 0) > 0);
+	CHECK(Text_LineWidth("abcd", font, 0) > Text_LineWidth("ab", font, 0));
+	CHECK(Text_LineWidth("abcd", font, 0) <= 4 * 24);
+
+	// the same string in a right-to-left and in a left-to-right paragraph
+	Text_SetEncoding(TEXT_UTF8);
+	for(mode = 1; mode <= 2; mode++)
+	{
+		Text_SetDirection(mode);
+		cur[0] = 0;
+		cur[1] = 0;
+		CHECK(Text_LayoutCoreH(&rich, &lines, mixed, 0, &dict, cur, &area, 24, font, 0, 1, 0xffffff, style) == 1);
+		CHECK(lines == 1);
+		shin = NodeAt(&rich, 0);
+		mem = NodeAt(&rich, 6);
+		a = NodeAt(&rich, 9);
+		b = NodeAt(&rich, 10);
+		one = NodeAt(&rich, 13);
+		two = NodeAt(&rich, 14);
+		CHECK(shin && mem && a && b && one && two);
+		if(shin && mem && a && b && one && two)
+		{
+			CHECK(mem->x < shin->x);               // the Hebrew word runs leftwards
+			CHECK(a->x < b->x && one->x < two->x); // the Latin word and the number do not
+			if(mode == 1)
+			{
+				CHECK(two->x < mem->x && b->x < one->x); // the Hebrew word at the right; "abc 12" is one left-to-right run (a number after a Latin word takes its direction)
+				CHECK(shin->x + shin->glyph.w > 240 - 24 && shin->x + shin->glyph.w <= 240 + 4);
+			}
+			else
+			{
+				CHECK(shin->x < a->x && b->x < one->x); // ... and from the left
+				CHECK(mem->x >= 0 && mem->x < 24);
+			}
+		}
+		RichState_Free(&rich);
+	}
+
+	// "aåb": the cell of å in the original layout, its own width in direction 2
+	gap0 = gap2 = 0;
+	for(mode = 0; mode <= 2; mode += 2)
+	{
+		Text_SetDirection(mode);
+		cur[0] = 0;
+		cur[1] = 0;
+		CHECK(Text_LayoutCoreH(&rich, &lines, "a\xc3\xa5"
+											  "b",
+				  0, &dict, cur, &area, 24, font, 0, 1, 0xffffff, style) == 1);
+		a = NodeAt(&rich, 1);
+		b = NodeAt(&rich, 3);
+		CHECK(a && b);
+		if(a && b)
+			*(mode ? &gap2 : &gap0) = b->x - a->x;
+		RichState_Free(&rich);
+	}
+	CHECK(gap0 == 24);
+	CHECK(gap2 > 0 && gap2 <= 24);
+
+	// "！" (U+FF01) has ink
+	Text_SetDirection(0);
+	cur[0] = 0;
+	cur[1] = 0;
+	CHECK(Text_LayoutCoreH(&rich, &lines, "\xef\xbc\x81", 0, &dict, cur, &area, 24, font, 0, 1, 0xffffff, style) == 1);
+	c = NodeAt(&rich, 0);
+	CHECK(c && FirstInkColour(&c->glyph) != 0xffffffffu);
+	RichState_Free(&rich);
+
+	Text_SetEncoding(TEXT_SJIS);
+	BmpMgr_Delete(mgr);
+}
+
 // run every group; exit status 1 when any check failed
 int main(void)
 {
@@ -393,6 +552,7 @@ int main(void)
 	TestCache();
 	TestRuby();
 	TestMarkup();
+	TestLayoutExtensions();
 	OS_Shutdown();
 	if(gFails)
 	{

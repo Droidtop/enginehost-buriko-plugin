@@ -16,10 +16,14 @@
  * A group is a plain DispObj of class order 9 that only exists to carry
  * children ("90 E0".."90 E9"); a virtual object is an invisible stand-in
  * sorted 0x8000 above its target - the panels and the wait icon attach them
- * to their window as hit-test proxies for the buttons.
+ * to their window as hit-test proxies for the buttons.  From 1.529 on an
+ * attached virtual object is exactly as visible as the object it is
+ * attached to, whatever its own flags say, so the hit objects a panel made
+ * while its window was faded out become hittable when the window fades in.
  */
 #include "bgi/common.h"
 #include "bgi/gfx/objects.h"
+#include "bgi/version.h"
 
 // ========================================================================
 // Group
@@ -87,6 +91,15 @@ void VirtualObject_Ctor(VirtualObject_t* v, int slotId, DispObj_t* target)
 	DispObj_SetPriority(&v->obj, DispObj_GetPriority(target));
 }
 
+/* 1.529 on: attached, the owner's visibility (its isVisible, fade and
+ * show state included); unattached, or before 1.529, the object's own */
+static int VirtualObject_IsVisible(DispObj_t* o)
+{
+	if(gEngine->gen >= GEN_1_529 && o->owner)
+		return o->owner->vt->isVisible(o->owner);
+	return DispObj_IsVisible(o);
+}
+
 // just above the target: hit tests find the stand-in first
 static uint32_t VirtualObject_SortKey(DispObj_t* o)
 {
@@ -97,7 +110,7 @@ static uint32_t VirtualObject_SortKey(DispObj_t* o)
 const DispObjVtbl_t VirtualObject_Vtbl = {
 	VirtualObject_Destroy,
 	DispObj_SetVisible,
-	DispObj_IsVisible,
+	VirtualObject_IsVisible,
 	DispObj_Invalidate,
 	DispObj_NopDraw,
 	VirtualObject_SortKey,

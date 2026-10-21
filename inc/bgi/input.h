@@ -41,6 +41,11 @@ int Key_SetRepeatNew(int vk, int on);      // "81 10" (1.69/472 on): auto-repeat
 void Input_SetTweenKeyMask(uint32_t mask); // "81 1F" (1.69/472 on): the keys that break a tween (0x2000)
 void Input_SetKeysWhenInactive(int on);    // "81 14" (1.529 on): key states are read while the window is inactive
 uint32_t Input_TweenKeyMask(void);         // ... | 0x180, what the waits poll
+
+// ---- gamepad ("81 1B", 1.547 on; no OS back end reads one) -------------------
+#define PAD_CONTROLS 36                           // buttons 0 .. 31, then up, down, left, right
+extern uint32_t gPadKeys[PAD_CONTROLS];           // the virtual key each control taps, 0 none
+uint32_t Pad_SetKey(uint32_t index, uint32_t vk); // 0 ok, 0x80000002 index past the table
 void Input_OnKeyUp(int vk);
 void Input_CountPress(int vk); // counter only (knob clicks)
 

@@ -26,9 +26,28 @@ Every handler is `int op(Thread_t* t)` and returns a scheduler code:
 | 5 | reboot the machine |
 | 6 | quit |
 
+From 1.599 on a thread can also run in parts of another thread's areas
+("81 44", `Thread_SpawnBorrower`): it gets a stack of its own, and the
+thread that starts it - or that thread's own lender, when it runs in
+borrowed areas itself - lends it a part of its code area and a part of
+its data area, each cut from the top of the highest gap that holds it,
+and shares its heap.  The borrower starts at a code offset of the
+lender's (its modules, `80 40`, go into its own part, and `80 41` may
+unload all of them: its main program is the lender's); its frames begin
+at the start of its part of the data area, and a return there ends it.
+Code and data pointers mean the same in both threads.  The lender's own
+loads and frames end below the lowest part it has lent (and stay there
+when a borrower ends, until it lends again, as in the original); when
+the lender ends, its borrowers end first.  Scenario drivers of 1.636 run
+their icon manager this way, in 0x40000 bytes of each area of the boot
+thread.
+
 Script errors (`ScriptError`, `error.c`) are raised with a longjmp to the
 frame `VmMain` holds, after a message box; the original throws a C++
-`int` the same way.
+`int` the same way.  The error stops the machine, unless (1.547 on) a
+script has asked with `81 6A` for errors to be kept: then only the
+thread that raised it ends, event -1 is posted, and the first error's
+message is kept for `81 6B` (later errors show no box).
 
 ## Instructions
 

@@ -261,10 +261,11 @@ static int Opcode_Call(Thread_t* t) // 16: addr →
 	return Opcode_Jmp(t);
 }
 
-// return to the address on the frame stack; at the outermost frame the thread ends
+/* return to the address on the frame stack; at the outermost frame (the
+ * start of the thread's part of the data area) the thread ends */
 static int Opcode_Ret(Thread_t* t) // 17: →
 {
-	if(Thread_GetFP(t) == 0)
+	if(Thread_GetFP(t) <= t->dataBase)
 		return 4; // outermost frame: the thread ends
 	Thread_SetIP(t, FramePop(t));
 	return 0;

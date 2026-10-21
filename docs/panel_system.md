@@ -53,7 +53,10 @@ while the panel is started:
 3. the pointer is hit-tested against the virtual buttons (masked); a
    change of the button under the pointer is reported (event 0x10000001)
    and, with `hoverSelects`, selects it; the focus bitmap is swapped in
-   (event 0x10000002),
+   (event 0x10000002); a pointer move on a `hoverSelects` button reports
+   the selection (event 0x10000004) on every move up to 1.69 build 444,
+   from build 472 on only when the selection changed - the scripts play
+   their hover sound on that event,
 4. hotkeys: a button whose `hotkey` virtual key is pressed (bit 31 also on
    auto-repeat) is decided,
 5. the key map turns the standard-key bits into actions (see below):

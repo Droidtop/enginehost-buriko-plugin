@@ -83,6 +83,11 @@ int GfxCall_ObjSetEnabled(uint32_t h, int v)
 	return Gfx_ObjSetEnabled(gGfx, h, v);
 }
 
+int GfxCall_ObjSetHidden(uint32_t h, int v)
+{
+	return Gfx_ObjSetHidden(gGfx, h, v);
+}
+
 int GfxCall_ObjSetLevel(uint32_t h, int level)
 {
 	return Gfx_ObjSetLevel(gGfx, h, level);

@@ -38,6 +38,22 @@ int Gfx_ObjSetEnabled(Gfx_t* g, uint32_t h, int v)
 	return 1;
 }
 
+// "91 31" (1.573 on): the hidden switch; 1 ok, 0 unknown handle
+int Gfx_ObjSetHidden(Gfx_t* g, uint32_t h, int v)
+{
+	DispObj_t* o = Gfx_FindObject(g, h);
+	int was, now;
+
+	if(!o)
+		return 0;
+	was = IsVisible(o); // repainted only when the visibility changed, as for "90 31"
+	DispObj_SetHidden(o, v);
+	now = IsVisible(o);
+	if(was != now)
+		Invalidate(o);
+	return 1;
+}
+
 // "90 32": the level (transparency or effect strength); 1 ok, 0 unknown handle
 int Gfx_ObjSetLevel(Gfx_t* g, uint32_t h, int level)
 {

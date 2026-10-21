@@ -13,6 +13,8 @@
  *     SampleArea        area-weighted box   (1/2 < scale < 1)
  *     SampleBilinear    bilinear            (scale >= 1)
  *   Blit_GatherAdd      the pixels drawn toward the centre and added
+ *   Blit_Bicubic        the bicubic scaler of "90 CA" (1.616 on), single
+ *                       precision like the original's SSE code
  *
  * Both scalers centre the scaled picture in the destination: the result is
  * (src.w * sx, src.h * sy) pixels (16.16 factors, rounded) placed at
@@ -25,6 +27,9 @@
  * order the original uses, because that rounding decides which source
  * pixel a border column shows.
  */
+#include <math.h>
+#include <stddef.h>
+
 #include "bgi/gfx/bitmap.h"
 #include "bgi/gfx.h"
 
@@ -382,4 +387,122 @@ void Blit_GatherAdd(Bmp_t* dst, const Bmp_t* src, uint32_t cx, uint32_t cy, uint
 			}
 		}
 	}
+}
+
+// ---- the bicubic scaler (1.616 on) -------------------------------------------------------------
+
+/* the cubic convolution weight (a = -1) of a tap at distance t: 1 - 2t^2 +
+ * |t|^3 below 1, 4 - 8|t| + 5t^2 - |t|^3 below 2; each step rounded to
+ * single precision in the original's order */
+static float Bicubic_Weight(float t)
+{
+	float a = fabsf(t);
+	float a2 = a * a;
+	float a3 = a2 * a;
+	float w, e;
+	if(a < 1.0f)
+	{
+		e = a2 + a2;
+		w = 1.0f - e;
+		w = w + a3;
+		return w;
+	}
+	e = 8.0f * a;
+	w = 4.0f - e;
+	e = 5.0f * a2;
+	w = w + e;
+	w = w - a3;
+	return w;
+}
+
+// a channel's weighted sum: rounded to nearest (cvtps2dq, 0x80000000 out of range) and saturated to 0 .. 255
+static uint8_t Bicubic_Channel(float f)
+{
+	long n;
+	if(!(f > -2147483648.0f && f < 2147483648.0f))
+		return 0;
+	n = lrintf(f);
+	if(n < 0)
+		return 0;
+	return (uint8_t)(n > 255 ? 255 : n);
+}
+
+/*
+ * The scaler of "90 CA": destination pixel (x, y) samples the source at
+ * (sx + (x - dx) / scaleX, sy + (y - dy) / scaleY) - the source point (sx,
+ * sy) lands on the destination point (dx, dy) - through 4 x 4 taps of the
+ * cubic convolution kernel, rows and columns trunc(v) - 1 .. trunc(v) + 2.
+ * Taps outside the source are left out and the sum is divided by the
+ * weights that remain, so the border keeps its level; with no weight the
+ * pixel is 0.  All four bytes are filtered alike.  The arithmetic is the
+ * original's single precision (SSE): the reciprocal scales and the first
+ * position computed once, the position stepped by the reciprocal per
+ * pixel and per row.  The original divides by the weight sum through
+ * rcpps and one Newton step; here the division is exact.  0 ok, 0x13 a
+ * scale <= 0; nothing is drawn unless both pictures are 32-bit of the
+ * same mode.
+ */
+int Blit_Bicubic(Bmp_t* dst, float dx, float dy, const Bmp_t* src, float sx, float sy, float scaleX, float scaleY)
+{
+	float invX, invY, u0, v;
+	int32_t x, y;
+	if(!(scaleX > 0.0f) || !(scaleY > 0.0f))
+		return 0x13;
+	if(dst->mode != src->mode || (dst->mode != PM_RGB32 && dst->mode != PM_ARGB32))
+		return 0;
+	invX = (float)(1.0 / (double)scaleX);
+	invY = (float)(1.0 / (double)scaleY);
+	u0 = (float)((double)sx - (double)invX * (double)dx);
+	v = (float)((double)sy - (double)invY * (double)dy);
+	for(y = 0; y < dst->h; y++)
+	{
+		uint8_t* out = dst->pixels + (ptrdiff_t)y * dst->pitch;
+		float u = u0;
+		int32_t iv = BGI_Ftol((double)v);
+		int32_t j0 = (int32_t)((uint32_t)iv - 1u), j1 = (int32_t)((uint32_t)iv + 2u);
+		for(x = 0; x < dst->w; x++)
+		{
+			float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f}, wsum = 0.0f;
+			int64_t j;
+			int c;
+			for(j = j0; j <= j1; j++)
+			{
+				float t = (float)((double)v - (double)j), wy;
+				int32_t iu, i0, i1;
+				int64_t i;
+				if(fabsf(t) >= 2.0f)
+					continue;
+				wy = Bicubic_Weight(t);
+				if(wy == 0.0f)
+					continue;
+				iu = BGI_Ftol((double)u);
+				i0 = (int32_t)((uint32_t)iu - 1u);
+				i1 = (int32_t)((uint32_t)iu + 2u);
+				for(i = i0; i <= i1; i++)
+				{
+					float s = (float)((double)u - (double)i), wx, w;
+					const uint8_t* p;
+					if(fabsf(s) >= 2.0f)
+						continue;
+					wx = Bicubic_Weight(s);
+					if(wx == 0.0f || i < 0 || i >= src->w || j < 0 || j >= src->h)
+						continue;
+					w = wx * wy;
+					p = src->pixels + (ptrdiff_t)j * src->pitch + (ptrdiff_t)i * 4;
+					for(c = 0; c < 4; c++)
+					{
+						float f = (float)p[c] * w;
+						acc[c] = acc[c] + f;
+					}
+					wsum = wsum + w;
+				}
+			}
+			for(c = 0; c < 4; c++)
+				out[c] = wsum == 0.0f ? 0 : Bicubic_Channel(acc[c] * (1.0f / wsum));
+			out += 4;
+			u = u + invX;
+		}
+		v = v + invY;
+	}
+	return 0;
 }

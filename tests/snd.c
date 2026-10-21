@@ -26,10 +26,18 @@
  *   huffman - codec 2 (Huffman-coded 8-bit ADPCM) with a tree built here,
  *             mono and stereo, several step parameters, a file longer than
  *             the decoder's coded window, and a loop restart
+ *   stretch - the time stretch of a rate-scaled sound effect ("A0 27",
+ *             1.547 on), faster and slower: the output length and the
+ *             chunks it takes from the source
+ *   levels  - the attenuation of a channel's four volumes, by the rule
+ *             before 1.588 and by the one from 1.588 on
+ *   length  - the length of a sound effect the scripts read ("A0 24",
+ *             "A0 2F"), divided by the load's rate from 1.547 on
  *   api     - the Wave Master entry points and every result code they
  *             return before and after Wm_Init, on bad slot numbers,
  *             unloaded slots, a corrupt file and a missing one; a sound
- *             effect and a music channel are played, faded and paused
+ *             effect and a music channel are played, faded and paused,
+ *             and given their own volumes
  *
  * The api group writes a file under bin/, so the test runs from the
  * project root (as `make test` does).
@@ -37,6 +45,9 @@
 #include "bgi/snd/bw.h"
 #include "bgi/snd/wavemaster.h"
 #include "bgi/os.h"
+#include "bgi/version.h"
+#include "bgi/sound.h"
+#include "../src/snd/wm/wm_internal.h"
 
 #include <stdio.h>
 #include <math.h>
@@ -452,6 +463,124 @@ static void TestHuffman(int channels, uint32_t frames, uint32_t param)
 	free(ref);
 }
 
+// ---- time stretch -------------------------------------------------------------------
+
+/* WmStream_TimeStretch on a stereo 22050 Hz file of 5000 frames.  The
+ * sound is cut into chunks of 30 ms (661 frames); a chunk is taken from
+ * the source every chunk * rate frames (rounded towards zero), so 1.25
+ * skips 165 frames after each chunk and 0.8 goes back 132.  The output
+ * holds trunc(frames / rate + 0.9) frames rounded up to the next whole
+ * chunk past it: 4627 and 6610.  The first chunk is the source's start;
+ * every later one starts at the sample where the chunk before would have
+ * gone on and crosses over 5 ms (110 frames) to its own samples, which
+ * it then copies; the frames past the last chunk are silent.  A failure
+ * means the length, the chunk positions or the crossfade changed. */
+static void TestStretch(double rate, uint32_t want, int32_t skip)
+{
+	enum
+	{
+		N = 5000,
+		CHUNK = 661,
+		L = 220 // the crossfade, in interleaved samples
+	};
+	uint8_t* file = (uint8_t*)malloc(0x40 + N * 4);
+	int16_t* pcm = (int16_t*)(file + 0x40);
+	WmSource_t* src;
+	WmStream_t* s;
+	int err = 0;
+	uint32_t i;
+	printf("stretch %.2f\n", rate);
+	PutHeader(file, N * 4, N, 22050, 2, BW_CODEC_PCM);
+	for(i = 0; i < N; i++)
+	{
+		pcm[i * 2] = Signal(i, 0);
+		pcm[i * 2 + 1] = Signal(i, 1);
+	}
+	src = WmSource_FromMemory(file, 0x40 + N * 4);
+	s = WmStream_Open(src, 1.0, 1, &err);
+	CHECK(s != NULL);
+	if(s)
+	{
+		const int16_t* out;
+		uint32_t off, d, end = CHUNK, bad = 0;
+		CHECK(WmStream_TimeStretch(s, rate) == 0);
+		CHECK(WmStream_Frames(s) == want);
+		out = WmStream_Samples(s);
+		CHECK(memcmp(out, pcm, CHUNK * 4) == 0);
+		for(off = CHUNK + (uint32_t)skip, d = CHUNK; off < N && d < want; off += CHUNK + (uint32_t)skip, d += CHUNK)
+		{
+			uint32_t n = N - off < CHUNK ? N - off : CHUNK, j;
+			if(out[d * 2] != pcm[(off - skip) * 2])
+				bad++; // the crossfade starts on the continuation of the chunk before
+			for(j = L; j < n * 2; j++)
+				if(out[d * 2 + j] != pcm[off * 2 + j])
+					bad++;
+			end = d + n;
+		}
+		CHECK(bad == 0);
+		CHECK(end < want);
+		for(i = end * 2, bad = 0; i < want * 2; i++)
+			if(out[i])
+				bad++;
+		CHECK(bad == 0); // silence after the last chunk
+		WmStream_Close(s);
+	}
+	free(file);
+}
+
+// ---- levels ---------------------------------------------------------------------
+
+/* Record_Level before 1.588: 0.375 dB per step below full summed over the
+ * four volumes, silence (0x80) from 48 dB.  From 1.588 on the sum is not
+ * cut; only one volume at 0 by itself silences.  A failure means the
+ * attenuation rule of a generation changed. */
+static void TestLevels(void)
+{
+	WmRecord_t r;
+	printf("levels\n");
+	memset(&r, 0, sizeof r);
+	r.master = r.aux = r.volume = r.fadeLevel = 0x80;
+	CHECK(Engine_SelectProfile("1.573"));
+	CHECK(Record_Level(&r) == 0);
+	r.aux = 0x40;
+	CHECK(Record_Level(&r) == 24); // 64 steps of 0.375 dB
+	r.volume = 0x40;
+	CHECK(Record_Level(&r) == 0x80); // 48 dB in sum
+	CHECK(Engine_SelectProfile("1.636"));
+	CHECK(Record_Level(&r) == 48); // 128 / 2.66666666, truncated; not cut
+	r.aux = 0x20;
+	CHECK(Record_Level(&r) == 60);
+	r.aux = 0;
+	CHECK(Record_Level(&r) == 0x80); // one volume at 0
+	r.aux = 1;
+	CHECK(Record_Level(&r) == 71);
+	CHECK(Engine_SelectProfile("1.69/444"));
+}
+
+/* Se_GetLength on a one-second effect (44100 frames at 44100 Hz) loaded
+ * at rate 2 and 0.75: before 1.547 it is 1000 ms whatever the rate; from
+ * 1.547 on 1000 * trunc(65536 / rate) >> 16, 500 and 1333.  The library
+ * is not running, so the loads fail, but the descriptor is kept, as in
+ * the original.  A failure means the descriptor's rate word or its use
+ * changed. */
+static void TestSeLength(void)
+{
+	uint8_t hdr[0x40];
+	printf("length\n");
+	PutHeader(hdr, 0, 44100, 44100, 1, BW_CODEC_PCM);
+	CHECK(Engine_SelectProfile("1.529"));
+	CHECK(Sound_LoadSe(5, hdr, 0, 1.0, 2.0) == 0x14);
+	CHECK(Se_GetLength(5) == 1000);
+	CHECK(Engine_SelectProfile("1.636"));
+	CHECK(Sound_LoadSe(5, hdr, 0, 1.0, 2.0) == 0x14);
+	CHECK(Se_GetLength(5) == 500);
+	CHECK(Sound_LoadSe(5, hdr, 0, 1.0, 0.75) == 0x14);
+	CHECK(Se_GetLength(5) == 1333);
+	Sound_ClearTable();
+	CHECK(Se_GetLength(5) == 0);
+	CHECK(Engine_SelectProfile("1.69/444"));
+}
+
 // ---- the library's result codes ----------------------------------------------------
 
 /* The Wave Master entry points with a 500-frame mono PCM file: 0x14
@@ -480,20 +609,29 @@ static void TestApi(void)
 	for(i = 0; i < N; i++)
 		pcm[i] = Signal(i, 0);
 	CHECK(Wm_SePlay(0, 0x80, 0x40) == 0x14); // not running
+	CHECK(Wm_SeSetChannelVolume(0, 0x40) == 0x14 && Wm_BgmSetChannelVolume(0, 0x40) == 0x14);
 	CHECK(Wm_Init() == 0);
 	CHECK(Wm_Init() == 1);                   // already
 	CHECK(Wm_SePlay(0, 0x80, 0x40) == 0x14); // the timer is not running yet
 	CHECK(Wm_StartTimer() == 0);
 	CHECK(Wm_SePlay(64, 0x80, 0x40) == 0x15); // slots are 0 .. 63
 	CHECK(Wm_SePlay(3, 0x80, 0x40) == 0x13);  // nothing loaded
-	CHECK(Wm_SeLoad(3, file, 0, 1.0) == 0);
+	CHECK(Wm_SeLoad(3, file, 0, 1.0, 1.0) == 0);
 	CHECK(Wm_SePlay(3, 0x80, 0x40) == 0);
 	CHECK(Wm_SeStop(3) == 0);
 	CHECK(Wm_SeFadeOut(3, 100) == 0);
 	CHECK(Wm_SeUnload(3) == 0);
 	CHECK(Wm_SePlay(3, 0x80, 0x40) == 0x13);
+	CHECK(Wm_SeSetChannelVolume(64, 0x40) == 0x15);
+	CHECK(Wm_SeSetChannelVolume(3, 0x100) == 0 && gSe[3].aux == 0x80); // clamped
+	CHECK(Wm_SeSetChannelVolume(3, 0x40) == 0);                        // also on an unloaded slot
+	CHECK(Wm_SeLoad(3, file, 0, 1.0, 1.0) == 0 && gSe[3].aux == 0x40); // kept across a load
+	CHECK(Wm_SeSetChannelVolume(3, 0x80) == 0 && Wm_SeUnload(3) == 0);
+	CHECK(Wm_BgmSetChannelVolume(16, 0x40) == 0x15);
+	CHECK(Wm_BgmSetChannelVolume(2, 0x30) == 0 && gBgm[2].aux == 0x30);
+	CHECK(Wm_BgmSetChannelVolume(2, 0x80) == 0);
 	file[5] = 'x';
-	CHECK(Wm_SeLoad(3, file, 0, 1.0) == 0xe); // not a BW file
+	CHECK(Wm_SeLoad(3, file, 0, 1.0, 1.0) == 0xe); // not a BW file
 	file[5] = 'w';
 	CHECK(Wm_BgmOpenFile(16, "x", 0x80, 0x40, 1.0) == 0x15); // channels are 0 .. 15
 	CHECK(Wm_BgmOpenFile(0, "no-such-file.bw", 0x80, 0x40, 1.0) == 0xc);
@@ -541,6 +679,10 @@ int main(void)
 	TestHuffman(1, 600, 3);
 	TestHuffman(2, 333, 1);
 	TestHuffman(1, 5000, 5); // crosses the 0x400-byte coded window
+	TestStretch(1.25, 4627, 165);
+	TestStretch(0.8, 6610, -132);
+	TestLevels();
+	TestSeLength();
 	TestApi();
 	OS_Shutdown();
 	printf(gFails ? "%d FAILED\n" : "ok\n", gFails);

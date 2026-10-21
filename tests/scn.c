@@ -75,7 +75,7 @@ static uint8_t* Compile(const char* text, uint32_t* size, int quiet)
 	ScnCompileResult_t r;
 	uint8_t* out;
 	FILE* log = quiet ? fopen("/dev/null", "w") : stderr;
-	Scn_Compile(text, strlen(text), "test", &gCmds, log, &r);
+	Scn_Compile(text, strlen(text), "test", &gCmds, NULL, log, &r);
 	if(quiet)
 		fclose(log);
 	if(r.errors)
@@ -289,7 +289,7 @@ static void TestCompile(void)
 		CHECK(strcmp(s + strStart + 6, "intro") == 0);
 	}
 	// the user function call: args left to right, the name, callfn
-	for(i = 0, n = 0; i < 400; i++)
+	for(i = 0, n = 0; i < 400 && base + 4 * i + 4 <= size; i++)
 		if(Tok(img, i) == SCN_CALLFN)
 			n++;
 	CHECK(n == 2);
@@ -643,6 +643,68 @@ static void TestScene16(void)
 	CHECK(Compile("#style inline\n#source \"x\"\nend;\n", &size, 1) == NULL); // no other directive
 }
 
+// the reader of PrepIncludes_t for the one file the scene below includes
+static uint8_t* ReadStrings(void* ctx, const char* path, uint32_t* size)
+{
+	static const char text[] = "// the texts\n"
+							   "#define NAME_N  \"N\"\n"
+							   "#define T_HELLO \"Hello\"  // N\n"
+							   "#define CLICK   1\n";
+	uint8_t* copy;
+	(void)ctx;
+	if(strcmp(path, "strings.inc") != 0)
+		return NULL;
+	copy = (uint8_t*)malloc(sizeof text);
+	memcpy(copy, text, sizeof text);
+	*size = (uint32_t)(sizeof text - 1);
+	return copy;
+}
+
+/* a 16-bit scene goes through the preprocessor: the constants of an
+ * included file and of the scene itself give the bytes of the literals */
+static void TestScene16Prep(void)
+{
+	static const char named[] = "#style inline\n"
+								"#include \"strings.inc\"\n"
+								"#define SPEED 500\n"
+								"msg(0, CLICK, T_HELLO);\n"
+								"name(NAME_N);\n"
+								"msg(0, 0, T_HELLO); // T_HELLO again: its own text\n"
+								"select(T_HELLO, NAME_N);\n"
+								"wait(SPEED);\n"
+								"end;\n";
+	static const char plain[] = "#style inline\n"
+								"msg(0, 1, \"Hello\");\n"
+								"name(\"N\");\n"
+								"msg(0, 0, \"Hello\");\n"
+								"select(\"Hello\", \"N\");\n"
+								"wait(500);\n"
+								"end;\n";
+	PrepIncludes_t inc;
+	ScnCompileResult_t r;
+	uint32_t size = 0, size2 = 0;
+	uint8_t* a;
+	uint8_t* b = Compile(plain, &size2, 0);
+	memset(&inc, 0, sizeof inc);
+	inc.read = ReadStrings;
+	Scn_Compile(named, strlen(named), "scene.bsc", &gCmds, &inc, stderr, &r);
+	CHECK(r.errors == 0);
+	a = r.errors ? NULL : Scn_Save(&r.file, &size);
+	if(!r.errors)
+		Scn_Free(&r.file);
+	CHECK(a != NULL && b != NULL && size == size2 && memcmp(a, b, size) == 0);
+	BGI_Free(a);
+	BGI_Free(b);
+	CHECK(Compile("#style inline\nmsg(0, 1, T_NONE);\nend;\n", &size, 1) == NULL);                 // a name nothing defines
+	CHECK(Compile("#style inline\n#include \"no/such.inc\"\nend;\n", &size, 1) == NULL);           // a file that is not there
+	CHECK(Compile("#style inline\n#define A 1\n#define A 2\nwait(A);\nend;\n", &size, 1) == NULL); // defined twice
+	{                                                                                              // the other styles are not preprocessed: their #include names a header of the original source
+		uint8_t* img = Compile("#style library\n#include \"header.h\"\nf() { return; }\n", &size, 0);
+		CHECK(img != NULL);
+		BGI_Free(img);
+	}
+}
+
 static void TestErrors(void)
 {
 	uint32_t size;
@@ -673,6 +735,7 @@ int main(void)
 	TestRaw();
 	printf("16-bit scenes\n");
 	TestScene16();
+	TestScene16Prep();
 	printf("errors\n");
 	TestErrors();
 	OS_Shutdown();

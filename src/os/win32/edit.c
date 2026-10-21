@@ -115,8 +115,8 @@ void OS_EditMove(int x, int y, int w, int h) // client coordinates of the main w
 		MoveWindow(gEdit, x, y, w, h, TRUE);
 }
 
-// replace the font: CreateFont(size, size / 2, .., FW_THIN, SHIFTJIS_CHARSET, OUT_TT_PRECIS, PROOF_QUALITY, FIXED_PITCH, face), WM_SETFONT with redraw
-void OS_EditSetFont(const char* face, int size)
+// replace the font: CreateFont(height, width, .., FW_THIN, SHIFTJIS_CHARSET, OUT_TT_PRECIS, PROOF_QUALITY, FIXED_PITCH, face), WM_SETFONT with redraw
+void OS_EditSetFont(const char* face, int height, int width)
 {
 	WCHAR wface[0x100];
 	if(!gEdit)
@@ -124,7 +124,7 @@ void OS_EditSetFont(const char* face, int size)
 	if(gEditFont)
 		DeleteObject(gEditFont);
 	Win32_ToWide(face, wface, (int)BGI_COUNTOF(wface));
-	gEditFont = CreateFontW(size, size / 2, 0, 0, FW_THIN, 0, 0, 0, SHIFTJIS_CHARSET, OUT_TT_PRECIS, 0,
+	gEditFont = CreateFontW(height, width, 0, 0, FW_THIN, 0, 0, 0, SHIFTJIS_CHARSET, OUT_TT_PRECIS, 0,
 		PROOF_QUALITY, FIXED_PITCH, wface);
 	SendMessageW(gEdit, WM_SETFONT, (WPARAM)gEditFont, 1);
 }

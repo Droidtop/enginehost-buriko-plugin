@@ -36,12 +36,14 @@ extern uint32_t gBgmMasterVolume[BGM_CHANNELS]; // 0 .. 0x80 per channel
 extern uint32_t gSeMasterVolume[SE_SLOTS];      // 0 .. 0x80 per slot
 extern uint8_t gSeDesc[SE_SLOTS][SE_DESC_SIZE]; // the loaded effects' descriptors
 
-int Sound_Init(void);                           // start-up (Engine_Init); always 1
-void Sound_Shutdown(void);                      // stop the fade timer and the library
-void Sound_ResetVolumes(void);                  // every master volume to 0x80, applied (each script boot)
-void Sound_ApplyMasterVolumes(void);            // push the remembered master volumes to the library
-int Bgm_SetMasterVolume(int ch, uint32_t vol);  // "A0 08": 1 ok, 0 out of range (not applied while muted)
-int Se_SetMasterVolume(int slot, uint32_t vol); // "A0 09": 1 ok, 0 out of range
+int Sound_Init(void);                            // start-up (Engine_Init); always 1
+void Sound_Shutdown(void);                       // stop the fade timer and the library
+void Sound_ResetVolumes(void);                   // every master volume to 0x80, applied (each script boot)
+void Sound_ApplyMasterVolumes(void);             // push the remembered master volumes to the library
+int Bgm_SetMasterVolume(int ch, uint32_t vol);   // "A0 08": 1 ok, 0 out of range (not applied while muted)
+int Se_SetMasterVolume(int slot, uint32_t vol);  // "A0 09": 1 ok, 0 out of range
+int Bgm_SetChannelVolume(int ch, uint32_t vol);  // "A0 1C" (1.553 on): the channel's own volume; the library's result
+int Se_SetChannelVolume(int slot, uint32_t vol); // "A0 2C" (1.588 on): the slot's own volume; the library's result
 /* "A0 10": play a loose file from the base (then the disc) directory;
  * "A0 11": from an archive (NULL arc = loose file with the search
  * sub-directories), asking to retry while the file is missing; "A0 12":
@@ -54,18 +56,21 @@ int Bgm_PlayArcPair(int ch, const char* arc, const char* intro, const char* loop
  * count; 0 otherwise and for a bad channel */
 uint32_t Bgm_GetPosition(int ch, uint32_t* outLength);
 void Sound_ClearTable(void); // forget every effect descriptor (each script boot)
-/* "A0 20" / "A0 21" through the loader: load a sound effect into a slot
- * from the BW file in memory (its 0x40-byte header is copied to the slot
- * table); `fadeInMs` is a fade-in burnt into the decoded samples, `gain`
- * multiplies them; the library's result */
-uint32_t Sound_LoadSe(int slot, const void* desc, int fadeInMs, double gain);
+/* "A0 20" / "A0 21" / "A0 27" through the loader: load a sound effect
+ * into a slot from the BW file in memory (its 0x40-byte header is copied
+ * to the slot table); `fadeInMs` is a fade-in burnt into the decoded
+ * samples, `gain` multiplies them, `rate` (1.0 but for "A0 27" / "A0 28")
+ * makes the sound play that many times as fast at the same pitch; the
+ * library's result */
+uint32_t Sound_LoadSe(int slot, const void* desc, int fadeInMs, double gain, double rate);
 int Se_Unload(int slot);                    // "A0 22"
 int Se_Play(int slot, int volume, int pan); // "A0 24"
 int Se_Stop(int slot);                      // "A0 25"
 int Se_FadeOut(int slot, int ms);           // "A0 26"
-int32_t Se_GetLength(int slot);             // "A0 24": ms from the descriptor (frames * 1000 / rate); 0 when empty
+int32_t Se_GetLength(int slot);             // "A0 24", "A0 2F": ms from the descriptor (frames * 1000 / rate, 1.547 on divided by the playback rate); 0 when empty
 void Sound_StopAll(void);                   // "80 65", minimise: mute everything
 void Sound_ResumeAll(void);                 // the window's activation after the minimise: the volumes back
+void Sound_HoldAll(int hold);               // 1.547 on, "81 68": the playing sounds held while the window is inactive / let go
 int Sound_PlayWave(const char* name);       // "A0 C0": PlaySound of a file in the base directory; 1 when accepted
 const char* Sound_LibVersion(void);         // "Wave Master" version string
 

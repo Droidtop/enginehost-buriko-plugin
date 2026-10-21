@@ -826,10 +826,11 @@ void OS_EditMove(int x, int y, int w, int h)
 	BGI_UNUSED(h);
 }
 
-void OS_EditSetFont(const char* face, int size)
+void OS_EditSetFont(const char* face, int height, int width)
 {
 	BGI_UNUSED(face);
-	BGI_UNUSED(size);
+	BGI_UNUSED(height);
+	BGI_UNUSED(width);
 }
 
 void OS_EditLimitText(int maxChars)
@@ -912,9 +913,10 @@ int OS_MessageBox(const char* text, const char* caption, uint32_t flags)
  * the engine's encoding into `out` (0x100 bytes), cut to `maxLen` bytes
  * when that is positive - which may split a two-byte character, as the
  * EDIT control's limit cannot; 0 when cancelled */
-int OS_DialogInput1(const char* title, const char* initial, int maxLen, char* out)
+int OS_DialogInput1(const char* title, const char* initial, int maxLen, int digits, char* out)
 {
 	char t[0x400], i[0x400], r[0x400], sj[0x100];
+	BGI_UNUSED(digits); // (a prompt cannot filter what is typed: a digits-only field takes the answer as it is)
 	OsWasm_SjisToUtf8(title ? title : "", t, sizeof t);
 	OsWasm_SjisToUtf8(initial ? initial : "", i, sizeof i);
 	if(!WasmJs_Prompt(t, i, r, sizeof r))
@@ -928,19 +930,20 @@ int OS_DialogInput1(const char* title, const char* initial, int maxLen, char* ou
 
 /* the two-field dialog as two prompts in a row, each titled "<title>\n<label>";
  * cancelling the first skips the second (0), the result is the second's */
-int OS_DialogInput2(const char* title, const char* label1, const char* initial1, int maxLen1, char* out1,
-	const char* label2, const char* initial2, int maxLen2, char* out2)
+int OS_DialogInput2(const char* title, const char* label1, const char* initial1, int maxLen1, int digits1, char* out1,
+	const char* label2, const char* initial2, int maxLen2, int digits2, char* out2, int compact)
 {
 	char t[0x400], l[0x400];
 	OsWasm_SjisToUtf8(title ? title : "", t, sizeof t);
 	OsWasm_SjisToUtf8(label1 ? label1 : "", l, sizeof l);
 	snprintf(t + strlen(t), sizeof t - strlen(t), "\n%s", l);
-	if(!OS_DialogInput1(t, initial1, maxLen1, out1))
+	BGI_UNUSED(compact);
+	if(!OS_DialogInput1(t, initial1, maxLen1, digits1, out1))
 		return 0;
 	OsWasm_SjisToUtf8(title ? title : "", t, sizeof t);
 	OsWasm_SjisToUtf8(label2 ? label2 : "", l, sizeof l);
 	snprintf(t + strlen(t), sizeof t - strlen(t), "\n%s", l);
-	return OS_DialogInput1(t, initial2, maxLen2, out2);
+	return OS_DialogInput1(t, initial2, maxLen2, digits2, out2);
 }
 
 int OS_DialogProfile(char* surname, char* givenName, char* nickname, char* pronoun, int32_t* month, int32_t* day)
@@ -961,6 +964,21 @@ int OS_FileDialog(int save, char* path, size_t n, const char* filter, const char
 	BGI_UNUSED(path);
 	BGI_UNUSED(n);
 	BGI_UNUSED(filter);
+	BGI_UNUSED(defExt);
+	BGI_UNUSED(initialDir);
+	BGI_UNUSED(title);
+	return 0;
+}
+
+int OS_FileDialogN(int save, char* path, size_t n, const char* const* descs, const char* const* pats, int count,
+	const char* defExt, const char* initialDir, const char* title)
+{
+	BGI_UNUSED(save);
+	BGI_UNUSED(path);
+	BGI_UNUSED(n);
+	BGI_UNUSED(descs);
+	BGI_UNUSED(pats);
+	BGI_UNUSED(count);
 	BGI_UNUSED(defExt);
 	BGI_UNUSED(initialDir);
 	BGI_UNUSED(title);

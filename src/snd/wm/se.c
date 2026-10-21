@@ -10,12 +10,13 @@
 
 /* Load the BW file at `bwFile` (header and data, already in memory: the
  * loader read it) into `slot`, decoded completely, with a fade-in of
- * `fadeInMs` burnt into the samples and `gain` applied to them.  The
- * slot's previous sound is dropped; the new one is loaded stopped, at
- * full volume with no fades.  0 ok, 0x14 not running, 0x15 bad slot,
- * 0xe not a BW file (or an unknown codec), 0x16 the decoder could not
- * be set up. */
-uint32_t Wm_SeLoad(int slot, const void* bwFile, int fadeInMs, double gain)
+ * `fadeInMs` burnt into the samples and `gain` applied to them, then
+ * played `rate` times as fast at the same pitch (WmStream_TimeStretch;
+ * 1.0 leaves it alone).  The slot's previous sound is dropped; the new
+ * one is loaded stopped, at full volume with no fades (its own volume of
+ * "A0 2C" stays).  0 ok, 0x14 not running, 0x15 bad slot, 0xe not a BW
+ * file (or an unknown codec), 0x16 the decoder could not be set up. */
+uint32_t Wm_SeLoad(int slot, const void* bwFile, int fadeInMs, double gain, double rate)
 {
 	const BwHeader_t* hdr = (const BwHeader_t*)bwFile;
 	WmSource_t* src;
@@ -43,6 +44,8 @@ uint32_t Wm_SeLoad(int slot, const void* bwFile, int fadeInMs, double gain)
 		else
 		{
 			WmStream_FadeIn(s, (uint32_t)fadeInMs); // the result is ignored: a fade longer than the sound changes nothing
+			if(rate != 1.0)
+				WmStream_TimeStretch(s, rate);
 			Voice_Attach(r->voice, s);
 			r->stream = s;
 			r->fadeVol.active = 0;
@@ -130,6 +133,26 @@ int Wm_SeSetMasterVolume(int slot, uint32_t vol)
 		if(vol > 0x80)
 			vol = 0x80;
 		gSe[slot].master = (int32_t)vol;
+		Voice_SetVolume(gSe[slot].voice, Record_Level(&gSe[slot]));
+	}
+	Wm_Unlock();
+	return res;
+}
+
+/* the slot's own volume ("A0 2C", 1.588 on; clamped to 0x80), applied at
+ * once and kept when the slot is loaded again; 0, 0x14 not running, 0x15
+ * bad slot */
+int Wm_SeSetChannelVolume(int slot, uint32_t vol)
+{
+	int res = 0;
+	Wm_Lock();
+	if(!Wm_Running())
+		res = WM_E_NOT_RUNNING;
+	else if((uint32_t)slot >= WM_SE_SLOTS)
+		res = WM_E_BAD_CHANNEL;
+	else
+	{
+		gSe[slot].aux = (int32_t)(vol > 0x80 ? 0x80 : vol);
 		Voice_SetVolume(gSe[slot].voice, Record_Level(&gSe[slot]));
 	}
 	Wm_Unlock();

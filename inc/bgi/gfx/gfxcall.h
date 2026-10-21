@@ -33,6 +33,7 @@ int GfxCall_DefineRipple(int no, int period, int amplitude, int count, int rings
 int GfxCall_DefineRippleEx(int no, int period, int amplitude, int fadeIn, int fadeOut, int count, int rings); // "92 01"
 int GfxCall_ObjShow(uint32_t h, int on);                                                                      // "90 30"
 int GfxCall_ObjSetEnabled(uint32_t h, int v);                                                                 // "90 31"
+int GfxCall_ObjSetHidden(uint32_t h, int v);                                                                  // "91 31" (1.573 on)
 int GfxCall_ObjSetLevel(uint32_t h, int level);                                                               // "90 32"
 int GfxCall_ObjSetOpacity(uint32_t h, int v);                                                                 // 1.599 on ("90 39")
 int GfxCall_ObjSetPos(uint32_t h, int x, int y);                                                              // "90 33"

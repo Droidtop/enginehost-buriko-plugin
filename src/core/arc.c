@@ -165,15 +165,16 @@ static uint32_t FileSet_LoadIndex(FileSet_t* s, const char* path)
 }
 
 /* is this node the archive at `path`?  A node without an index adopts the
- * path (loads it) and matches when that succeeded; a loaded node matches
- * when the lower-cased paths are equal. */
+ * path (loads it) and matches when that succeeded - an empty node any
+ * path, a node whose index was dropped ("81 3C") only its own; a loaded
+ * node matches when the lower-cased paths are equal. */
 static int FileSet_Matches(FileSet_t* s, const char* path)
 {
 	char buf[0x104];
-	if(!s->loaded)
-		return FileSet_LoadIndex(s, path) == 0;
 	strcpy(buf, path);
 	SjisStrLwr(buf);
+	if(!s->loaded)
+		return (!s->name[0] || strcmp(buf, s->name) == 0) && FileSet_LoadIndex(s, path) == 0;
 	return strcmp(buf, s->name) == 0;
 }
 
@@ -268,9 +269,32 @@ static uint32_t FileSet_SizeOf(FileSet_t* s, const char* name)
 	return ARC_ERR_NOT_FOUND;
 }
 
+static FileSet_t* ArcMgr_NextNode(FileSet_t* s);
+
+/* 1.573 on ("81 3C"): the node that is the archive `path` drops its index
+ * - it keeps its place and its name and reads the index again on its next
+ * use, so that a replaced or deleted archive is seen as it now is; the
+ * rest of the chain stays.  0 when a node was (or became) the archive,
+ * ARC_ERR_OPEN when none is.  As in the original, a dropped node that was
+ * the last of the chain adopts no other archive afterwards, so the chain
+ * grows again only once that archive is read again. */
+static uint32_t FileSet_Reset(FileSet_t* s, const char* path)
+{
+	FileSet_t* n;
+	if(s->vt->matches(s, path))
+	{
+		s->loaded = 0;
+		BGI_Free(s->entries);
+		s->entries = NULL;
+		return 0;
+	}
+	n = ArcMgr_NextNode(s);
+	return n ? n->vt->reset(n, path) : ARC_ERR_OPEN;
+}
+
 static const FileSetVtbl_t FileSet_Vtbl = {
 	FileSet_Destroy, FileSet_Contains, FileSet_ArcNameFor,
-	FileSet_ReadRange, FileSet_SizeOf, FileSet_Matches};
+	FileSet_ReadRange, FileSet_SizeOf, FileSet_Matches, FileSet_Reset};
 
 // -------------------------------------------------------------------------
 // Archive manager chain
@@ -340,6 +364,12 @@ uint32_t ArcMgr_SizeOf(FileSet_t* mgr, const char* arc, const char* name)
 		return mgr->vt->sizeOf(mgr, name);
 	n = ArcMgr_NextNode(mgr);
 	return n ? ArcMgr_SizeOf(n, arc, name) : ARC_ERR_OPEN;
+}
+
+// "81 3C": see FileSet_Reset
+uint32_t ArcMgr_Reset(FileSet_t* mgr, const char* arc)
+{
+	return mgr->vt->reset(mgr, arc);
 }
 
 /* append `other` to the chain unless a node of that name exists; returns 1
@@ -524,9 +554,35 @@ static uint32_t FileSetList_SizeOf(FileSet_t* s, const char* name)
 	return r;
 }
 
+/* "81 3C" for a list: a path whose file name is one of the members is
+ * reset in the members' private chain; a path that is no member - or the
+ * member's reset found nothing - goes on down the main chain.  A path
+ * without a directory answers ARC_ERR_OPEN at once. */
+static uint32_t FileSetList_Reset(FileSet_t* s, const char* path)
+{
+	char base[0x104];
+	uint32_t r = ARC_ERR_OPEN;
+	FileSet_t* n;
+	int i;
+	if(!Path_BaseName(base, path))
+		return ARC_ERR_OPEN;
+	SjisStrLwr(base);
+	for(i = 0; i < s->listCount; i++)
+		if(strcmp(base, s->list[i]) == 0)
+		{
+			r = s->inner->vt->reset(s->inner, path);
+			if(r == 0)
+				break;
+		}
+	if(r != ARC_ERR_OPEN)
+		return r;
+	n = ArcMgr_NextNode(s);
+	return n ? n->vt->reset(n, path) : ARC_ERR_OPEN;
+}
+
 static const FileSetVtbl_t FileSetList_Vtbl = {
 	FileSetList_Destroy, FileSetList_Contains, FileSetList_ArcNameFor,
-	FileSetList_ReadRange, FileSetList_SizeOf, FileSetList_Matches};
+	FileSetList_ReadRange, FileSetList_SizeOf, FileSetList_Matches, FileSetList_Reset};
 
 /* "80 38": register the pseudo archive `name` that stands for the
  * NULL-terminated `list` of archive files.  1 when registered, 0 when the

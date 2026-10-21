@@ -54,7 +54,7 @@ scaling at render time.
 From 1.494 "C0 18" replaces a pattern's picture by an **animation** of up
 to 32 frames (each scaled the same way), every particle advancing its
 frame by a rate drawn at birth from the two 16.16 rates the control mode
-of "C0 1F" derives from the instruction's numbers.  From 1.640 a type 1
+of "C0 1F" derives from the instruction's numbers.  From 1.636 a type 1
 pattern also has an **alternate image** ("C0 1A"): a second animation
 cross-faded into the picture by a level of 0 .. 0x100 ("C0 1B" changes
 the level; 0 shows the picture alone, 0x100 the alternate frame alone),

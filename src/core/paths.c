@@ -36,12 +36,12 @@ void PathJoin(char* dst, const char* dir, const char* name)
 	sprintf(dst, "%s%s", dir, name);
 }
 
-/* Set the base directory (NULL: the executable's), stored with a
+/* Set the base directory (NULL or "": the executable's), stored with a
  * trailing separator and made the current directory; the alternative
  * directory is cleared. */
 void SetBaseDir(const char* dir)
 {
-	if(!dir)
+	if(!dir || !dir[0])
 	{
 		OS_ExeDir(gBaseDir, 0x104);
 	}

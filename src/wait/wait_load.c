@@ -54,6 +54,7 @@ typedef struct WaitSeLoad // 0x250 bytes
 	int slot;         // the destination sound effect slot
 	int fadeInMs;     // a fade-in burnt into the samples ("A0 21")
 	double gain;      // sample multiplier (1.0 for "A0 20")
+	double rate;      // playback rate at the same pitch (1.0 but for "A0 27")
 	int queued;       // the data has been handed to the sound loader
 	uint32_t status2; // the sound loader's status: -1 pending, 0 ok, 0x8xxxxxxx error
 } WaitSeLoad_t;
@@ -211,7 +212,7 @@ static int WaitSeLoad_Finish(WaitLoader_t* l)
 	char msg[0x100];
 	if(!w->queued)
 	{
-		Loader_QueueSe(&w->status2, w->slot, l->buf, w->fadeInMs, w->gain);
+		Loader_QueueSe(&w->status2, w->slot, l->buf, w->fadeInMs, w->gain, w->rate);
 		w->queued = 1;
 		return 0;
 	}
@@ -239,9 +240,10 @@ static const LoaderVtbl_t WaitSeLoad_Vtbl = {
 	{WaitSeLoad_Destroy, WaitLoader_Poll, Wait_SetTimer, Wait_IsDirtyBase, Wait_OnMessage}, WaitSeLoad_Finish};
 
 /* load the sound effect `name` of archive `arc` into `slot` with a fade-in
- * of fadeInMs ms and a sample gain ("A0 20": 0 and 1.0; "A0 21": as given).
- * The file cache is not used for sounds. */
-Wait_t* WaitSeLoad_New(Thread_t* t, int slot, const char* arc, const char* name, int fadeInMs, double gain)
+ * of fadeInMs ms, a sample gain and a playback rate ("A0 20": 0, 1.0 and
+ * 1.0; "A0 21": 1.0 for the rate; "A0 27": all as given).  The file cache
+ * is not used for sounds. */
+Wait_t* WaitSeLoad_New(Thread_t* t, int slot, const char* arc, const char* name, int fadeInMs, double gain, double rate)
 {
 	WaitSeLoad_t* w = (WaitSeLoad_t*)BGI_Alloc(sizeof *w);
 	WaitLoader_Ctor(&w->l, t, arc, name, 0);
@@ -249,6 +251,7 @@ Wait_t* WaitSeLoad_New(Thread_t* t, int slot, const char* arc, const char* name,
 	w->slot = slot;
 	w->fadeInMs = fadeInMs;
 	w->gain = gain;
+	w->rate = rate;
 	w->queued = 0;
 	return &w->l.w;
 }
@@ -260,7 +263,9 @@ typedef struct WaitSeMem
 	Wait_t w;         // (WaitCounted)
 	int slot;         // the destination sound effect slot
 	const void* data; // the BW file in the script's memory
+	int fadeInMs;     // a fade-in burnt into the samples
 	double gain;      // sample multiplier
+	double rate;      // playback rate at the same pitch
 	int queued;       // the data has been handed to the sound loader
 	uint32_t status;  // the sound loader's status: -1 pending, 0 ok, 0x8xxxxxxx error
 } WaitSeMem_t;
@@ -282,7 +287,7 @@ static int WaitSeMem_Poll(Wait_t* base)
 	Wait_Tick(base);
 	if(!w->queued)
 	{
-		Loader_QueueSe(&w->status, w->slot, w->data, 0, w->gain);
+		Loader_QueueSe(&w->status, w->slot, w->data, w->fadeInMs, w->gain, w->rate);
 		w->queued = 1;
 		return 0;
 	}
@@ -301,9 +306,9 @@ static const WaitVtbl_t WaitSeMem_Vtbl = {WaitSeMem_Destroy, WaitSeMem_Poll, Wai
 	Wait_OnMessage};
 
 /* load the BW file at `data` (in the script's memory, decoded whole before
- * the wait ends) into effect slot `slot` with a sample gain ("A0 28" of
- * 1.547 on) */
-Wait_t* WaitSeMem_New(Thread_t* t, int slot, const void* data, double gain)
+ * the wait ends) into effect slot `slot` with a fade-in, a sample gain and
+ * a playback rate ("A0 28" of 1.547 on) */
+Wait_t* WaitSeMem_New(Thread_t* t, int slot, const void* data, int fadeInMs, double gain, double rate)
 {
 	WaitSeMem_t* w = (WaitSeMem_t*)BGI_Alloc(sizeof *w);
 	WaitCounted_Ctor(&w->w, t);
@@ -311,7 +316,9 @@ Wait_t* WaitSeMem_New(Thread_t* t, int slot, const void* data, double gain)
 	w->w.vt = &WaitSeMem_Vtbl;
 	w->slot = slot;
 	w->data = data;
+	w->fadeInMs = fadeInMs;
 	w->gain = gain;
+	w->rate = rate;
 	w->queued = 0;
 	w->status = 0xffffffffu;
 	return &w->w;

@@ -35,7 +35,7 @@
 
 /* the boot thread's code and data areas (the SpawnThread of the boot
  * program): 256 KB each up to build 444, 512 KB of code
- * from build 472, 8 MB of code and 4 MB of data from 1.653 */
+ * from build 472, 8 MB of code and 4 MB of data from 1.636 */
 #define BOOT_A   0x40000, 0x40000
 #define BOOT_B   0x80000, 0x40000
 #define BOOT_C   0x800000, 0x400000
@@ -58,7 +58,8 @@ static const EngineProfile_t kDefaultProfiles[GEN_COUNT] = {
 	{"1.588", GEN_1_588, 172, LAYOUT_D, BOOT_B},
 	{"1.599", GEN_1_599, 172, LAYOUT_D, BOOT_B},
 	{"1.616", GEN_1_616, 172, LAYOUT_D, BOOT_B},
-	{"1.640", GEN_1_640, 172, LAYOUT_D, BOOT_B},
+	{"1.636", GEN_1_636, 172, LAYOUT_D, BOOT_C},
+	{"1.640", GEN_1_640, 172, LAYOUT_D, BOOT_C},
 	{"1.653", GEN_1_653, 172, LAYOUT_D, BOOT_C},
 	{"1.654", GEN_1_654, 172, LAYOUT_D, BOOT_C},
 	{"1.659", GEN_1_659, 172, LAYOUT_D, BOOT_C},
@@ -165,6 +166,8 @@ static const struct
 	{"NurseryRhymeTrial", "1.58", "NurseryRhyme"},
 	{"NurseryRhyme", "1.64", NULL},
 	{"ItsukaTodokuAnoSorani", "1.66", NULL},
+	// Fortune Arterial (August), build 438: a subset of build 444's opcodes, on its pointer layout
+	{"FortuneArterial", "1.69/444", NULL},
 	{"\xe3\x82\xbf\xe3\x83\xa6\xe3\x82\xbf\xe3\x83\x9e\xe3\x80\x90\xe4\xbd\x93\xe9\xa8\x93\xe7\x89\x88\xe3\x80\x91", "1.69/444", "Tayutama"}, // タユタマ【体験版】: the trial's own title string
 	{"Tayutama", "1.69/444", NULL},
 	{"\xe3\x82\xbf\xe3\x83\xa6\xe3\x82\xbf\xe3\x83\x9e", "1.69/451", "Tayutama"}, // タユタマ: the retail game's title string (its user-data folder)
@@ -178,9 +181,15 @@ static const struct
 	{"SekaiToSekaiNoMannakaDe", "1.588", NULL},
 	{"UnmeisenjouNoPhi", "1.599", NULL},
 	{"KodomoNoAsobi", "1.616", NULL},
+	{"SenNoHatouTsukisomeNoKouki", "1.636", NULL},
 	{"Tayutama2AS", "1.640", NULL},
 	{"WakabaironoQuartet", "1.653", NULL},
 	{"NekoTsukuSakura", "1.654", NULL},
+	// Yoake mae yori Ruri iro na (August), 1.658.2: the Windows 10 release, its PS2 and
+	// Moonlight Cradle versions; 1.659's opcodes less "81 01" and its behaviour, so 1.659's profile
+	{"YoakemaeyoriRuriironaWin10", "1.659", NULL},
+	{"YoakemaeyoriRuriironaPS2Win10", "1.659", NULL},
+	{"YoakemaeyoriRuriironaMCWin10", "1.659", NULL},
 	{"MadoiShirokinoKamikakushi", "1.659", NULL},
 	{"Yumahorome", "1.662", NULL},
 	{"ArcanaAlchemia", "1.667", NULL},

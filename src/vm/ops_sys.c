@@ -93,7 +93,7 @@ static int Opcode_Sys_Random(Thread_t* t) // 80 02: n → v
 	return 0;
 }
 
-static int Opcode_Sys_GetTicks(Thread_t* t) // 80 04: → ms (since boot)
+static int Opcode_Sys_GetTicks(Thread_t* t) // 80 04: → ms (GetTicks)
 {
 	Thread_Push(t, GetTicks());
 	return 0;
@@ -462,6 +462,17 @@ static int Opcode_Sys_SetAttr(Thread_t* t) // 80 2D: path, attr → ok
 	return 0;
 }
 
+/* move or rename `existing` to `newPath` (MoveFile: it fails when
+ * newPath exists); both are used as given, relative to the game
+ * directory; the destination is the operand pushed first */
+static int Opcode_Sys_MoveFile(Thread_t* t) // 80 27 (1.494 on): newPath, existing → ok
+{
+	const char* existing = (const char*)PopPtr(t);
+	const char* newPath = (const char*)PopPtr(t);
+	Thread_Push(t, (uint32_t)OS_FileMove(existing, newPath));
+	return 0;
+}
+
 // copy `src` over `dst`, clearing dst's read-only attribute first so that the copy may overwrite it
 static int Opcode_Sys_CopyFile(Thread_t* t) // 80 2F: dst, src → ok
 {
@@ -554,31 +565,52 @@ static int Opcode_Sys_DeleteFile(Thread_t* t) // 80 33: dir, name → ok
 }
 
 // whether file `name` exists, loose or in archive `arc`
-/* The disc marker: the discs carry a 16-byte file named exactly like the
- * product ("Tayutama", "HanairoHeptagram"), and every boot program quits
- * at once when "80 34" finds it next to the game - a copy of the disc
+/* The disc marker: the discs carry a 16-byte file named like the product
+ * ("Tayutama", "HanairoHeptagram"; "YoakemaeyoriRuriirona" for the
+ * product "YoakemaeyoriRuriironaWin10"), and every boot program quits at
+ * once when "80 34" finds it next to the game - a copy of the disc
  * directory never starts.  Unless --disc-marker asks for the original's
- * behaviour, a loose file named like the product is reported missing
- * (said once on stderr); the name match is case-insensitive like the
- * file lookup. */
+ * behaviour, such a loose file is reported missing (said once on
+ * stderr): one named like the product (case-insensitive like the file
+ * lookup), or one without an extension in the base directory that holds
+ * the marker's contents, the 16 characters "0123456789ABCDEF". */
+static int SameNameNoCase(const char* a, const char* b)
+{
+	for(; *a && *b; a++, b++)
+	{
+		int x = (uint8_t)*a, y = (uint8_t)*b;
+		if(x >= 'A' && x <= 'Z')
+			x += 32;
+		if(y >= 'A' && y <= 'Z')
+			y += 32;
+		if(x != y)
+			return 0;
+	}
+	return !*a && !*b;
+}
+
+static int HoldsMarker(const char* name)
+{
+	char path[0x208], buf[16];
+	OsFile_t* f;
+	uint32_t n = 0;
+	if(strpbrk(name, ".\\/:"))
+		return 0;
+	PathJoin(path, gBaseDir, name);
+	f = OS_FileOpenRead(path);
+	if(f && OS_FileSize(f) == sizeof buf)
+		n = OS_FileRead(f, buf, sizeof buf);
+	OS_FileClose(f);
+	return n == sizeof buf && memcmp(buf, "0123456789ABCDEF", sizeof buf) == 0;
+}
+
 static int IsDiscMarker(const char* arc, const char* name)
 {
 	static int said;
 	const char* product = Engine_ProductName();
-	size_t i;
-	if(gDiscMarker || arc || !name || !product[0])
+	if(gDiscMarker || arc || !name || !name[0])
 		return 0;
-	for(i = 0; name[i] && product[i]; i++)
-	{
-		int a = (uint8_t)name[i], b = (uint8_t)product[i];
-		if(a >= 'A' && a <= 'Z')
-			a += 32;
-		if(b >= 'A' && b <= 'Z')
-			b += 32;
-		if(a != b)
-			return 0;
-	}
-	if(name[i] || product[i])
+	if(!(product[0] && SameNameNoCase(name, product)) && !HoldsMarker(name))
 		return 0;
 	if(!said++)
 		fprintf(stderr, "bgi: the disc marker file \"%s\" is hidden from the scripts (--disc-marker shows it)\n", name);
@@ -589,7 +621,8 @@ static int Opcode_Sys_FileExists(Thread_t* t) // 80 34: arc, name → f
 {
 	const char* name = (const char*)PopPtr(t);
 	const char* arc = (const char*)PopPtr(t);
-	Thread_Push(t, IsDiscMarker(arc, name) ? 0u : (uint32_t)FileExists(arc, name));
+	int found = FileExists(arc, name);
+	Thread_Push(t, found && IsDiscMarker(arc, name) ? 0u : (uint32_t)found); // (said only when there is one)
 	return 0;
 }
 
@@ -782,11 +815,12 @@ static int Opcode_Sys_LoadProgram(Thread_t* t) // 80 40: arc, name → base
 
 /* drop the module loaded last and push the number of modules left
  * (0x80000001 when there was none); unloading the main program itself,
- * which leaves 0, is a script error */
+ * which leaves 0, is a script error - except in a thread of "81 44",
+ * whose main program is its lender's, so its own modules may all go */
 static int Opcode_Sys_UnloadProgram(Thread_t* t) // 80 41: → n
 {
 	uint32_t n = Thread_UnloadLastModule(t);
-	if(n == 0)
+	if(n == 0 && !t->lender)
 		ScriptError(MSG_MAIN_PROGRAM_UNLOADED, t);
 	Thread_Push(t, n);
 	return 0;
@@ -1968,8 +2002,8 @@ static int Opcode_Sys_GetProductName(Thread_t* t) // 80 E8: buf →
 	return 0;
 }
 
-/* whether the game is registered (comap.dat holds the machine key); when
- * it is not, the registration program is run and given time to write it */
+/* whether the game is registered (comap.dat holds the machine key;
+ * --no-disc-check counts every game as registered) */
 static int Opcode_Sys_CheckRegistration(Thread_t* t) // 80 EC: → f
 {
 	Thread_Push(t, (uint32_t)CheckRegistration());
@@ -1994,6 +2028,54 @@ static int Opcode_Sys_MachineKey(Thread_t* t) // 80 EE: → v
 static int Opcode_Sys_MachineKeyXor(Thread_t* t) // 80 EF: x → v
 {
 	Thread_Push(t, GetMachineKeyXor(Thread_Pop(t)));
+	return 0;
+}
+
+/* 80 EC .. EE from 1.636 on (the numbers of the registration opcodes above,
+ * which 1.616 dropped): the game's plug-in DLLs.  The original loads the
+ * DLL named by the script from the game directory (LoadLibrary), looks up
+ * its export "CallFunctionForEthornell" (1.640 on also hands the main
+ * window to "SetWindowHandleOfEthornell") and keeps it on a list under a
+ * counter id; "80 EE" calls the export with a function number and two
+ * arguments.  The ipl._bp of Sen no Hatou has such a load
+ * (OnlineStorageManager.dll) behind a constant false branch.
+ * No plug-in can be loaded here, so every call answers what the original
+ * does for a DLL that is not there: 1 for the load (LoadLibrary failed),
+ * 3 (no such plug-in) for the others; the out-values are left alone. */
+static int Opcode_Sys_PluginLoad(Thread_t* t) // 80 EC (1.636 on): out, name → code
+{
+	PopPtr(t); // the DLL's file name, in the game directory
+	PopPtr(t); // where the plug-in's id goes: 0 ok, 1 not loaded, 2 no export
+	Thread_Push(t, 1);
+	return 0;
+}
+
+static int Opcode_Sys_PluginFree(Thread_t* t) // 80 ED (1.636 on): id → code
+{
+	Thread_Pop(t);
+	Thread_Push(t, 3); // 0 freed, 3 no such plug-in
+	return 0;
+}
+
+/* `kinds` says how a and b were pushed: bits 16..31 set means a is a
+ * pointer, bits 0..15 set that b is; the export is called as fn(no, b, a)
+ * and its result stored to *out, the code being 0 for a zero result, 4 for
+ * any other, 3 for no such plug-in */
+static int Opcode_Sys_PluginCall(Thread_t* t) // 80 EE (1.636 on): out, id, no, b, a, kinds → code
+{
+	uint32_t kinds = Thread_Pop(t);
+	if(kinds & 0xffff0000u)
+		PopPtr(t);
+	else
+		Thread_Pop(t);
+	if(kinds & 0xffffu)
+		PopPtr(t);
+	else
+		Thread_Pop(t);
+	Thread_Pop(t); // the function number
+	Thread_Pop(t); // the plug-in's id
+	PopPtr(t);     // where the export's result goes
+	Thread_Push(t, 3);
 	return 0;
 }
 
@@ -2272,6 +2354,7 @@ void Vm_Optable80Init(void)
 		{0x21, Opcode_Sys_Gfree, GEN_FIRST, GEN_LAST},
 		{0x24, Opcode_Sys_CountFiles, GEN_FIRST, GEN_LAST},
 		{0x25, Opcode_Sys_ListFiles, GEN_FIRST, GEN_LAST},
+		{0x27, Opcode_Sys_MoveFile, GEN_1_494, GEN_LAST},
 		{0x28, Opcode_Sys_Mkdir, GEN_FIRST, GEN_LAST},
 		{0x29, Opcode_Sys_Rmdir, GEN_FIRST, GEN_LAST},
 		{0x2A, Opcode_Sys_IsDir, GEN_FIRST, GEN_LAST},
@@ -2408,10 +2491,13 @@ void Vm_Optable80Init(void)
 		{0xE3, Opcode_Sys_ShellOpen, GEN_FIRST, GEN_LAST},
 		{0xE8, Opcode_Sys_GetProductName, GEN_FIRST, GEN_LAST},
 		{0xE9, Opcode_Sys_HashFile, GEN_1_69_472, GEN_LAST},
-		{0xEC, Opcode_Sys_CheckRegistration, GEN_FIRST, GEN_LAST},
-		{0xED, Opcode_Sys_ReadComap, GEN_FIRST, GEN_LAST},
-		{0xEE, Opcode_Sys_MachineKey, GEN_FIRST, GEN_LAST},
-		{0xEF, Opcode_Sys_MachineKeyXor, GEN_FIRST, GEN_LAST},
+		{0xEC, Opcode_Sys_CheckRegistration, GEN_FIRST, GEN_1_616}, // dropped by 1.616; the numbers return in 1.636 for the plug-ins
+		{0xED, Opcode_Sys_ReadComap, GEN_FIRST, GEN_1_616},
+		{0xEE, Opcode_Sys_MachineKey, GEN_FIRST, GEN_1_616},
+		{0xEF, Opcode_Sys_MachineKeyXor, GEN_FIRST, GEN_1_616},
+		{0xEC, Opcode_Sys_PluginLoad, GEN_1_636, GEN_LAST},
+		{0xED, Opcode_Sys_PluginFree, GEN_1_636, GEN_LAST},
+		{0xEE, Opcode_Sys_PluginCall, GEN_1_636, GEN_LAST},
 		{0xF0, Opcode_Sys_InstallDialogA, GEN_FIRST, GEN_LAST},
 		{0xF1, Opcode_Sys_InstallDialogB, GEN_FIRST, GEN_LAST},
 		{0xF2, Opcode_Sys_InstallRun, GEN_FIRST, GEN_LAST},

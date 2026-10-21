@@ -31,6 +31,7 @@
  */
 #include <string.h>
 #include "bgi/panel.h"
+#include "bgi/version.h"
 #include "bgi/gfx.h"
 #include "bgi/gfx/gfxmgr.h"
 #include "bgi/gfx/window.h"
@@ -1159,7 +1160,10 @@ int ButtonPanel_Update(ButtonPanel_t* p)
 		else
 			ButtonPanel_PushEvent(p, 0x10000002, 0xffffffffu, 0);
 	}
-	// hover selection: once the pointer has moved, the focused button becomes its group's selection
+	/* hover selection: once the pointer has moved, the focused button becomes
+	 * its group's selection; the selection event goes out for every move up
+	 * to 1.69 build 444, from build 472 on only when the selection changed
+	 * (the scripts play their hover sound on it) */
 	if(p->inputEnabled && p->focus != -1 && p->groups[p->buttons[p->focus].group].hoverSelects)
 	{
 		int m[2];
@@ -1167,12 +1171,14 @@ int ButtonPanel_Update(ButtonPanel_t* p)
 		if(m[0] != p->lastMouse[0] || m[1] != p->lastMouse[1])
 		{
 			const PanelInfo_t* f = &p->buttons[p->focus];
+			int changed;
 			ButtonPanel_SetCurrentGroup(p, f->group);
-			PANEL_VT(p)->setSelection(p, f->group, f->index);
+			changed = PANEL_VT(p)->setSelection(p, f->group, f->index);
 			sel = grp ? grp->selected : sel;
 			p->lastMouse[0] = m[0];
 			p->lastMouse[1] = m[1];
-			ButtonPanel_PushEvent(p, 0x10000004, PACK(f->group, f->index), 0);
+			if(changed || gEngine->gen < GEN_1_69_472)
+				ButtonPanel_PushEvent(p, 0x10000004, PACK(f->group, f->index), 0);
 		}
 	}
 	// a held left button repeats as clicks on groups that ask for it

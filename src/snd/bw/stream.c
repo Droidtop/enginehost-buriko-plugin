@@ -428,3 +428,66 @@ int WmStream_FadeIn(WmStream_t* s, uint32_t ms)
 			*p = (int16_t)BGI_Ftol((double)*p * (double)(int64_t)i / (double)(int64_t)frames);
 	return 0;
 }
+
+/* the 5 ms crossfade that starts every chunk of a stretched sound after
+ * the first: from the samples at index `a` of src (the continuation of
+ * the chunk before) to those at `b` (this chunk), weighted per
+ * interleaved sample over L samples with the original's weight j / (L -
+ * 2), the rest of the chunk copied from `b`; `n` samples are written to
+ * d, samples at or past `count` read as silence */
+static void Stretch_Crossfade(int16_t* d, const int16_t* src, uint64_t a, uint64_t b, uint32_t n, uint32_t L, uint64_t count)
+{
+	uint32_t j;
+	for(j = 0; j < n; j++)
+	{
+		int32_t vb = b + j < count ? src[b + j] : 0;
+		if(j < L && L > 2)
+		{
+			double w = (double)j / (double)(L - 2);
+			int32_t va = a + j < count ? src[a + j] : 0, v = BGI_Ftol((double)va * (1.0 - w) + (double)vb * w);
+			d[j] = (int16_t)(v < -32768 ? -32768 : v > 32767 ? 32767
+															 : v);
+		}
+		else
+			d[j] = (int16_t)vb;
+	}
+}
+
+int WmStream_TimeStretch(WmStream_t* s, double rate)
+{
+	uint32_t frames, chunk, total, outFrames, off, d, ch, L;
+	int32_t skip;
+	const int16_t* src;
+	int16_t* dst;
+	WmSource_t* mem;
+	if(!s->decoded || !(rate > 0.0))
+		return -1;
+	frames = s->hdr.frames;
+	ch = s->channels;
+	chunk = (uint32_t)BGI_Ftol((double)s->rate * 0.03);
+	if(chunk == 0 || (double)frames / rate + 0.9 >= (double)(0x7fffffffu / s->blockAlign - chunk))
+		return -1; // (a rate that small makes the original allocate without bounds)
+	total = (uint32_t)(int64_t)((double)frames / rate + 0.9);
+	outFrames = (total / chunk + 1) * chunk;
+	skip = BGI_Ftol((double)chunk * rate - (double)chunk); // so a chunk starts every chunk + skip source frames
+	L = (uint32_t)BGI_Ftol((double)s->rate * 0.005) * ch;
+	mem = WmSource_FromMemory(NULL, outFrames * s->blockAlign); // zeroed: the original plays what its heap held there
+	src = (const int16_t*)s->decoded->mem;
+	dst = (int16_t*)mem->mem;
+	for(off = 0, d = 0; off < frames && d < outFrames; off += chunk + (uint32_t)skip, d += chunk)
+	{
+		uint32_t n = frames - off < chunk ? frames - off : chunk;
+		if(n > outFrames - d)
+			n = outFrames - d;
+		if(off == 0)
+			memcpy(dst, src, (size_t)n * s->blockAlign);
+		else // from where the chunk before would have gone on to this chunk
+			Stretch_Crossfade(dst + (size_t)d * ch, src, (uint64_t)((int64_t)off - skip) * ch, (uint64_t)off * ch, n * ch, L,
+				(uint64_t)frames * ch);
+	}
+	WmSource_Close(s->decoded);
+	s->decoded = mem;
+	s->hdr.frames = outFrames;
+	s->pos = 0;
+	return 0;
+}

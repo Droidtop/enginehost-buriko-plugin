@@ -44,6 +44,7 @@ The games we have been working on, with the engine build each one needs
 | Sekai to Sekai no Mannaka de | `SekaiToSekaiNoMannakaDe` | 1.588 | Very playable |
 | Unmei Senjou no Phi | `UnmeisenjouNoPhi` | 1.599 | Very playable |
 | Kodomo no Asobi | `KodomoNoAsobi` | 1.616 | Playable |
+| Sen no Hatou, Tsukisome no Kouki (trial) | `SenNoHatouTsukisomeNoKouki` | 1.636 | Testing in progress |
 | Tayutama 2 -After Stories- | `Tayutama2AS` | 1.640 | Playable |
 | Wakabairo no Quartet | `WakabaironoQuartet` | 1.653 | Playable |
 | Nekotsuku, Sakura. | `NekoTsukuSakura` | 1.654 | Somewhat playable, glitchy |
@@ -64,8 +65,11 @@ The games we have been working on, with the engine build each one needs
 
 ### Testing scope
 
-Only Lump of Sugar games have been tested so far.  We are interested in
-testing other BGI-based games: if you have one, tell us how it goes in
+Apart from the trial of Sen no Hatou, Tsukisome no Kouki (August), whose
+build is surveyed but not yet playable, Fortune Arterial (August),
+which boots (`--no-disc-check`), and Yoake mae yori Ruri iro na
+(August, 1.658.2 on the 1.659 profile), whose prologue plays, only Lump
+of Sugar games have been tested so far.  We are interested in testing other BGI-based games: if you have one, tell us how it goes in
 our [Discord](https://discord.gg/3zFTJWUNt7).
 
 Testing happens on a case-by-case basis, and to exercise newly implemented opcodes and subsystems. The is currently no extensive testkit again individual games, except booting up a game and actually playing it.
@@ -98,6 +102,10 @@ WebAssembly builds.
     cd <the game's directory>   # ipl._bp, system.arc, sysprg.arc, ...
     /path/to/bin/bgi [arguments as for the original]
 
+or `bin/bgi "<the game's directory>"` from anywhere: the directory given
+(or the one holding the archive or program file given) becomes the game
+directory, as if the engine were started there.
+
 or just `bin/bgi` from anywhere: started outside a game directory (no
 `system.arc` or `ipl._bp` where it runs, no path given) the engine opens
 a "Select game" window - the games it has run before, or a directory
@@ -109,19 +117,32 @@ The engine build a game needs is chosen from the game's `ipl._bp` through
 `games.json`, which also holds the profiles themselves: the engine writes
 the default one next to `bgi` on its first run (a game's own directory
 may carry one too) - see `docs/versions.md`.  `--engine=NAME` forces a
-profile, `--list-engines` prints them, `--games=PATH` names another
-table, `--enable=FAM:OP` / `--disable=FAM:OP` override single opcodes;
-these options are removed before the rest of the command line reaches
-the original's parser.  The original's own options such as `"Do not use
-mutex."` (needed for a second instance in the same directory) work as
-before.
+profile, `--list-engines` prints them, `--productname=NAME` gives the
+product name the game's scripts check for (with `--engine=`, a game that
+`games.json` does not know runs without an entry), `--games=PATH` names
+another table, `--enable=FAM:OP` / `--disable=FAM:OP` override single
+opcodes; these options are removed before the rest of the command line
+reaches the original's parser.  The original's own options such as `"Do
+not use mutex."` (needed for a second instance in the same directory)
+work as before.  A game path with spaces in it may be passed as one
+argument (`bin/bgi "$HOME/VN/[August] Fortune Arterial"`), as
+may an option's value (`--games="$HOME/VN/my games.json"`).
 
 A game copied straight from its disc carries the disc marker, a 16-byte
-file named like the product (`Tayutama`, `HanairoHeptagram`, ...), and
-every boot program quits at once when it finds that file next to the
-game - the disc is meant to be installed, not run.  The engine hides the
-marker from the scripts, so such a copy starts; `--disc-marker` gives
-the original's behaviour back.
+file named like the product (`Tayutama`, `HanairoHeptagram`,
+`YoakemaeyoriRuriirona`, ...) that holds `0123456789ABCDEF`, and every
+boot program quits at once when it finds that file next to the game -
+the disc is meant to be installed, not run.  The engine hides the marker
+from the scripts (a file named like the product, or one without an
+extension holding those 16 characters), so such a copy starts;
+`--disc-marker` gives the original's behaviour back.
+
+Some of the older games (Fortune Arterial among them) check their
+registration at boot: `comap.dat`, written for the machine by the
+game's registration program `reg.exe`, which wants the disc and runs on
+Windows only.  OpenBGI does not start that program, so without a
+`comap.dat` made for the machine the boot program asks for the disc;
+`--no-disc-check` counts the game as registered.
 
 Movies: the frame-sequence movies of the later builds (`docs/bfmovie.md`)
 are decoded by the engine itself.  The opening movies in common formats
@@ -260,6 +281,37 @@ print and take their default button), `BGI_TRACE`, `BGI_TRACE_FROM`,
 `BGI_PANEL_DEBUG=1` (the buttons of every panel at its start and the
 events it queues), `BGI_DEBUG_OVERLAY=1` (the debugger over the game's
 picture instead of in a window of its own).
+
+## Special Thanks and Honourable Mentions
+
+### Special Thanks
+
+* Darios Sawm / Buriko Co., Ltd.
+* [Anonymous]
+* minirop
+* Galladite
+* txt231
+
+### Honourable Mentions
+
+* The BGI tools of the community:
+  * [GARbro](https://github.com/morkt/GARbro) (morkt)
+  * [arc_unpacker](https://github.com/vn-tools/arc_unpacker) (vn-tools)
+  * [EthornellTools](https://github.com/arcusmaximus/EthornellTools)
+    (arcusmaximus)
+  * [VNTranslationTools](https://github.com/arcusmaximus/VNTranslationTools)
+    (arcusmaximus)
+  * [Bgi_tools](https://github.com/mchubby/Bgi_tools) (mchubby)
+  * [engine_bgi](https://github.com/mnakamura1337/engine_bgi)
+    (mnakamura1337)
+  * [ethornell-tools](https://github.com/Jair4x/ethornell-tools) (Jair4x)
+  * [bgi-extractor](https://github.com/mirinnano/bgi-extractor)
+    (mirinnano)
+  * [BGIextractor](https://github.com/myzert/BGIextractor) (myzert)
+* [BGI](https://github.com/txt231/BGI) by txt231
+* [ethornell-rs](https://github.com/xmoezzz/ethornell-rs) (xmoezzz)
+* Operation Bellflower - [Adventures in the Ethornell
+  Engine](https://www.operationbellflower.com/blog/adventures-in-the-ethornell-engine/part-1)
 
 ## License
 

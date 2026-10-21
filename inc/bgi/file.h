@@ -82,6 +82,7 @@ typedef struct FileSetVtbl
 	uint32_t (*readRange)(FileSet_t* s, void* dst, const char* name, uint32_t off, uint32_t size); // bytes read, or ARC_ERR_*
 	uint32_t (*sizeOf)(FileSet_t* s, const char* name);                                            // the stored size, or ARC_ERR_NOT_FOUND
 	int (*matches)(FileSet_t* s, const char* arcPath);                                             // 1 when this node is the archive `arcPath`
+	uint32_t (*reset)(FileSet_t* s, const char* arcPath);                                          // 1.573 on: drop the index of `arcPath` here or further down the chain; 0, or ARC_ERR_OPEN
 } FileSetVtbl_t;
 
 struct FileSet
@@ -113,6 +114,7 @@ uint32_t ArcMgr_Read(FileSet_t* mgr, void* dst, const char* arc, const char* nam
 uint32_t ArcMgr_ReadRange(FileSet_t* mgr, void* dst, const char* arc, const char* name, uint32_t off, uint32_t size); // size 0: the whole entry; dst NULL: the size only
 uint32_t ArcMgr_SizeOf(FileSet_t* mgr, const char* arc, const char* name);                                            // the stored size, or ARC_ERR_NOT_FOUND / ARC_ERR_OPEN
 int ArcMgr_Register(FileSet_t* mgr, FileSet_t* other);                                                                // append; 1 when taken over, 0 when a node of that name exists
+uint32_t ArcMgr_Reset(FileSet_t* mgr, const char* arc);                                                               // "81 3C": the archive's index is read again on its next use; 0, or ARC_ERR_OPEN when no node is or can become it
 
 FileSet_t* FileSetList_New(void);                        // an empty list archive
 int FileSetList_SetName(FileSet_t* s, const char* name); // the pseudo archive name; 0 for NULL
@@ -172,7 +174,7 @@ int DriveReady(const char* path);                                               
  * then the loaded size or -1; a sound job writes -1 while pending, then 0
  * or an 0x8xxxxxxx error */
 void Loader_QueueFile(uint32_t* status, void* buf, const char* arc, const char* name);
-void Loader_QueueSe(uint32_t* status, int slot, const void* desc, int fadeInMs, double gain);
+void Loader_QueueSe(uint32_t* status, int slot, const void* desc, int fadeInMs, double gain, double rate);
 void Loader_Start(void);
 void Loader_Stop(void);
 
@@ -204,9 +206,12 @@ int FileExists(const char* arc, const char* name);                              
 int Dir_Exists(const char* dir, const char* name);                                                                  // dir + name is a file (search list honoured)
 int FindMoviePath(char* dst, const char* name);                                                                     // "90 F0": the full path of a loose file; 1 found
 int PromptForDisk(const char* name, const char* title, const char* msg);                                            // "80 3C": prompt until `name` is in the base dir; 0 gave up
+int ReloadArchive(const char* name);                                                                                // "81 3C" (1.573 on): ArcMgr_Reset of the archive in the base (then the alternative) directory; 0 found, 1 not
 int Sys_RegisterFilelist(const char* name, char** list);                                                            // "80 38": a pseudo archive for a NULL-terminated list; 1 ok
 int FileDialog(char* path, const char* desc, const char* ext, const char* title, const char* initialDir, int mode); // "80 3B": 0 ok, -1 cancel, 4 bad mode
-int FindFiles(char** out, const char* pattern, int recurse, const char* prefix, int max);                           // "80 24" / "80 25": the count; out NULL counts only
+int FileDialogN(char* path, int count, const char* const* descs, const char* const* pats, const char* title,
+	const char* initialDir, int kind);                                                    // "81 38": 0 ok, -1 cancel, 4 bad kind, 7 no filter
+int FindFiles(char** out, const char* pattern, int recurse, const char* prefix, int max); // "80 24" / "80 25": the count; out NULL counts only
 
 /* an 8-byte zero-initialised buffer that is only ever read; it
  * serves as the empty path prefix for FindFiles and as the seed byte of

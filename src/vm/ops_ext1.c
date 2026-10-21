@@ -266,13 +266,13 @@ static void Ext1_BitmapResult(Thread_t* t, uint32_t r, int pattern, int bmp)
 }
 
 /* 1.494 on: the control mode of the particle animations that "C0 18" sets
- * up (see there): 0 or 1, and 2 from 1.640 on; any other value is a script
+ * up (see there): 0 or 1, and 2 from 1.636 on; any other value is a script
  * error */
 int gPtclAnimMode;                               // the mode "C0 1F" selected, read by "C0 18"
 static int Opcode_Ext1_PtclAnimMode(Thread_t* t) // C0 1F (1.494 on): mode →
 {
 	uint32_t mode = Thread_Pop(t);
-	if(mode > (gEngine->gen >= GEN_1_640 ? 2u : 1u))
+	if(mode > (gEngine->gen >= GEN_1_636 ? 2u : 1u))
 		EXT_ERROR(t, MSG_BAD_CONTROL_MODE, mode);
 	gPtclAnimMode = (int)mode;
 	return 0;
@@ -284,7 +284,7 @@ static int Opcode_Ext1_PtclAnimMode(Thread_t* t) // C0 1F (1.494 on): mode →
  * rate1 + Rnd(rate2), where the rates come from the three numbers and the
  * control mode of "C0 1F": mode 0 rate1 = frames / a, rate2 = frames / b;
  * mode 1 rate1 = frames / a, rate2 = frames / (a + b) - rate1; mode 2
- * (1.640 on) rate1 = frames / a, rate2 = rate1 * b / a (a divisor of 0
+ * (1.636 on) rate1 = frames / a, rate2 = rate1 * b / a (a divisor of 0
  * gives a rate of 0).  Count 0 drops the animation; a missing bitmap of the
  * range, a bad type or pattern, a range of unequal bitmaps and a rejected
  * count are script errors. */
@@ -359,11 +359,11 @@ static int Opcode_Ext1_PtclAnimation(Thread_t* t) // C0 18 (1.494 on): type, pat
 	return 0;
 }
 
-/* 1.640 on: "C0 18" for the alternate image of a type 1 pattern - a second
+/* 1.636 on: "C0 18" for the alternate image of a type 1 pattern - a second
  * animation cross-faded into the pattern's picture by `level` (0 .. 0x100:
  * 0 the picture alone, 0x100 the alternate frame alone; prtclctrl._bp
  * fades a new animation in through it); only type 1 has one */
-static int Opcode_Ext1_PtclAltAnimation(Thread_t* t) // C0 1A (1.640 on): type, pattern, count, firstBmp, a, b, frames, level →
+static int Opcode_Ext1_PtclAltAnimation(Thread_t* t) // C0 1A (1.636 on): type, pattern, count, firstBmp, a, b, frames, level →
 {
 	uint32_t level = Thread_Pop(t);
 	int32_t frames = (int32_t)Thread_Pop(t), b = (int32_t)Thread_Pop(t), a = (int32_t)Thread_Pop(t);
@@ -380,8 +380,8 @@ static int Opcode_Ext1_PtclAltAnimation(Thread_t* t) // C0 1A (1.640 on): type, 
 	return 0;
 }
 
-// 1.640 on: the mix level of the alternate image of a type 1 pattern ("C0 1A")
-static int Opcode_Ext1_PtclAltLevel(Thread_t* t) // C0 1B (1.640 on): type, pattern, level →
+// 1.636 on: the mix level of the alternate image of a type 1 pattern ("C0 1A")
+static int Opcode_Ext1_PtclAltLevel(Thread_t* t) // C0 1B (1.636 on): type, pattern, level →
 {
 	uint32_t level = Thread_Pop(t);
 	int pattern = (int)Thread_Pop(t), type = (int)Thread_Pop(t);
@@ -710,8 +710,8 @@ void Vm_OptableC0Init(void)
 		{0x10, Opcode_Ext1_PtclSetWind, GEN_FIRST, GEN_LAST},
 		{0x20, Opcode_Ext1_PtclGroupA, GEN_FIRST, GEN_LAST},
 		{0x18, Opcode_Ext1_PtclAnimation, GEN_1_494, GEN_LAST},
-		{0x1A, Opcode_Ext1_PtclAltAnimation, GEN_1_640, GEN_LAST},
-		{0x1B, Opcode_Ext1_PtclAltLevel, GEN_1_640, GEN_LAST},
+		{0x1A, Opcode_Ext1_PtclAltAnimation, GEN_1_636, GEN_LAST},
+		{0x1B, Opcode_Ext1_PtclAltLevel, GEN_1_636, GEN_LAST},
 		{0x1F, Opcode_Ext1_PtclAnimMode, GEN_1_494, GEN_LAST},
 		{0x24, Opcode_Ext1_PtclBitmapA, GEN_FIRST, GEN_LAST},
 		{0x25, Opcode_Ext1_PtclParamA, GEN_FIRST, GEN_LAST},

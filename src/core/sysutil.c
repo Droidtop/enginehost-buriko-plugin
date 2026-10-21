@@ -9,6 +9,7 @@
  */
 #include "bgi/sys.h"
 #include "bgi/os.h"
+#include "bgi/display.h"
 
 // ---- allocation ----------------------------------------------------------
 
@@ -102,10 +103,124 @@ void Timer_End(void)
 	}
 }
 
-// the engine's clock: milliseconds, wrapping at 2^32
+/* The engine's clock: milliseconds, wrapping at 2^32.  Up to 1.529 it is
+ * the system clock.  From 1.535 on it can be stopped (Clock_Stop /
+ * Clock_Resume): while stopped it reads the value it had when it stopped,
+ * and the stopped time is taken out of it afterwards.  From 1.573 on it
+ * does not see jumps either: a reading below the previous one, or more
+ * than the step limit ("81 04", 500 ms by default) above it, moves the
+ * base by the difference, so the clock starts at 0 on its first reading
+ * and stands still across a stall such as a long load. */
+static uint32_t gClockBase;          // subtracted from the system clock
+static uint32_t gClockFrozen;        // the value while stopped; 0 while running (a clock stopped at 0 runs on)
+static uint32_t gClockLast;          // the system clock at the previous reading (1.573 on)
+static uint32_t gClockMaxStep = 500; // the longest step that counts as time passing
+static int gClockStopInactive;       // "81 68": stop while the window is inactive
+static int gClockStopped;            // 1.547 on: a stop is in effect (the next one is not counted)
+
 uint32_t GetTicks(void)
 {
-	return OS_TicksMs();
+	uint32_t now = OS_TicksMs();
+	if(gEngine->gen < GEN_1_535)
+		return now;
+	if(gEngine->gen >= GEN_1_573)
+	{
+		if(now < gClockLast || gClockLast + gClockMaxStep < now)
+			gClockBase += now - gClockLast;
+		gClockLast = now;
+	}
+	return gClockFrozen ? gClockFrozen : now - gClockBase;
+}
+
+/* Stop the clock (the window lost the focus, or a message box or a
+ * dialog is up).  `force` (1.547 on, the boxes and dialogs) stops it
+ * whatever "81 68" says; the deactivation stops it only when "81 68" asked
+ * for that.  From 1.547 on a second stop before the resume changes
+ * nothing; from 1.588 on nothing happens before the window exists.  1 when
+ * the clock was stopped here. */
+int Clock_Stop(int force)
+{
+	int stopped = 0;
+	if(gEngine->gen < GEN_1_535)
+		return 0;
+	if(gEngine->gen < GEN_1_547)
+	{
+		if(gClockStopInactive && !gClockFrozen)
+		{
+			gClockFrozen = GetTicks();
+			return 1;
+		}
+		return 0;
+	}
+	if((gEngine->gen >= GEN_1_588 && !gWindowAlive) || gClockStopped)
+		return 0;
+	if((gClockStopInactive || force) && !gClockFrozen)
+	{
+		gClockFrozen = GetTicks();
+		stopped = 1;
+	}
+	gClockStopped = 1;
+	return stopped;
+}
+
+/* Let the clock run on, the stopped time taken out of it (1.535: only
+ * while "81 68" is set).  1 when it had been stopped. */
+int Clock_Resume(void)
+{
+	uint32_t at = gClockFrozen;
+	if(gEngine->gen < GEN_1_535)
+		return 0;
+	if(gEngine->gen < GEN_1_547)
+	{
+		if(!gClockStopInactive || !at)
+			return 0;
+	}
+	else
+	{
+		if((gEngine->gen >= GEN_1_588 && !gWindowAlive) || !gClockStopped)
+			return 0;
+		gClockStopped = 0;
+		if(!at)
+			return 0;
+	}
+	gClockFrozen = 0;
+	gClockBase += GetTicks() - at;
+	return 1;
+}
+
+// 1.547 on: a message box or a dialog is up - the clock stops whatever "81 68" says, and runs on after it
+void Clock_BoxBegin(void)
+{
+	if(gEngine->gen >= GEN_1_547)
+		Clock_Stop(1);
+}
+
+void Clock_BoxEnd(void)
+{
+	if(gEngine->gen >= GEN_1_547)
+		Clock_Resume();
+}
+
+// "81 68" (1.535 on): stop the clock (and from 1.547 on the sound) while the window is inactive; the previous setting
+int Clock_SetStopWhenInactive(int on)
+{
+	int prev = gClockStopInactive;
+	gClockStopInactive = on;
+	return prev;
+}
+
+int Clock_StopsWhenInactive(void)
+{
+	return gClockStopInactive;
+}
+
+// "81 04" (1.616 on): the step limit, 50 .. 60000 ms; 1 when accepted
+int Clock_SetMaxStep(uint32_t ms)
+{
+	if(ms - 50 > 60000 - 50)
+		return 0;
+	gClockMaxStep = ms;
+	return 1;
 }
 
 // ---- idle sleep ------------------------------------------------------------

@@ -43,7 +43,7 @@ int RunProgram(const char* dir, const char* file, const char* msg,
 int ShellOpen(const char* path); // "80 E3": open a file or URL with its associated program (ShellExecute "open"); the OS layer's result
 
 // ---- registration / machine identity (machine.c) ----------------------------
-int CheckRegistration(void);           // "80 EC": 1 when comap.dat holds the machine key (reg.exe is run to write it first)
+int CheckRegistration(void);           // "80 EC": 1 when comap.dat holds the machine key, or with --no-disc-check
 int ReadComapDat(void* buf);           // "80 ED": the first 0x404 bytes of "comap.dat" into buf; 1 when the file opened
 uint32_t GetMachineKey(void);          // "80 EE": CPU signature, Windows version, first letters of the user and computer names
 uint32_t GetMachineKeyXor(uint32_t x); // "80 EF": the machine key XOR x

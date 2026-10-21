@@ -170,6 +170,7 @@ typedef struct OsFile OsFile_t;
 
 OsFile_t* OS_FileOpenRead(const char* path);                     // GENERIC_READ, OPEN_EXISTING; NULL on failure
 OsFile_t* OS_FileCreate(const char* path);                       // GENERIC_WRITE, CREATE_ALWAYS (truncates); NULL on failure
+OsFile_t* OS_FileOpenWrite(const char* path);                    // GENERIC_WRITE, OPEN_ALWAYS (keeps the contents, starts at 0); NULL on failure
 void OS_FileClose(OsFile_t* f);                                  // accepts NULL
 uint32_t OS_FileRead(OsFile_t* f, void* buf, uint32_t n);        // bytes read, 0 on error or at the end
 uint32_t OS_FileWrite(OsFile_t* f, const void* buf, uint32_t n); // bytes written
@@ -477,10 +478,11 @@ void OS_ChildReleaseDc(OsChild_t* c, OsDc_t* dc);
  * without an edit control draws the field itself (src/os/posix/edit.c). */
 void OS_EditShow(int show);                   // ShowWindow(SW_SHOW / SW_HIDE) + WM_SETFONT (the font when shown, none when hidden)
 void OS_EditMove(int x, int y, int w, int h); // MoveWindow in client coordinates, repaint
-/* replace the font: CreateFontA(size, size / 2, 0, 0, FW_THIN, 0, 0, 0,
+/* replace the font: CreateFontA(height, width, 0, 0, FW_THIN, 0, 0, 0,
  * SHIFTJIS_CHARSET, OUT_TT_PRECIS, 0, PROOF_QUALITY, FIXED_PITCH, face) and
- * WM_SETFONT with redraw */
-void OS_EditSetFont(const char* face, int size);
+ * WM_SETFONT with redraw; the width is half the height unless "B0 22"
+ * changed it */
+void OS_EditSetFont(const char* face, int height, int width);
 void OS_EditLimitText(int maxChars);     // EM_LIMITTEXT
 void OS_EditSetText(const char* t);      // SetWindowText
 void OS_EditSelectAll(void);             // EM_SETSEL 0, -1
@@ -500,7 +502,10 @@ int OS_EditImeOpen(void);                // 1.69/472 on ("B0 23"): the IME open 
  *            OK (0x3fa) / cancel (0x3fb)
  *   Input2 : two labelled edit fields (0x3fc, 0x3fd; labels 0x400, 0x401);
  *            OK (0x3fe) / cancel (0x3ff); the focus goes to the first field
- *            without an initial text
+ *            without an initial text; `compact` ("B0 87", 1.573 on) selects
+ *            resource 0x7E, the two fields side by side
+ *   A `digits` field (1.573 on) takes only digits as they are typed, and
+ *            a '-' while it is empty; pasted text is not filtered.
  *   Profile: four edit fields (surname 0x407, given name 0x410, nickname
  *            0x413, first-person pronoun 0x412, 10 bytes each) and two
  *            combo boxes (month 0x409 listing 1..12, day 0x40a listing
@@ -511,9 +516,9 @@ int OS_EditImeOpen(void);                // 1.69/472 on ("B0 23"): the IME open 
  *            character with the message MSG_DLG_HALFWIDTH (caption
  *            MSG_DLG_INPUT_ERROR) and keeps the dialog open; the focus
  *            starts on the OK button. */
-int OS_DialogInput1(const char* title, const char* initial, int maxLen, char* out);
-int OS_DialogInput2(const char* title, const char* label1, const char* initial1, int maxLen1, char* out1,
-	const char* label2, const char* initial2, int maxLen2, char* out2);
+int OS_DialogInput1(const char* title, const char* initial, int maxLen, int digits, char* out);
+int OS_DialogInput2(const char* title, const char* label1, const char* initial1, int maxLen1, int digits1, char* out1,
+	const char* label2, const char* initial2, int maxLen2, int digits2, char* out2, int compact);
 int OS_DialogProfile(char* surname, char* givenName, char* nickname, char* pronoun, int32_t* month, int32_t* day);
 
 /* The launcher's "Select game" dialog (src/sys/launcher.c), shown when
@@ -707,6 +712,11 @@ int OS_MessageBox(const char* text, const char* caption, uint32_t flags);
  * `defExt` the default extension without the dot, `path` (n bytes) the
  * initial file name in and the chosen one out; 1 when a file was chosen */
 int OS_FileDialog(int save, char* path, size_t n, const char* filter, const char* defExt, const char* initialDir, const char* title);
+/* the same for "81 38" with `count` description / pattern pairs (the
+ * filter list of the dialog, the first one selected), in the newer style
+ * with the places bar */
+int OS_FileDialogN(int save, char* path, size_t n, const char* const* descs, const char* const* pats, int count,
+	const char* defExt, const char* initialDir, const char* title);
 /* SHBrowseForFolder for "81 3A" and the installer: file-system folders
  * only, `initial` selected at the start (NULL for none); 1 when a folder
  * was chosen (path receives it) */

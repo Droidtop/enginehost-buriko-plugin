@@ -99,6 +99,30 @@ int BmpOp_GatherAdd(int dst, int src, uint32_t cx, uint32_t cy, uint32_t level);
 int BmpOp_Stretch(int dst, int x, int y, int w, int h, int src, int sx, int sy, int sw, int sh);
 // "90 1D": Blit_RotateCentred (nearest sampling) of src into dst; 0 ok, 1 / 2 no bitmap, 3 modes differ, 4 zoom <= 0
 int BmpOp_Rotate(int dst, int src, int32_t zoom, int32_t angle);
+/* "90 CA" (1.616 on): src scaled into dst keeping its aspect ratio,
+ * centred, bicubic (Blit_Bicubic), the bars cleared; 0 ok, 0x80000009 no
+ * destination, 0x8000000a no source */
+uint32_t BmpOp_FitBicubic(int dst, int src);
+/* "90 C3" (1.599 on): dst made a bitmap of half src's size (rounded up)
+ * in src's mode and filled with src averaged over 2 x 2 pixels: each byte
+ * the rounded-up mean of the two rows, then of the two columns; an odd
+ * last column is averaged over the rows only, an odd last row over the
+ * columns only, and the corner of both is copied.  Only 32-bit bitmaps
+ * are filtered; any other mode leaves the new dst as made.  0 ok,
+ * 0x80000006 src smaller than 2 x 2, 0x80000009 dst cannot be made,
+ * 0x8000000a no src. */
+uint32_t BmpOp_HalfSize(int dst, int src);
+#define BMP_ERR_NOT_BG 0x8000000du // "90 C0": the file is neither a CompressedBG nor an uncompressed raw image
+/* "90 C0" (1.547 on): the slot made a zero-filled bitmap of the size, mode
+ * and base size the picture file arc:name declares in its header as
+ * stored; 0 ok, -1 not found, BMP_ERR_NOT_BG, 0x80000009 not made */
+int BmpOp_CreateLikeFile(int slot, const char* arc, const char* name);
+/* "90 C4" (1.553 on): a picture file (path as given) into the slot; mode 1 RGB32, 2 ARGB32, 3 GRAY8, -1 by the
+ * file; 0 ok, 0x80000001 / 0x80000002 (mode -1) no such file / unreadable, -1 any other failure */
+int BmpOp_LoadPicture(int slot, const char* path, int mode);
+/* "90 C5" (1.553 on): the bitmap as a picture file, format 0 BMP, 1 JPEG (quality), 4 PNG; 0 ok, 0x80000003 no
+ * bitmap, 0x80000004 bad format, 0x80000005 not written */
+int BmpOp_SavePicture(int slot, const char* path, uint32_t format, int quality);
 // "91 18" / "91 19": Blit_Xform / Blit_XformCopy of src into dst; 0 ok, 1 / 2 no bitmap, 3 zero scale
 int BmpOp_Xform(int dst, int32_t x16, int32_t y16, int src, int32_t cx16, int32_t cy16, int32_t angle,
 	int32_t sx, int32_t sy, int level, int smooth);

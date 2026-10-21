@@ -52,10 +52,11 @@ and `ui_internal.h` are its own headers, `inc/bgi/os_posix.h` and
 `registry.c`, `machine.c`, `sjis.c`, `time.c`, `thread.c`).  The game
 directory is reported as `C:\` (`OS_ExeDir`; the original takes its own
 directory, this binary lives elsewhere and takes the current directory at
-start-up, so the engine is run from inside the game folder), so every
-path the engine builds carries a drive letter - the drive-ready checks of
-the file layer key on it, and the scripts' scan for `data0Nxxx.arc`
-members goes through them; on the way back a drive letter maps to the
+start-up, or the directory the launcher or the command line names -
+`OS_SetGameDir`), so every path the engine builds carries a drive
+letter - the drive-ready checks of the file layer key on it, and the
+scripts' scan for `data0Nxxx.arc` members goes through them; on the way
+back a drive letter maps to the
 game directory, `\` becomes `/`, and every component that does not exist
 as spelled is matched case-insensitively (the game data was written for a
 case-insensitive file system).  Shift-JIS is converted with iconv

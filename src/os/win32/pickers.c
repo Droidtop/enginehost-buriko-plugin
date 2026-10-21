@@ -4,7 +4,7 @@
  *
  * pickers.c - the shell's file and folder pickers for the Win32 back end
  *             (inc/bgi/os.h): GetOpenFileName / GetSaveFileName for
- *             "80 3B" and SHBrowseForFolder for "81 3A" and the installer,
+ *             "80 3B" and "81 38" and SHBrowseForFolder for "81 3A" and the installer,
  *             in their wide-character forms: the engine's strings are
  *             converted on the way in, the chosen path on the way out
  *             (wide.c; a path the engine cannot spell comes back under
@@ -12,40 +12,25 @@
  */
 #include "ui_internal.h"
 
-/* The common file dialog over the main window.  The filter arrives as
- * "<description> <pattern>"; the original overwrites the last space with
- * a NUL to make the pair the dialog expects, and the zeroed buffer
- * supplies the second terminator.  `path` (n bytes) holds the initial
- * file name and receives the choice; `save` picks GetSaveFileName with an
- * overwrite prompt instead of GetOpenFileName requiring an existing file.
- * 1 when a file was chosen. */
-int OS_FileDialog(int save, char* path, size_t n, const char* filter, const char* defExt, const char* initialDir,
-	const char* title)
+/* GetOpenFileName / GetSaveFileName over the main window with the filter
+ * list `wflt` (UTF-16 pairs, two NULs at the end): `path` (n bytes) holds
+ * the initial file name and receives the choice; `save` picks
+ * GetSaveFileName with an overwrite prompt instead of GetOpenFileName
+ * requiring an existing file; `structSize` 0x4c gives the Windows 95
+ * style without the places bar, 0x58 the newer one.  1 when a file was
+ * chosen. */
+static int FileDialog(int save, char* path, size_t n, const WCHAR* wflt, const char* defExt, const char* initialDir,
+	const char* title, DWORD structSize)
 {
 	OPENFILENAMEW ofn;
-	char flt[0x104];
-	WCHAR wflt[0x108], file[WIN32_WPATH];
+	WCHAR file[WIN32_WPATH];
 	WCHAR* wdefExt = Win32_ToWideDup(defExt); // the optional strings stay NULL when not given
 	WCHAR* wdir = Win32_ToWideDup(initialDir);
 	WCHAR* wtitle = Win32_ToWideDup(title);
-	char* space;
-	size_t len = strlen(filter);
-	int o, ok;
-	if(len > sizeof flt - 3)
-		len = sizeof flt - 3;
-	memset(flt, 0, sizeof flt);
-	memcpy(flt, filter, len);
-	space = strrchr(flt, ' ');
-	if(space)
-		*space = 0;
-	// the pair as UTF-16: the description, its NUL, the pattern, and two NULs at the end
-	memset(wflt, 0, sizeof wflt);
-	o = Win32_ToWide(flt, wflt, 0x104) + 1;
-	if(space)
-		Win32_ToWide(space + 1, wflt + o, 0x104 - o);
+	int ok;
 	Win32_ToWide(path, file, (int)BGI_COUNTOF(file));
 	memset(&ofn, 0, sizeof ofn);
-	ofn.lStructSize = 0x4c; // the Windows 95 size the original uses: the dialog comes up in its old style, without the places bar
+	ofn.lStructSize = structSize;
 	ofn.hwndOwner = gWin32MainWnd;
 	ofn.lpstrFilter = wflt;
 	ofn.nFilterIndex = 1;
@@ -62,6 +47,55 @@ int OS_FileDialog(int save, char* path, size_t n, const char* filter, const char
 	free(wdir);
 	free(wtitle);
 	return ok;
+}
+
+/* "80 3B": the filter arrives as "<description> <pattern>"; the original
+ * overwrites the last space with a NUL to make the pair the dialog
+ * expects, and the zeroed buffer supplies the second terminator.  The
+ * dialog has the Windows 95 size the original uses: it comes up in its
+ * old style, without the places bar. */
+int OS_FileDialog(int save, char* path, size_t n, const char* filter, const char* defExt, const char* initialDir,
+	const char* title)
+{
+	char flt[0x104];
+	WCHAR wflt[0x108];
+	char* space;
+	size_t len = strlen(filter);
+	int o;
+	if(len > sizeof flt - 3)
+		len = sizeof flt - 3;
+	memset(flt, 0, sizeof flt);
+	memcpy(flt, filter, len);
+	space = strrchr(flt, ' ');
+	if(space)
+		*space = 0;
+	// the pair as UTF-16: the description, its NUL, the pattern, and two NULs at the end
+	memset(wflt, 0, sizeof wflt);
+	o = Win32_ToWide(flt, wflt, 0x104) + 1;
+	if(space)
+		Win32_ToWide(space + 1, wflt + o, 0x104 - o);
+	return FileDialog(save, path, n, wflt, defExt, initialDir, title, 0x4c);
+}
+
+/* "81 38": `count` description / pattern pairs, in the newer style with
+ * the places bar; pairs past the original's filter buffer are left out */
+int OS_FileDialogN(int save, char* path, size_t n, const char* const* descs, const char* const* pats, int count,
+	const char* defExt, const char* initialDir, const char* title)
+{
+	WCHAR wflt[0x400], wd[0x200], wp[0x200];
+	int i, o = 0;
+	memset(wflt, 0, sizeof wflt);
+	for(i = 0; i < count; i++)
+	{
+		int d = Win32_ToWide(descs[i], wd, (int)BGI_COUNTOF(wd)), p = Win32_ToWide(pats[i], wp, (int)BGI_COUNTOF(wp));
+		if(o + d + 1 + p + 1 + 1 > (int)BGI_COUNTOF(wflt))
+			break; // (the zeroed rest ends the list)
+		memcpy(wflt + o, wd, (size_t)d * sizeof(WCHAR));
+		o += d + 1;
+		memcpy(wflt + o, wp, (size_t)p * sizeof(WCHAR));
+		o += p + 1;
+	}
+	return FileDialog(save, path, n, wflt, defExt, initialDir, title, 0x58);
 }
 
 // BFFM_INITIALIZED: centre the browser and select the initial folder (the lParam of BROWSEINFO: its path in UTF-16) when one is given

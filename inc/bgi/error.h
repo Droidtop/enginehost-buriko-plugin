@@ -54,8 +54,12 @@ void ShowErrorBox(const char* text);
 /* the language of the engine's messages (inc/bgi/msg.h): "en" (the
  * default) or "ja", the originals; 1 when `lang` was understood */
 int Msg_SetLanguage(const char* lang);
-// ShowErrorBox + throw BGI_SCRIPT_ERROR_VALUE
+// ShowErrorBox (while keeping: the first error only), keep the message ("81 6A"), throw BGI_SCRIPT_ERROR_VALUE
 BGI_NORETURN void ThrowScriptError(const char* text);
+void Error_SetKeep(int on);            // "81 6A" (1.547 on): fatal errors end only their thread, the first one's message is kept
+int Error_Keeping(void);               // the "81 6A" setting
+uint32_t Error_KeptMessage(char* out); // "81 6B": the kept message into out (may be NULL); length + 1, 0 when none
+void Error_FreeKept(void);             // shutdown
 /* the "Thread No. [ %d ], Program [ %s ]..." context of the thread's
  * current instruction followed by `msg`, into dst (not bounded; ScriptError
  * gives it 0x400 bytes) */

@@ -112,9 +112,14 @@ struct DispObj
 	int32_t noPerspective; // 1.494: setParam 0x8001; a sprite's depth no longer scales it (SpProjDist)
 	int32_t followOffset;  // 1.616: setParam 0xC4, default 1; the object moves with the "91 06" offset
 	int32_t paramC5;       // 1.640: setParam 0xC5, default 1 (stored; its use was not found)
-	int32_t sortMode;      // 1.640: setParam 0x8101; 1 orders by priority and depth alone (DispObj_SortKey)
+	int32_t sortMode;      // 1.636: setParam 0x8101; 1 orders by priority and depth alone (DispObj_SortKey)
 	uint32_t flagBits;     // 1.640: setParam 0xFFFF, default all set; bit 0 lets "90 34" change this object's fade
 	int32_t param_1;       // 1.535: read by getParam -1; the filter object stores a result code there
+	/* 1.573 on: a "hidden" switch apart from the shown and enabled flags,
+	 * and whether the two are passed on to the children */
+	int32_t hidden;            // "91 31": non-zero keeps the object from being drawn (DispObj_IsVisible)
+	int32_t enabledToChildren; // setParam 0xC0: "90 31" also sets the children's enabled flags
+	int32_t hiddenToChildren;  // setParam 0xC1: "91 31" also sets the children's hidden switches
 };
 
 extern int32_t gDispGlobalOffset[2]; // 1.616 on: "91 06", added to the draw position of the objects that follow it
@@ -206,6 +211,7 @@ void DispObj_SetFixedPos(DispObj_t* o, int32_t fx, int32_t fy, int32_t fz);
 void DispObj_GetFixedPos(DispObj_t* o, int32_t out[4]);
 void DispObj_SetLevel(DispObj_t* o, int level);
 void DispObj_SetOpacity(DispObj_t* o, int v); // 1.599 on ("90 39"): with the children
+void DispObj_SetHidden(DispObj_t* o, int v);  // 1.573 on ("91 31"): the hidden switch, with the children when hiddenToChildren is set
 int DispObj_GetLevel(DispObj_t* o);
 void DispObj_SetProgress(DispObj_t* o, int raw, int v);
 int DispObj_SetParam(DispObj_t* o, int no, int a, int b);

@@ -290,6 +290,20 @@ static void UiClampNumeric(UiFieldW_t* f)
 	f->f.caret = (int)strlen(f->f.text);
 }
 
+/* whether an edit of a digits-only field stays within what typing may add:
+ * no new character but digits, and a '-' only into a field that was empty */
+static int UiDigitsKept(const char* before, const char* after)
+{
+	int i, otherB = 0, otherA = 0, minusB = 0, minusA = 0;
+	for(i = 0; before[i]; i++)
+		before[i] == '-' ? minusB++ : (before[i] < '0' || before[i] > '9') ? otherB++
+																		   : 0;
+	for(i = 0; after[i]; i++)
+		after[i] == '-' ? minusA++ : (after[i] < '0' || after[i] > '9') ? otherA++
+																		: 0;
+	return otherA <= otherB && (minusA <= minusB || before[0] == 0);
+}
+
 // the dialog window's events for X11_RunModal; 0 once a button ended the dialog
 static int UiHandler(XEvent* ev, void* ctx)
 {
@@ -404,7 +418,15 @@ static int UiHandler(XEvent* ev, void* ctx)
 					UiDraw(d);
 					break;
 				}
-				r = X11Field_Key(&f->f, &ev->xkey, d->ic);
+				{
+					X11Field_t before = f->f;
+					r = X11Field_Key(&f->f, &ev->xkey, d->ic);
+					if(r > 0 && f->digits && !UiDigitsKept(before.text, f->f.text))
+					{
+						f->f = before; // the character is swallowed
+						r = 0;
+					}
+				}
 				if(r > 0)
 				{
 					UiClampNumeric(f);

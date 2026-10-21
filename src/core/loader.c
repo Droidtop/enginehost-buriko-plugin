@@ -44,17 +44,18 @@ void Loader_QueueFile(uint32_t* status, void* buf, const char* arc, const char* 
 }
 
 /* A sound job ("A0 20"): load the BW file `desc` into sound-effect slot
- * `slot` with Sound_LoadSe and translate the library's result into the
+ * `slot` with Sound_LoadSe (with the fade-in, gain and playback rate)
+ * and translate the library's result into the
  * status word: 0 and 20 (the library is not running) give 0; 14 (not a
  * BW file) gives 0x80000001; 18 gives 0x80000002; any other code, and a
  * thrown error, give 0x8fffffff. */
-void Loader_QueueSe(uint32_t* status, int slot, const void* desc, int fadeInMs, double gain)
+void Loader_QueueSe(uint32_t* status, int slot, const void* desc, int fadeInMs, double gain, double rate)
 {
 	BgiTryFrame_t frame;
 	*status = 0xffffffffu;
 	if(BGI_TRY(frame))
 	{
-		uint32_t r = Sound_LoadSe(slot, desc, fadeInMs, gain);
+		uint32_t r = Sound_LoadSe(slot, desc, fadeInMs, gain, rate);
 		BGI_END_TRY(frame);
 		switch(r)
 		{

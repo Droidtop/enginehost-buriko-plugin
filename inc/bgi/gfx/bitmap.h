@@ -209,6 +209,12 @@ void Blit_ScaleNearest(Bmp_t* dst, const Bmp_t* src, int32_t sx16, int32_t sy16)
  * destination with saturation, each scaled by (256 - level) / 256 and its
  * bilinear weight; RGB32 on both sides, else nothing is drawn */
 void Blit_GatherAdd(Bmp_t* dst, const Bmp_t* src, uint32_t cx, uint32_t cy, uint32_t level);
+/* 1.616 on ("90 CA"): src scaled by (scaleX, scaleY) with its point (sx,
+ * sy) on the destination point (dx, dy), bicubic (4 x 4 taps of the a = -1
+ * cubic kernel, taps outside the source left out and the rest
+ * renormalised), single precision.  0 ok, 0x13 a scale <= 0; nothing is
+ * drawn unless both are RGB32 or both ARGB32. */
+int Blit_Bicubic(Bmp_t* dst, float dx, float dy, const Bmp_t* src, float sx, float sy, float scaleX, float scaleY);
 
 
 // ---- tuning switches of the original -------------------------------------

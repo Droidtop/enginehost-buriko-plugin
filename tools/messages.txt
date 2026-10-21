@@ -14,12 +14,14 @@ MSG_ASK_ABORT	中止しますか？	Abort?
 MSG_NAME_TOO_LONG	指定されたファイル名 [ %s ] は%d文字を超えています	The specified file name [ %s ] exceeds %d characters
 MSG_FILE_NOT_FOUND	指定されたファイル [ %s ] は存在しません	The specified file [ %s ] does not exist
 MSG_ARC_FILE_NOT_FOUND	指定されたファイル [ %s : %s ] は存在しません	The specified file [ %s : %s ] does not exist
+MSG_ARC_FILE_NOT_BG	指定されたファイル [ %s : %s ] はBG形式ではありません	The specified file [ %s : %s ] is not in BG format
 MSG_BAD_POINTER_REGION	指定されたポインタ [ $%.8X ] は無効な領域を示しています	The specified pointer [ $%.8X ] points into an invalid region
 MSG_BAD_POINTER	無効なポインタ [ $%.8X ] にアクセスしようとしました	Attempted to access an invalid pointer [ $%.8X ]
 MSG_UNDEFINED_OP	未定義の基本命令 $%02X を検出しました	Undefined base instruction $%02X encountered
 MSG_SOMETHING_WRONG	何らかの問題が発生しました	Some problem has occurred
 MSG_NOTICE	通知	Notice
 MSG_SDC_ENCODE_FAILED	信じられない事にSDCエンコーディングに失敗した	Unbelievably, SDC encoding failed
+MSG_SDC_ENCODE_FAILED_3	SDCエンコーディングに失敗しました	SDC encoding failed
 MSG_CPU_UNSUPPORTED	このハードウェアに搭載されているCPUはサポート対象外です	The CPU installed in this hardware is not supported
 MSG_CPU_NO_INSN	このハードウェアに搭載されているCPUはプログラムの実行に不可欠な命令をサポートしていません	The CPU installed in this hardware does not support instructions essential to running the program
 MSG_NO_DIRECTX	実行に必要なDirectX（8.0以降）がインストールされていません	The DirectX (8.0 or later) required to run is not installed
@@ -51,6 +53,9 @@ MSG_UNDEF_EVAL	未定義の評価命令 $D0%02X を検出しました	Undefined 
 MSG_UNDEF_EXTE0	未定義の拡張命令 $E0%02X を検出しました	Undefined extended instruction $E0%02X encountered
 MSG_UNDEF_OBGI	未定義の OpenBGI 拡張命令 $EF%02X を検出しました	Undefined OpenBGI extension instruction $EF%02X encountered
 MSG_THREAD_CODE_FULL	生成されたスレッドのコード領域のサイズが不足しているので、プログラム [ %s : %s ] を読み込むことができません	The code area of the created thread is too small, so the program [ %s : %s ] cannot be loaded
+MSG_CHILD_CODE_FULL	指定されたサイズ [ %d ] のコード領域を親スレッドに確保することができません	A code area of the specified size [ %d ] cannot be reserved in the parent thread
+MSG_CHILD_DATA_FULL	指定されたサイズ [ %d ] のスタック領域を親スレッドに確保することができません	A stack area of the specified size [ %d ] cannot be reserved in the parent thread
+MSG_CHILD_IP_OUT_OF_RANGE	チャイルドスレッドの初期IPにコード領域のサイズを超える値 $%X が設定されました	The initial IP of the child thread was set to a value $%X exceeding the size of the code area
 MSG_PROGRAM_NOT_FOUND	指定されたプログラム [ %s : %s ] は存在しません	The specified program [ %s : %s ] does not exist
 MSG_BAD_USEROP_SLOT	無効なユーザー定義命令・プログラム番号 [ %d ] が指定されました	An invalid user-defined instruction program number [ %d ] was specified
 MSG_UNDEF_USEROP	未定義のユーザー定義命令 $FF%02X を検出しました	Undefined user-defined instruction $FF%02X encountered
@@ -411,6 +416,7 @@ MSG_SELECT_FOLDER	フォルダを選択してください	Please select a folder
 MSG_BAD_ADDITION_LEVEL	無効なアディションレベル [ %d ] が指定されました	An invalid addition level [ %d ] was specified
 MSG_GEN_DST_INVALID	生成先に指定されたビットマップ [ %d ] は無効です	The bitmap [ %d ] specified as the generation target is invalid
 MSG_GEN_SRC_INVALID	参照元に指定されたビットマップ [ %d ] は無効です	The bitmap [ %d ] specified as the source is invalid
+MSG_SRC_TOO_SMALL	参照元に指定されたビットマップ [ %d ] は小さすぎます	The bitmap [ %d ] specified as the source is too small
 MSG_GEN_SRC_MODE_MISMATCH	参照元に指定されたビットマップ [ %d ] 及び [ %d ] のピクセルモードが一致しません	The pixel modes of the source bitmaps [ %d ] and [ %d ] do not match
 MSG_NOT_BG_FILE	指定されたファイル [ %s : %s ] はBGではない、もしくはサポート外の形式のデータです	The specified file [ %s : %s ] is not a BG, or is data of an unsupported format
 MSG_BAD_MASTER_HANDLE	無効なマスターオブジェクトハンドルが指定されました	An invalid master object handle was specified

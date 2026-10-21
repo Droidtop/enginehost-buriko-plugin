@@ -7,16 +7,22 @@
  * The scripts register names with "80 84" and ask with "80 85" whether a
  * name is known; the set is part of the global database (database.c).
  * Two storages, by engine generation: the fixed table gNameTable until
- * 1.599, the string table GNAME_TABLE from 1.616 on.
+ * 1.599 (0x1000 slots, 0x4000 from 1.529 on), the string table
+ * GNAME_TABLE from 1.616 on.
  */
 #include "bgi/sysobj/names.h"
 #include "bgi/sysobj/strtables.h"
 #include "bgi/version.h"
 
-char gNameTable[GNAME_COUNT][GNAME_SIZE];
+char gNameTable[GNAME_COUNT_MAX][GNAME_SIZE];
 
 // 1.616 on keep the names in the string table; "80 D8" (clear the string tables) leaves it alone
 #define GNAME_IN_STRTAB (gEngine->gen >= GEN_1_616)
+
+int GName_Slots(void)
+{
+	return gEngine->gen >= GEN_1_529 ? GNAME_COUNT_MAX : GNAME_COUNT;
+}
 
 /* Register `name`.  The fixed table is filled from the front and the first
  * empty slot ends the search, so a name is added once.  Returns 1 when the
@@ -29,7 +35,7 @@ int GName_Add(const char* name)
 		StrTab_Add(GNAME_TABLE, name); // folds duplicates itself
 		return 1;
 	}
-	for(i = 0; i < GNAME_COUNT; i++)
+	for(i = 0; i < GName_Slots(); i++)
 	{
 		if(gNameTable[i][0] == 0)
 		{
@@ -48,7 +54,7 @@ int GName_Exists(const char* name)
 	int i;
 	if(GNAME_IN_STRTAB)
 		return StrTab_Find(GNAME_TABLE, name) >= 0;
-	for(i = 0; i < GNAME_COUNT; i++)
+	for(i = 0; i < GName_Slots(); i++)
 	{
 		if(gNameTable[i][0] == 0)
 			return 0; // the first empty slot ends the table
@@ -58,41 +64,45 @@ int GName_Exists(const char* name)
 	return 0;
 }
 
-/* Copy the names into the fixed-slot layout of the database file: the
- * fixed table as it is, or the first GNAME_COUNT entries of the string
- * table truncated to GNAME_SIZE - 1 characters each. */
-void GName_ToSlots(char (*slots)[GNAME_SIZE])
+void GName_ToSlots(char (*slots)[GNAME_SIZE], int count)
 {
 	int i, n;
+	memset(slots, 0, (size_t)count * GNAME_SIZE);
 	if(!GNAME_IN_STRTAB)
 	{
-		memcpy(slots, gNameTable, sizeof gNameTable);
+		memcpy(slots, gNameTable, (size_t)(count < GName_Slots() ? count : GName_Slots()) * GNAME_SIZE);
 		return;
 	}
-	memset(slots, 0, sizeof gNameTable);
 	n = StrTab_Count(GNAME_TABLE);
-	for(i = 0; i < n && i < GNAME_COUNT; i++)
+	for(i = 0; i < n && i < count; i++)
 	{
 		char buf[0x400];
-		size_t len;
-		if(StrTab_Get(buf, GNAME_TABLE, (uint32_t)i) != 0)
+		int32_t len;
+		if(StrTab_Length(&len, GNAME_TABLE, (uint32_t)i) != 0 || len >= (int32_t)sizeof buf ||
+			StrTab_Get(buf, GNAME_TABLE, (uint32_t)i) != 0)
 			continue;
-		len = strlen(buf);
-		memcpy(slots[i], buf, len < GNAME_SIZE ? len : GNAME_SIZE - 1);
+		memcpy(slots[i], buf, (size_t)(len < GNAME_SIZE ? len : GNAME_SIZE - 1));
 	}
 }
 
-// Replace the live names with the fixed-slot layout read from the database file.
-void GName_FromSlots(const char (*slots)[GNAME_SIZE])
+void GName_FromSlots(const char (*slots)[GNAME_SIZE], int count)
 {
 	int i;
 	if(!GNAME_IN_STRTAB)
 	{
-		memcpy(gNameTable, slots, sizeof gNameTable);
+		memset(gNameTable, 0, sizeof gNameTable);
+		memcpy(gNameTable, slots, (size_t)(count < GName_Slots() ? count : GName_Slots()) * GNAME_SIZE);
+		for(i = 0; i < GNAME_COUNT_MAX; i++)
+			gNameTable[i][GNAME_SIZE - 1] = 0;
 		return;
 	}
 	StrTab_Remove(GNAME_TABLE);
-	for(i = 0; i < GNAME_COUNT; i++)
+	for(i = 0; i < count; i++)
 		if(slots[i][0])
-			StrTab_Add(GNAME_TABLE, slots[i]);
+		{
+			char name[GNAME_SIZE];
+			memcpy(name, slots[i], GNAME_SIZE - 1);
+			name[GNAME_SIZE - 1] = 0;
+			StrTab_Add(GNAME_TABLE, name);
+		}
 }

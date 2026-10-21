@@ -21,6 +21,7 @@
 static char gEditText[EDIT_TEXT_MAX]; // empty until "B0 26" (the control itself is created with MSG_EDIT_DEFAULT_TEXT)
 static Rect_t gEditRect;              // the client rectangle of the last Edit_Setup, inclusive
 static uint32_t gEditColour;          // COLORREF (0x00BBGGRR)
+static int gEditWidthPct = 100;       // "B0 22": the glyph width of the font in percent of the normal
 
 // "B0 24": show or hide the control
 void Edit_Show(int show)
@@ -49,7 +50,7 @@ int Edit_Setup(int x, int y, int w, int h, int fontNo, int size, int maxLen, int
 
 	Edit_Show(1);
 	OS_EditMove(x, y, w, h);
-	OS_EditSetFont(face, size);
+	OS_EditSetFont(face, size, size * gEditWidthPct / 100 / 2);
 	OS_EditLimitText(maxLen);
 	OS_EditSetText(gEditText);
 	OS_EditSelectAll();
@@ -59,6 +60,17 @@ int Edit_Setup(int x, int y, int w, int h, int fontNo, int size, int maxLen, int
 	gEditRect.r = x + w - 1;
 	gEditRect.b = y + h - 1;
 	return 0;
+}
+
+/* "B0 22" (1.529 on): the glyph width of the font the next Edit_Setup
+ * creates, in percent of the normal width (half the size); 1 when within
+ * 25 .. 200 and taken, else 0 */
+int Edit_SetFontWidthPct(int pct)
+{
+	if(pct < 25 || pct > 200)
+		return 0;
+	gEditWidthPct = pct;
+	return 1;
 }
 
 // "B0 26": the text the next Edit_Setup puts in the control (truncated to 0xff bytes)

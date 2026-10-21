@@ -56,6 +56,7 @@ typedef struct UiFieldW
 	int x, y, w, h;             // in dialog pixels
 	X11Field_t f;               // the text and its editing state
 	int numeric, min, max;      // a number picker standing in for a combo box: digits only, kept within min .. max
+	int digits;                 // a digits-only field: typing adds only digits, and a '-' to an empty field
 	const char* const* choices; // a choice picker: up / down step through these texts (typing is still free)
 	int nChoices;
 } UiFieldW_t;

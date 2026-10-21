@@ -63,9 +63,13 @@ int Arc_Exists(const char* arcPath, const char* name)
 	return ArcMgr_Exists(gArcMgr, arcPath, name);
 }
 
+static uint32_t LoadFileDecoded(void* buf, const char* arc, const char* name);
+static uint32_t GetFileSizeDecoded(const char* arc, const char* name);
+
 /* Load a whole file into buf (which must be large enough: GetFileSize_
  * says how large), prompting for the disc until it is found, and decode
- * DSC / CompressedBG data in place.  The bytes in buf.  Throws when the
+ * DSC / CompressedBG data in place - from 1.69 build 472 on through a
+ * buffer of its own (LoadFileDecoded).  The bytes in buf.  Throws when the
  * file is missing and there is no disc to ask for, or the user aborts. */
 uint32_t LoadFile(void* buf, const char* arc, const char* name)
 {
@@ -73,6 +77,8 @@ uint32_t LoadFile(void* buf, const char* arc, const char* name)
 	char msg[0x200];
 	uint32_t* hdr = (uint32_t*)buf;
 
+	if(gEngine->gen >= GEN_1_69_472)
+		return LoadFileDecoded(buf, arc, name);
 	hdr[0] = hdr[1] = hdr[2] = hdr[3] = 0; // so that the magic tests fail on an empty read
 	n = ReadWholeFile(buf, gBaseDir, name);
 	if(!arc)
@@ -159,22 +165,52 @@ int LoadFileRange(void* buf, const char* arc, const char* name, uint32_t off, ui
 	}
 }
 
-/* A range of the decoded form of `src` (srcSize bytes as stored) into
- * dst; off = size = 0 asks for everything, and for CompressedBG only
- * for the size (nothing is copied then).  0 ok, 2 the range reaches past
- * the end, 3 a zero or too large size, 5 the data does not decode, 6 the
- * decoded size exceeds the limit. */
-static int DecodeRange(void* dst, const uint8_t* src, uint32_t srcSize, uint32_t off, uint32_t size)
+/* ---- the decoded readers of 1.69 build 472 on ----
+ *
+ * From 1.69 build 472 the loader reads a file as stored into a buffer of
+ * its own and hands the caller the decoded data only: LoadFile, the file
+ * size query and "80 31" go through these. */
+
+#define LOAD_ERR_DECODE    0x80000050u // the archive entry cannot be read whole, or its data does not decode
+#define LOAD_ERR_TOO_LARGE 0x80000060u // the entry, as stored or as a decoded DSC stream, exceeds DecodedLimit()
+
+// the largest file the decoded readers take, as stored and as a decoded DSC stream
+static uint32_t DecodedLimit(void)
 {
-	uint32_t limit = gEngine->gen <= GEN_1_69_472 ? 0x2800000u : 0x4000000u; // 40 MB, 64 MB from 1.494
+	if(gEngine->gen <= GEN_1_69_472)
+		return 0x2800000u; // 40 MB
+	if(gEngine->gen == GEN_1_494)
+		return 0x3000000u; // 48 MB
+	return 0x4000000u;     // 64 MB from 1.529
+}
+
+// n bytes for a file as stored, with a zeroed tail so that the header tests never read past the data
+static uint8_t* RawAlloc(uint32_t n)
+{
+	uint8_t* raw = (uint8_t*)BGI_Alloc((size_t)n + 0x30);
+	memset(raw + n, 0, 0x30);
+	return raw;
+}
+
+/* A range of the decoded form of `src` (srcSize bytes as stored) into
+ * dst, its size into *out (when not NULL); off = size = 0 asks for
+ * everything, dst NULL for the size only.  A whole CompressedBG is decoded
+ * straight into dst.  The decoded size of a CompressedBG counts 4 bytes a
+ * pixel for a 24-bit picture: the original decoders widen those pixels to
+ * 32 bits, this one keeps 3 bytes, so the end of that size is not written.
+ * 0 ok, 2 the range reaches past the end, 3 a zero or too large size, 5
+ * the data does not decode, 6 a DSC stream that decodes to more than the
+ * limit. */
+static int DecodeRange(void* dst, const uint8_t* src, uint32_t srcSize, uint32_t off, uint32_t size, uint32_t* out)
+{
 	uint8_t* tmp = NULL;
 	const uint8_t* data = src;
 	uint32_t total = srcSize;
-	int r;
+	int direct = 0, r;
 	if(BGI_IsDsc(src))
 	{
 		total = BGI_DscOutSize(src);
-		if(total > limit)
+		if(total > DecodedLimit())
 			return 6;
 		tmp = (uint8_t*)BGI_Alloc(total);
 		if(BGI_DscDecode(src, tmp) != total)
@@ -186,17 +222,18 @@ static int DecodeRange(void* dst, const uint8_t* src, uint32_t srcSize, uint32_t
 	}
 	else if(BGI_IsCbg(src))
 	{
-		total = BGI_CbgOutSize(src);
-		if(off != 0 || size != 0) // a size query does not decode the picture
+		const CbgHeader_t* h = (const CbgHeader_t*)src;
+		uint32_t bpp = h->bpp & 0xffffu;
+		uint8_t* to;
+		total = 0x10u + (uint32_t)h->width * h->height * (bpp == 24 ? 4 : bpp >> 3);
+		direct = dst && off == 0 && size == 0;
+		to = direct ? (uint8_t*)dst : (tmp = (uint8_t*)BGI_Calloc(total));
+		if(BGI_CbgDecode(src, to) != 0)
 		{
-			tmp = (uint8_t*)BGI_Alloc(total);
-			if(BGI_CbgDecode(src, tmp) != 0)
-			{
-				BGI_Free(tmp);
-				return 5;
-			}
-			data = tmp;
+			BGI_Free(tmp);
+			return 5;
 		}
+		data = to;
 	}
 	if(off == 0 && size == 0)
 		size = total;
@@ -206,19 +243,20 @@ static int DecodeRange(void* dst, const uint8_t* src, uint32_t srcSize, uint32_t
 		r = 2;
 	else
 	{
-		if(data != src || !BGI_IsCbg(src)) // an undecoded CompressedBG: the size only
+		if(dst && !direct)
 			memcpy(dst, data + off, size);
+		if(out)
+			*out = size;
 		r = 0;
 	}
-	if(tmp)
-		BGI_Free(tmp);
+	BGI_Free(tmp);
 	return r;
 }
 
 /* one loose file, read whole and decoded for the range; 1 when it cannot
  * be opened, 5 when it cannot be read whole, 6 when it is larger than
- * `limit` as stored, else the codes of DecodeRange */
-static int LoadLooseDecoded(void* buf, uint32_t limit, const char* path, uint32_t off, uint32_t size)
+ * the limit as stored, else the codes of DecodeRange */
+static int LoadLooseDecoded(void* buf, const char* path, uint32_t off, uint32_t size, uint32_t* out)
 {
 	File_t f;
 	uint32_t total;
@@ -231,15 +269,15 @@ static int LoadLooseDecoded(void* buf, uint32_t limit, const char* path, uint32_
 		return 1;
 	}
 	total = File_Size(&f);
-	if(total > limit)
+	if(total > DecodedLimit())
 		r = 6;
 	else
 	{
-		raw = (uint8_t*)BGI_Alloc(total ? total : 1);
+		raw = RawAlloc(total);
 		if(File_Read(&f, raw, total) != total)
 			r = 5;
 		else
-			r = DecodeRange(buf, raw, total, off, size);
+			r = DecodeRange(buf, raw, total, off, size, out);
 		BGI_Free(raw);
 	}
 	File_Close(&f);
@@ -248,24 +286,123 @@ static int LoadLooseDecoded(void* buf, uint32_t limit, const char* path, uint32_
 }
 
 // the loose file of a directory, resolved as ReadFileEx does (absolute name, dir + name, the search list)
-static int LoadDirDecoded(void* buf, uint32_t limit, const char* dir, const char* name, uint32_t off, uint32_t size)
+static int LoadDirDecoded(void* buf, const char* dir, const char* name, uint32_t off, uint32_t size, uint32_t* out)
 {
 	char path[0x104];
 	int r;
 	if(name[0] == '\\' || name[1] == ':')
-		return LoadLooseDecoded(buf, limit, name, off, size);
+		return LoadLooseDecoded(buf, name, off, size, out);
 	sprintf(path, "%s%s", dir, name);
-	r = LoadLooseDecoded(buf, limit, path, off, size);
+	r = LoadLooseDecoded(buf, path, off, size, out);
 	if(gFileSearchOn)
 	{
 		SearchNode_t* n;
 		for(n = gSearchList; n && r == 1; n = n->next)
 		{
 			sprintf(path, "%s%s\\%s", dir, n->name, name);
-			r = LoadLooseDecoded(buf, limit, path, off, size);
+			r = LoadLooseDecoded(buf, path, off, size, out);
 		}
 	}
 	return r;
+}
+
+// the decoded size of the loose file of a directory read into buf (NULL: the size only); 0 when it is missing or does not load
+static uint32_t LoadDirWhole(void* buf, const char* dir, const char* name)
+{
+	uint32_t n = 0;
+	return LoadDirDecoded(buf, dir, name, 0, 0, &n) == 0 ? n : 0;
+}
+
+/* An archive entry, read whole and decoded for the range (dst NULL: the
+ * size only): the bytes of the range, or ARC_ERR_NOT_FOUND - also when the
+ * archive cannot be opened, the original does not tell the two apart
+ * here -, ARC_ERR_RANGE, ARC_ERR_OFFSET, LOAD_ERR_DECODE or
+ * LOAD_ERR_TOO_LARGE. */
+static uint32_t ArcReadDecoded(void* dst, const char* path, const char* name, uint32_t off, uint32_t size)
+{
+	static const uint32_t kCodes[7] = {0, 0, ARC_ERR_RANGE, ARC_ERR_OFFSET, 0, LOAD_ERR_DECODE, LOAD_ERR_TOO_LARGE};
+	uint32_t n, out = 0;
+	uint8_t* raw;
+	int r;
+	CheckArcName(name);
+	n = ArcMgr_SizeOf(gArcMgr, path, name);
+	if(n >= 0x80000000u)
+		return ARC_ERR_NOT_FOUND;
+	if(n > DecodedLimit())
+		return LOAD_ERR_TOO_LARGE;
+	raw = RawAlloc(n);
+	r = ArcMgr_Read(gArcMgr, raw, path, name) == n ? DecodeRange(dst, raw, n, off, size, &out) : 5;
+	BGI_Free(raw);
+	return r == 0 ? out : kCodes[r];
+}
+
+/* LoadFile of 1.69 build 472 on: searched for in the same order, but
+ * read through the decoded readers, so that buf receives the decoded data
+ * only (GetFileSize_ gives its size).  A file that does not decode, or
+ * that exceeds the limit, loads as 0 bytes; as a loose file it counts as
+ * missing.  (The original also clears the first 16 bytes of buf first,
+ * which nothing reads any more; buf may be smaller.) */
+static uint32_t LoadFileDecoded(void* buf, const char* arc, const char* name)
+{
+	uint32_t n;
+	char msg[0x200], path[0x104];
+
+	n = LoadDirWhole(buf, gBaseDir, name);
+	if(!arc)
+	{
+		while(!n)
+		{
+			n = LoadDirWhole(buf, gAltDir, name);
+			if(n)
+				break;
+			sprintf(msg, MSG_FILE_NOT_FOUND, name);
+			RetryPrompt(msg);
+		}
+		return n;
+	}
+	if(n)
+		return n;
+	PathJoin(path, gBaseDir, arc);
+	n = ArcReadDecoded(buf, path, name, 0, 0);
+	while(n == ARC_ERR_OPEN || n == ARC_ERR_NOT_FOUND)
+	{
+		if(DriveReady(gAltDir))
+		{
+			PathJoin(path, gAltDir, arc);
+			n = ArcReadDecoded(buf, path, name, 0, 0);
+		}
+		if(n == ARC_ERR_OPEN || n == ARC_ERR_NOT_FOUND)
+		{
+			sprintf(msg, MSG_ARC_FILE_NOT_FOUND, arc, name);
+			RetryPrompt(msg);
+		}
+	}
+	return n >= 0x80000000u ? 0 : n;
+}
+
+/* GetFileSize_ of 1.69 build 472 on: the size LoadFile gives, found
+ * through the same readers (without the disc prompt); 0 when the file is
+ * not found or does not load.  For an archive entry the alternative
+ * directory is never tried: the original tries it only on an archive
+ * that cannot be opened, which its decoded reader does not report. */
+static uint32_t GetFileSizeDecoded(const char* arc, const char* name)
+{
+	uint32_t n;
+	char path[0x104];
+	n = LoadDirWhole(NULL, gBaseDir, name);
+	if(!arc)
+	{
+		if(!n)
+			n = LoadDirWhole(NULL, gAltDir, name);
+	}
+	else if(!n)
+	{
+		PathJoin(path, gBaseDir, arc);
+		n = ArcReadDecoded(NULL, path, name, 0, 0);
+		if(n >= 0x80000000u)
+			n = 0;
+	}
+	return n;
 }
 
 /* "80 31" of 1.69 build 472 on: a range of the decoded form of a file
@@ -275,37 +412,51 @@ static int LoadDirDecoded(void* buf, uint32_t limit, const char* dir, const char
  * than the limit as stored. */
 int LoadFileRangeDecoded(void* buf, const char* arc, const char* name, uint32_t off, uint32_t size)
 {
-	uint32_t limit = gEngine->gen <= GEN_1_69_472 ? 0x2800000u : 0x4000000u; // 40 MB, 64 MB from 1.494
-	uint32_t n, a;
-	uint8_t* raw;
+	uint32_t a;
 	int r;
 	char path[0x104];
 
-	r = LoadDirDecoded(buf, limit, gBaseDir, name, off, size);
+	r = LoadDirDecoded(buf, gBaseDir, name, off, size, NULL);
 	if(r != 1)
 		return r;
 	if(!arc)
-		return LoadDirDecoded(buf, limit, gAltDir, name, off, size);
-	// the archive member: its size first, then the whole member
+		return LoadDirDecoded(buf, gAltDir, name, off, size, NULL);
 	PathJoin(path, gBaseDir, arc);
-	CheckArcName(name);
-	n = ArcMgr_SizeOf(gArcMgr, path, name);
-	if((n == ARC_ERR_OPEN || n == ARC_ERR_NOT_FOUND) && DriveReady(gAltDir))
+	a = ArcReadDecoded(buf, path, name, off, size);
+	if((a == ARC_ERR_OPEN || a == ARC_ERR_NOT_FOUND) && DriveReady(gAltDir))
 	{
 		PathJoin(path, gAltDir, arc);
-		n = ArcMgr_SizeOf(gArcMgr, path, name);
+		a = ArcReadDecoded(buf, path, name, off, size);
 	}
-	if(n == ARC_ERR_OPEN || n == ARC_ERR_NOT_FOUND)
-		return 1;
-	if(n >= 0x80000000u) // any other archive error
-		return 5;
-	if(n > limit)
-		return 6;
-	raw = (uint8_t*)BGI_Alloc(n ? n : 1);
-	a = ArcMgr_Read(gArcMgr, raw, path, name);
-	r = a == n ? DecodeRange(buf, raw, n, off, size) : 5;
-	BGI_Free(raw);
-	return r;
+	switch(a) // the reader's codes mapped to those of DecodeRange
+	{
+		case ARC_ERR_OPEN:
+		case ARC_ERR_NOT_FOUND: return 1;
+		case ARC_ERR_RANGE: return 2;
+		case ARC_ERR_OFFSET: return 3;
+		case LOAD_ERR_DECODE: return 5;
+		case LOAD_ERR_TOO_LARGE: return 6;
+		default: return 0;
+	}
+}
+
+/* "81 3C" of 1.573 on: the archive file `name` of the base directory -
+ * or, when that is not one, of the alternative directory - has its index
+ * read again on its next use (ArcMgr_Reset); the configuration windows
+ * call it after replacing or deleting a theme archive.  0 when the
+ * archive was found, 1 when not. */
+int ReloadArchive(const char* name)
+{
+	char path[0x104];
+	uint32_t r;
+	PathJoin(path, gBaseDir, name);
+	r = ArcMgr_Reset(gArcMgr, path);
+	if(r == ARC_ERR_OPEN && DriveReady(gAltDir))
+	{
+		PathJoin(path, gAltDir, name);
+		r = ArcMgr_Reset(gArcMgr, path);
+	}
+	return r != 0;
 }
 
 /* "81 35" of 1.588 on: the size of a loose file (arc NULL) or of an
@@ -341,12 +492,16 @@ uint32_t GetFileSizeFast(const char* arc, const char* name)
 /* "80 35": the size a file takes once loaded (the decoded size of a DSC
  * stream; a CompressedBG reports its stored size), found by reading it
  * into a 32 MB scratch buffer; 0 when it is not found.  The alternative
- * directory is tried only when the base directory has no such archive. */
+ * directory is tried only when the base directory has no such archive.
+ * From 1.69 build 472 on: GetFileSizeDecoded. */
 uint32_t GetFileSize_(const char* arc, const char* name)
 {
-	uint8_t* buf = (uint8_t*)BGI_Alloc(0x2000000);
+	uint8_t* buf;
 	uint32_t n;
 	char path[0x104];
+	if(gEngine->gen >= GEN_1_69_472)
+		return GetFileSizeDecoded(arc, name);
+	buf = (uint8_t*)BGI_Alloc(0x2000000);
 	memset(buf, 0, 16); // so that the DSC magic test fails on an empty read
 	n = ReadWholeFile(buf, gBaseDir, name);
 	if(!arc)
@@ -479,6 +634,27 @@ int FileDialog(char* path, const char* desc, const char* ext, const char* title,
 		return 4;
 	ok = OS_FileDialog(mode, path, 0x104, filter, ext, initialDir, title);
 	return ok ? 0 : -1;
+}
+
+/* "81 38" (1.553 on): the file dialog - open (kind 0) or save (kind 1) -
+ * with `count` description / pattern pairs, a title and an initial
+ * directory (either may be NULL), the default extension that of the
+ * chosen filter.  The clock stands still while it is up.  0 when a file
+ * was chosen (its path in `path`, which is zeroed first: 0x30c bytes), -1
+ * when the dialog was cancelled, 4 for an unknown kind, 7 when count is
+ * below 1 (path untouched). */
+int FileDialogN(char* path, int count, const char* const* descs, const char* const* pats, const char* title,
+	const char* initialDir, int kind)
+{
+	int r = 4;
+	if(count < 1)
+		return 7;
+	Clock_BoxBegin();
+	memset(path, 0, 0x30c);
+	if(kind == 0 || kind == 1)
+		r = OS_FileDialogN(kind, path, 0x30c, descs, pats, count, "", initialDir, title) ? 0 : -1;
+	Clock_BoxEnd();
+	return r;
 }
 
 char gEmptyPath[8];

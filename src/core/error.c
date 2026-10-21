@@ -21,6 +21,7 @@
 #include "bgi/vm.h"
 #include "bgi/file.h"
 #include "bgi/input.h"
+#include "bgi/sys.h"
 #include "bgi/os.h"
 
 // ---- exception frames ---------------------------------------------------
@@ -85,10 +86,54 @@ void ShowErrorBox(const char* text)
 	MsgBox(text, "Error!!", OS_MB_ICONHAND | OS_MB_SYSTEMMODAL);
 }
 
-// show the box, then throw the script error (no file, no thread context)
+/* 1.547 on, "81 6A": fatal script errors are kept.  The box shows the
+ * first error only; its message is kept for "81 6B", and the scheduler
+ * ends the thread that raised it (posting event -1) instead of stopping
+ * the engine (Vm_RunPass's catch in sched.c).  Before 1.547 nothing is
+ * ever kept and every error shows its box. */
+static int gKeepErrors;  // "81 6A"
+static char* gKeptError; // the first error's message while keeping; NULL when none
+
+void Error_SetKeep(int on)
+{
+	gKeepErrors = on;
+}
+
+int Error_Keeping(void)
+{
+	return gKeepErrors;
+}
+
+// "81 6B": the kept message into `out` (when not NULL); its length + 1, 0 when none was kept
+uint32_t Error_KeptMessage(char* out)
+{
+	size_t n;
+	if(!gKeptError)
+		return 0;
+	n = strlen(gKeptError) + 1;
+	if(out)
+		memcpy(out, gKeptError, n);
+	return (uint32_t)n;
+}
+
+// the engine's shutdown: the kept message goes
+void Error_FreeKept(void)
+{
+	BGI_Free(gKeptError);
+	gKeptError = NULL;
+}
+
+// show the box (the first error only while keeping), keep the message when asked, then throw the script error (no file, no thread context)
 void ThrowScriptError(const char* text)
 {
-	ShowErrorBox(text);
+	if(!gKeptError)
+		ShowErrorBox(text);
+	if(gKeepErrors && !gKeptError)
+	{
+		size_t n = strlen(text) + 1;
+		gKeptError = (char*)BGI_Alloc(n);
+		memcpy(gKeptError, text, n);
+	}
 	BGI_ThrowInt(BGI_SCRIPT_ERROR_VALUE);
 }
 
@@ -173,10 +218,12 @@ int MsgBox(const char* text, const char* caption, uint32_t flags)
 		Dbg_Log("[%s] %s", caption ? caption : "", line);
 	}
 	Cursor_Refresh();
+	Clock_BoxBegin();
 	prev = ShowCursorCount(1);
 	r = OS_MessageBox(text, caption, flags);
 	ShowCursorCount(prev);
 	Input_ClearStates();
+	Clock_BoxEnd();
 	return r;
 }
 

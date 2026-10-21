@@ -102,13 +102,13 @@ void OS_EditMove(int x, int y, int w, int h)
 }
 
 // replace the font: the same face and size the original's CreateFontA asks for, then a repaint
-void OS_EditSetFont(const char* face, int size)
+void OS_EditSetFont(const char* face, int height, int width)
 {
 	if(gEdit.font)
 		OS_FontClose(gEdit.font);
 	snprintf(gEdit.face, sizeof gEdit.face, "%s", face);
-	gEdit.fontSize = size;
-	gEdit.font = OS_FontOpen(face, size, size / 2, 0, 0); // CreateFontA(size, size / 2, .., FW_THIN, ..)
+	gEdit.fontSize = height;
+	gEdit.font = OS_FontOpen(face, height, width, 0, 0); // CreateFontA(height, width, .., FW_THIN, ..)
 	X11Edit_Present();
 }
 

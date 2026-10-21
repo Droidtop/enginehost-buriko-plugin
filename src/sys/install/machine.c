@@ -12,6 +12,7 @@
  * OS_CpuSignature, OS_UserName, OS_ComputerName).
  */
 #include "install_internal.h"
+#include "bgi/engine.h" // gNoDiscCheck
 #include "bgi/os.h"
 
 /* A code for the Windows version: 0x1f Win32s, 0x5f / 0x62 / 0x63 Windows
@@ -136,22 +137,27 @@ static int Registration_Verify(void)
 	return key == GetMachineKey();
 }
 
-/* "80 EC": verify the registration; when it is missing, run "reg.exe"
- * (the game's registration program, in the current directory) and give it
- * about ten seconds, checking once a second, to write comap.dat.  1 when
- * registered, 0 when it still is not. */
+/* "80 EC": whether the game is registered for this machine: 1 when
+ * comap.dat holds its key, 0 otherwise.  The original runs the game's
+ * registration program (reg.exe, which wants the disc) when the file is
+ * missing or wrong and waits about ten seconds for it to write the file;
+ * OpenBGI does not start Windows programs, so a missing registration is
+ * simply 0, and the boot program then asks for the disc.
+ * --no-disc-check (gNoDiscCheck) counts the game as registered without
+ * looking at comap.dat.  Either outcome is said once on stderr. */
 int CheckRegistration(void)
 {
-	int i;
+	static int said;
+	if(gNoDiscCheck)
+	{
+		if(!said++)
+			fprintf(stderr, "bgi: the registration check (comap.dat) is skipped (--no-disc-check)\n");
+		return 1;
+	}
 	if(Registration_Verify() == 1)
 		return 1;
-	OS_ShellExecute("reg.exe", NULL, NULL);
-	OS_SleepMs(1000);
-	for(i = 0; i < 10; i++)
-	{
-		OS_SleepMs(1000);
-		if(Registration_Verify() == 1)
-			return 1;
-	}
+	if(!said++)
+		fprintf(stderr, "bgi: the game is not registered for this machine (comap.dat), so it asks for its disc; "
+						"--no-disc-check skips the check\n");
 	return 0;
 }

@@ -31,8 +31,25 @@
  *   transforms - the scalers, rotators, Xform, skew, mosaic and the
  *                gray-map blitters with a sweep of parameters, plus the
  *                few result codes that can be checked
+ *   bicubic    - the "90 CA" scaler: an exact copy at scale 1, a flat
+ *                picture stays flat at any scale (the border is
+ *                renormalised), no weight gives 0, the result codes and
+ *                the mode check
+ *   half size  - the "90 C3" half-size copy: the 2 x 2 means with an odd
+ *                last column and row, the new bitmap's size and mode, the
+ *                result codes, a 16-bit source left unfiltered
+ *   hidden     - the "91 31" hidden switch of a display object and the
+ *                setParam 0xC0 / 0xC1 switches that pass it and "90 31"'s
+ *                enabled flag on to the children (1.573 on)
+ *   virtual    - a virtual object (a panel button's hit stand-in) is as
+ *                visible as the window it is attached to (1.529 on)
  */
 #include "bgi/gfx/bitmap.h"
+#include "bgi/gfx/bmpmgr.h"
+#include "bgi/gfx/bmpops.h"
+#include "bgi/gfx/dispobj.h"
+#include "bgi/gfx/objects.h"
+#include "bgi/version.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -403,6 +420,169 @@ static void TestGatherAdd(void)
 	Bmp_Free(&dst);
 }
 
+static void TestBicubic(void)
+{
+	Bmp_t src, dst, part;
+	Rect_t r = {2, 1, 5, 3};
+	int x, y, flat = 1;
+	printf("bicubic\n");
+	Bmp_Alloc(&src, 7, 5, PM_ARGB32);
+	Bmp_Alloc(&dst, 7, 5, PM_ARGB32);
+	FillPattern(&src, 3);
+	// scale 1 with the centres on each other: the taps at distance 1 and 2 weigh nothing
+	CHECK(Blit_Bicubic(&dst, 3.5f, 2.5f, &src, 3.5f, 2.5f, 1.0f, 1.0f) == 0);
+	CHECK(SameView(&dst, &src));
+	// a flat picture stays flat when enlarged, up to the border
+	memset(src.pixels, 0x40, (size_t)src.pitch * (size_t)src.h);
+	Bmp_Free(&dst);
+	Bmp_Alloc(&dst, 19, 13, PM_ARGB32);
+	CHECK(Blit_Bicubic(&dst, 9.5f, 6.5f, &src, 3.5f, 2.5f, 2.6f, 2.6f) == 0);
+	for(y = 0; y < dst.h; y++)
+		for(x = 0; x < dst.w; x++)
+			flat &= ((uint32_t*)(dst.pixels + (size_t)y * dst.pitch))[x] == 0x40404040u;
+	CHECK(flat);
+	// far outside the source: no tap, no weight, 0
+	memset(dst.pixels, 0xff, (size_t)dst.pitch * (size_t)dst.h);
+	CHECK(Blit_Bicubic(&dst, 0.0f, 0.0f, &src, 100.0f, 100.0f, 1.0f, 1.0f) == 0);
+	CHECK(((uint32_t*)dst.pixels)[0] == 0);
+	// a scale of 0 or below is refused, modes that differ draw nothing
+	CHECK(Blit_Bicubic(&dst, 0.0f, 0.0f, &src, 0.0f, 0.0f, 0.0f, 1.0f) == 0x13);
+	CHECK(Blit_Bicubic(&dst, 0.0f, 0.0f, &src, 0.0f, 0.0f, 1.0f, -1.0f) == 0x13);
+	Bmp_Free(&src);
+	Bmp_Alloc(&src, 7, 5, PM_RGB32);
+	memset(dst.pixels, 0x11, (size_t)dst.pitch * (size_t)dst.h);
+	CHECK(Blit_Bicubic(&dst, 0.0f, 0.0f, &src, 0.0f, 0.0f, 1.0f, 1.0f) == 0);
+	CHECK(((uint32_t*)dst.pixels)[0] == 0x11111111u);
+	// a cropped destination: only the view is written
+	part = dst;
+	Bmp_Crop(&part, &r);
+	Bmp_Free(&src);
+	Bmp_Alloc(&src, 7, 5, PM_ARGB32);
+	memset(src.pixels, 0x22, (size_t)src.pitch * (size_t)src.h);
+	CHECK(Blit_Bicubic(&part, 2.0f, 1.5f, &src, 3.5f, 2.5f, 0.5f, 0.5f) == 0);
+	CHECK(((uint32_t*)(dst.pixels + 1 * (size_t)dst.pitch))[2] == 0x22222222u);
+	CHECK(((uint32_t*)(dst.pixels + 1 * (size_t)dst.pitch))[1] == 0x11111111u);
+	CHECK(((uint32_t*)(dst.pixels + 4 * (size_t)dst.pitch))[3] == 0x11111111u);
+	Bmp_Free(&src);
+	Bmp_Free(&dst);
+}
+
+/* "90 C3": the half-size copy through the bitmap manager.  An even
+ * picture gives the rounded-up mean of each 2 x 2 block, computed as the
+ * mean of the two rows and then of the two columns; an odd last column
+ * and row are averaged in one direction, the corner copied; the new
+ * bitmap takes the source's mode; a 1-pixel-wide source and an empty slot
+ * fail with their codes; a 16-bit source makes the bitmap but leaves it
+ * unfiltered. */
+static void TestHalfSize(void)
+{
+	Bmp_t s, d;
+	int x, y;
+	printf("half size\n");
+	gBmpMgr = BmpMgr_New(4);
+	CHECK(BmpMgr_Create(gBmpMgr, 0, 5, 3, PM_ARGB32));
+	BmpMgr_GetInfo(gBmpMgr, &s, 0);
+	for(y = 0; y < 3; y++)
+		for(x = 0; x < 5; x++)
+		{
+			uint8_t* p = s.pixels + y * s.pitch + x * 4;
+			p[0] = (uint8_t)(x * 10 + y);
+			p[1] = (uint8_t)(255 - x * 7 - y * 3);
+			p[2] = (uint8_t)(x * y * 9);
+			p[3] = (uint8_t)(1 + x + y);
+		}
+	CHECK(BmpOp_HalfSize(1, 0) == 0);
+	CHECK(BmpMgr_GetInfo(gBmpMgr, &d, 1) && d.w == 3 && d.h == 2 && d.mode == PM_ARGB32);
+	for(y = 0; y < 2; y++)
+		for(x = 0; x < 3; x++)
+		{
+			int c;
+			for(c = 0; c < 4; c++)
+			{
+				const uint8_t* r0 = s.pixels + (2 * y) * s.pitch + (2 * x) * 4 + c;
+				int last = 2 * x + 1 >= 5, bottom = 2 * y + 1 >= 3, want;
+				if(bottom && last)
+					want = r0[0];
+				else if(bottom)
+					want = (r0[4] + r0[0] + 1) >> 1;
+				else if(last)
+					want = (r0[0] + r0[s.pitch] + 1) >> 1;
+				else
+					want = (((r0[4] + r0[4 + s.pitch] + 1) >> 1) + ((r0[0] + r0[s.pitch] + 1) >> 1) + 1) >> 1;
+				CHECK(d.pixels[y * d.pitch + x * 4 + c] == want);
+			}
+		}
+	CHECK(BmpMgr_Create(gBmpMgr, 2, 1, 8, PM_RGB32));
+	CHECK(BmpOp_HalfSize(1, 2) == 0x80000006u);
+	CHECK(BmpOp_HalfSize(1, 3) == 0x8000000au);
+	CHECK(BmpMgr_Create(gBmpMgr, 2, 4, 4, PM_RGB16));
+	CHECK(BmpOp_HalfSize(3, 2) == 0 && BmpMgr_GetInfo(gBmpMgr, &d, 3) && d.w == 2 && d.h == 2 && d.mode == PM_RGB16);
+	BmpMgr_Delete(gBmpMgr);
+	gBmpMgr = NULL;
+}
+
+/* "91 31" and setParam 0xC0 / 0xC1 (1.573 on): an object with its hidden
+ * switch set is not visible although shown and enabled; the switch and
+ * "90 31"'s enabled flag reach the children only when the parent's
+ * setParam 0xC1 / 0xC0 asked for it; before 1.573 the two parameters do
+ * not exist. */
+static void TestHiddenSwitch(void)
+{
+	DispObj_t parent, child;
+	printf("hidden switch\n");
+	CHECK(Engine_SelectProfile("1.636"));
+	DispObj_Ctor(&parent, 0, 1);
+	DispObj_Ctor(&child, 0, 2);
+	CHECK(DispObj_AttachChild(&parent, &child, 0, 0));
+	parent.vt->setVisible(&parent, 1);
+	CHECK(DispObj_IsVisible(&parent) && DispObj_IsVisible(&child));
+	DispObj_SetHidden(&parent, 1);
+	CHECK(!DispObj_IsVisible(&parent) && DispObj_IsVisible(&child) && parent.visible && parent.enabled);
+	DispObj_SetEnabled(&parent, 0);
+	CHECK(child.enabled == 1);
+	CHECK(DispObj_SetParam(&parent, 0xc1, 1, 0) == 0 && DispObj_SetParam(&parent, 0xc0, 1, 0) == 0);
+	DispObj_SetHidden(&parent, 0);
+	DispObj_SetHidden(&parent, 5);
+	DispObj_SetEnabled(&parent, 1);
+	CHECK(child.hidden == 5 && !DispObj_IsVisible(&child) && child.enabled == 1);
+	DispObj_SetEnabled(&parent, 0);
+	DispObj_SetHidden(&parent, 0);
+	CHECK(child.enabled == 0 && child.hidden == 0 && parent.priority == 0);
+	DispObj_Dtor(&child);
+	DispObj_Dtor(&parent);
+	CHECK(Engine_SelectProfile("1.553"));
+	DispObj_Ctor(&parent, 0, 3);
+	CHECK(DispObj_SetParam(&parent, 0xc0, 1, 0) == (int)0xffff0001);
+	DispObj_Dtor(&parent);
+}
+
+/* A virtual object attached to a window follows the window's visibility
+ * from 1.529 on, whatever its own show flag says: made while the window
+ * was faded out (the panels copy the window's visibility into it, 0
+ * then), it becomes visible when the window fades in.  In 1.69 build 472
+ * its own flag counts.  A failure means the panels' buttons stop
+ * answering after their window faded (after a load in senmomo). */
+static void TestVirtualVisibility(void)
+{
+	DispObj_t win;
+	VirtualObject_t v;
+	printf("virtual\n");
+	CHECK(Engine_SelectProfile("1.636"));
+	DispObj_Ctor(&win, 0, 1);
+	win.vt->setVisible(&win, 1);
+	DispObj_SetFade(&win, 0x100);
+	VirtualObject_Ctor(&v, 2, &win);
+	CHECK(DispObj_AttachChild(&win, &v.obj, 0, 0));
+	v.obj.vt->setVisible(&v.obj, win.vt->isVisible(&win)); // as the panels do: 0 here
+	CHECK(!v.obj.vt->isVisible(&v.obj));
+	DispObj_SetFade(&win, 0);
+	CHECK(v.obj.vt->isVisible(&v.obj) && !v.obj.visible);
+	CHECK(Engine_SelectProfile("1.69/472"));
+	CHECK(!v.obj.vt->isVisible(&v.obj));
+	DispObj_Dtor(&v.obj);
+	DispObj_Dtor(&win);
+}
+
 // run every group; exit status 1 when any check failed
 int main(void)
 {
@@ -413,6 +593,10 @@ int main(void)
 	TestEffects(PM_RGB16);
 	TestClipping();
 	TestTransforms();
+	TestBicubic();
+	TestHalfSize();
+	TestHiddenSwitch();
+	TestVirtualVisibility();
 	if(gFails)
 	{
 		printf("%d failure(s)\n", gFails);

@@ -56,6 +56,7 @@ typedef struct Voice
 	WmStream_t* stream;      // the sound; NULL when nothing is loaded
 	uint32_t rate, channels; // the stream's (Hz, 1 or 2)
 	int playing, paused;
+	int held;            // stopped by Wm_HoldAll, plays on when it lets go
 	int32_t dsVolume;    // DirectSound units, hundredths of a dB: -10000 .. 0
 	int32_t pan;         // DirectSound units, -10000 (left) .. 10000 (right), from the cubic curve of Voice_SetPan
 	double gainL, gainR; // the linear gains the mixer applies, from dsVolume and pan
@@ -101,7 +102,7 @@ typedef struct WmRecord
 	Voice_t* voice;
 	WmStream_t* stream; // (the voice owns it here)
 	int32_t master;     // 0 .. 0x80, the master volume of the sound manager
-	int32_t aux;        // 0x80, never changed
+	int32_t aux;        // 0 .. 0x80, the channel's own volume ("A0 1C" / "A0 2C"); kept across loads
 	Fade_t fadeVol;     // towards a channel volume
 	int32_t volume;     // 0 .. 0x80, the volume the script gave the sound
 	Fade_t fade;        // the fade in / out level

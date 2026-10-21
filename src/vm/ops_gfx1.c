@@ -111,13 +111,15 @@ static int Opcode_Gfx1_SetPropFontAdvance(Thread_t* t)
 
 /* 91 0E (1.529 on): face, sx, sy, dx, dy →
  * A per-face glyph correction of that build's font cache: the scales are
- * 16.16 in 1.0 .. 2.0, the offsets at most (1 - 1/s) * 32 pixels.  An
- * out-of-range scale or offset is a script error.  Stored only: the glyph
- * renderer here takes the faces as FreeType gives them. */
+ * 16.16 in 1.0 .. 2.0, the offsets 16.16 as well, at most 1 - 1/s
+ * (computed as 65536.0 - 2^32 / s in double and truncated, as the original
+ * does; Sen no Hatou's ipl._bp passes an offset of 0x3333 with a scale of
+ * 1.33).  An out-of-range scale or offset is a script error.  Stored only:
+ * the glyph renderer here takes the faces as FreeType gives them. */
 typedef struct FaceAdjust
 {
 	char face[0x20];        // the face name
-	int32_t sx, sy, dx, dy; // scales (16.16) and offsets (pixels)
+	int32_t sx, sy, dx, dy; // scales and offsets (16.16)
 	struct FaceAdjust* next;
 } FaceAdjust_t;
 static FaceAdjust_t* gFaceAdjust; // the list of corrections, one entry per face
@@ -139,7 +141,7 @@ static int Opcode_Gfx1_SetFaceAdjust(Thread_t* t)
 	if((sx != 0 && (sx < 0x10000 || sx > 0x20000)) || sy < 0x10000 || sy > 0x20000)
 		GFX_ERROR(t, MSG_BAD_FACE_SCALE, (unsigned)sx, (unsigned)sy);
 	sxv = sx ? sx : sy;
-	if(dx > (int32_t)((1.0 - 65536.0 / sxv) * 32) || dy > (int32_t)((1.0 - 65536.0 / sy) * 32))
+	if(dx > (int32_t)(65536.0 - 4294967296.0 / sxv) || dy > (int32_t)(65536.0 - 4294967296.0 / sy))
 		GFX_ERROR(t, MSG_BAD_FACE_COORDS, (unsigned)dx, (unsigned)dy);
 	for(a = gFaceAdjust; a; a = a->next)
 		if(strcmp(a->face, face) == 0)
@@ -435,6 +437,18 @@ static int Opcode_Gfx1_Duplicate(Thread_t* t) // 91 1F: dst, src →
 // -------------------------------------------------------------------------
 
 // the fixed position of any object: 16.16 coordinates and depth
+/* the object's hidden switch: any non-zero v keeps it from being drawn
+ * without touching its shown, enabled or fade state (Gfx_ObjSetHidden);
+ * an unknown handle is a script error */
+static int Opcode_Gfx1_ObjSetHidden(Thread_t* t) // 91 31 (1.573 on): h, v →
+{
+	int v = (int)Thread_Pop(t);
+	uint32_t h = Thread_Pop(t);
+	if(!GfxCall_ObjSetHidden(h, v))
+		ScriptError(MSG_BAD_OBJ_HANDLE, t);
+	return 0;
+}
+
 static int Opcode_Gfx1_ObjSetFixedPos(Thread_t* t) // 91 33: h, fx, fy, fz →
 {
 	int32_t fz = (int32_t)Thread_Pop(t), fy = (int32_t)Thread_Pop(t), fx = (int32_t)Thread_Pop(t);
@@ -875,7 +889,7 @@ static int Opcode_Gfx1_EffectorShow(Thread_t* t) // 91 64: h, on →
 /* Make the effector a displacement of the screen below it through the
  * screen-sized vector map vec1 (and vec2; -1 for none); a non-zero
  * `amount` selects bilinear sampling, `level` (0 .. 0x100) is the blend
- * level and `prio` (0 .. 4095) the draw priority.  Script errors: an
+ * level and `prio` the draw priority.  Script errors: an
  * unknown handle, a map that does not exist or is not a screen-sized
  * vector map. */
 static int Opcode_Gfx1_EffectorSetVector(Thread_t* t) // 91 65: h, vec1, vec2, level, amount, prio →
@@ -1371,6 +1385,7 @@ void Vm_Optable91Init(void)
 		{0x1E, Opcode_Gfx1_ApplyGray, GEN_FIRST, GEN_LAST},
 		{0x1F, Opcode_Gfx1_Duplicate, GEN_FIRST, GEN_LAST},
 		{0x1A, Opcode_Gfx1_BmpColourWithAlpha, GEN_1_69_472, GEN_LAST},
+		{0x31, Opcode_Gfx1_ObjSetHidden, GEN_1_573, GEN_LAST},
 		{0x33, Opcode_Gfx1_ObjSetFixedPos, GEN_FIRST, GEN_LAST},
 		{0x36, Opcode_Gfx1_ObjSetFixedOffset2, GEN_1_494, GEN_LAST},
 		{0x37, Opcode_Gfx1_ObjSetFixedOffset, GEN_1_69_472, GEN_LAST},

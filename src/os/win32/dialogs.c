@@ -43,6 +43,26 @@ static int FieldChanged(WPARAM wp, int id)
 	return LOWORD(wp) == id && HIWORD(wp) == EN_CHANGE;
 }
 
+/* the digits-only fields (1.573 on): a typed character passes only when
+ * it is a backspace, a digit, or a '-' into an empty field; pasted text
+ * is not filtered, as in the original.  The edit's own procedure is kept
+ * in its user data. */
+static LRESULT CALLBACK DigitsProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+{
+	WNDPROC old = (WNDPROC)GetWindowLongPtrW(h, GWLP_USERDATA);
+	if(msg == WM_CHAR && !(wp == 8 || (wp >= '0' && wp <= '9') || (wp == '-' && GetWindowTextLengthW(h) == 0)))
+		return 0;
+	return CallWindowProcW(old, h, msg, wp, lp);
+}
+
+// make field `id` digits-only
+static void DigitsOnly(HWND dlg, int id)
+{
+	HWND e = GetDlgItem(dlg, id);
+	SetWindowLongPtrW(e, GWLP_USERDATA, GetWindowLongPtrW(e, GWLP_WNDPROC));
+	SetWindowLongPtrW(e, GWLP_WNDPROC, (LONG_PTR)DigitsProc);
+}
+
 // ---- dialog 0x71: one field --------------------------------------------------------------------
 
 // the arguments of OS_DialogInput1, handed to the procedure
@@ -51,6 +71,7 @@ typedef struct Input1Ctx
 	const char* title;   // the caption; NULL for MSG_DLG_COMMENT_INPUT
 	const char* initial; // the field's initial text; NULL for none
 	int maxLen;          // EM_LIMITTEXT when > 0
+	int digits;          // a digits-only field
 	char* out;           // receives the text on OK (0x100 bytes)
 } Input1Ctx_t;
 
@@ -67,6 +88,8 @@ static INT_PTR CALLBACK Input1Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 			Dlg_Centre(hwnd);
 			Dlg_SetTitle(hwnd, ctx->title ? ctx->title : MSG_DLG_COMMENT_INPUT);
 			LimitField(hwnd, 0x3f9, ctx->maxLen);
+			if(ctx->digits)
+				DigitsOnly(hwnd, 0x3f9);
 			if(ctx->initial)
 			{
 				char buf[0x100];
@@ -102,13 +125,14 @@ static INT_PTR CALLBACK Input1Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 }
 
 // "B0 84": the one-field dialog (resource 0x71: 266 x 35 dialog units, OK, the field, Cancel); 1 when confirmed
-int OS_DialogInput1(const char* title, const char* initial, int maxLen, char* out)
+int OS_DialogInput1(const char* title, const char* initial, int maxLen, int digits, char* out)
 {
 	DlgBuilder_t b;
 	Input1Ctx_t ctx;
 	ctx.title = title; // NULL pointers select the defaults, as in the original
 	ctx.initial = initial;
 	ctx.maxLen = maxLen;
+	ctx.digits = digits;
 	ctx.out = out;
 	DbBegin(&b, BGI_DS_PLAIN, 266, 35, NULL, BGI_DIALOG_FONT_PT);
 	DbItem(&b, DLG_CLASS_BUTTON, ST_DEFBUTTON, 185, 10, 40, 15, 0x3fa, "OK");
@@ -126,10 +150,12 @@ typedef struct Input2Ctx
 	const char* label1;   // the first field's label (id 0x400); NULL for MSG_DLG_STRING1
 	const char* initial1; // the first field's initial text; NULL for none
 	int maxLen1;          // its EM_LIMITTEXT when > 0
+	int digits1;          // a digits-only field
 	char* out1;           // receives the first field on OK (0x100 bytes)
 	const char* label2;   // the second field's label (0x401); NULL for MSG_DLG_STRING2
 	const char* initial2;
 	int maxLen2;
+	int digits2;
 	char* out2;
 } Input2Ctx_t;
 
@@ -154,6 +180,10 @@ static INT_PTR CALLBACK Input2Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 			Dlg_SetText(hwnd, 0x401, ctx->label2 ? ctx->label2 : MSG_DLG_STRING2);
 			LimitField(hwnd, 0x3fc, ctx->maxLen1);
 			LimitField(hwnd, 0x3fd, ctx->maxLen2);
+			if(ctx->digits1)
+				DigitsOnly(hwnd, 0x3fc);
+			if(ctx->digits2)
+				DigitsOnly(hwnd, 0x3fd);
 			has1 = ctx->initial1 != NULL;
 			if(has1)
 			{
@@ -204,9 +234,12 @@ static INT_PTR CALLBACK Input2Proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 	}
 }
 
-// "B0 85": the two-field dialog (resource 0x72: 213 x 107 dialog units, a system menu); 1 when confirmed
-int OS_DialogInput2(const char* title, const char* label1, const char* initial1, int maxLen1, char* out1,
-	const char* label2, const char* initial2, int maxLen2, char* out2)
+/* "B0 85" / "B0 87": the two-field dialog, resource 0x72 (213 x 107
+ * dialog units, the fields one above the other) or with `compact` 0x7E
+ * (294 x 55, the fields side by side, the buttons on the right); 1 when
+ * confirmed */
+int OS_DialogInput2(const char* title, const char* label1, const char* initial1, int maxLen1, int digits1, char* out1,
+	const char* label2, const char* initial2, int maxLen2, int digits2, char* out2, int compact)
 {
 	DlgBuilder_t b;
 	Input2Ctx_t ctx;
@@ -214,18 +247,33 @@ int OS_DialogInput2(const char* title, const char* label1, const char* initial1,
 	ctx.label1 = label1;
 	ctx.initial1 = initial1;
 	ctx.maxLen1 = maxLen1;
+	ctx.digits1 = digits1;
 	ctx.out1 = out1;
 	ctx.label2 = label2;
 	ctx.initial2 = initial2;
 	ctx.maxLen2 = maxLen2;
+	ctx.digits2 = digits2;
 	ctx.out2 = out2;
-	DbBegin(&b, BGI_DS_SYSMENU, 213, 107, MSG_DLG_INPUT2_TITLE, BGI_DIALOG_FONT_PT);
-	DbItem(&b, DLG_CLASS_BUTTON, ST_DEFBUTTON, 112, 84, 55, 15, 0x3fe, "OK");
-	DbItem(&b, DLG_CLASS_BUTTON, ST_BUTTON, 169, 84, 37, 15, 0x3ff, "Cancel");
-	DbItem(&b, DLG_CLASS_EDIT, ST_EDIT, 6, 25, 200, 12, 0x3fc, NULL);
-	DbItem(&b, DLG_CLASS_EDIT, ST_EDIT, 6, 60, 200, 12, 0x3fd, NULL);
-	DbItem(&b, DLG_CLASS_STATIC, ST_LABEL, 6, 10, 200, 8, 0x400, "Static");
-	DbItem(&b, DLG_CLASS_STATIC, ST_LABEL, 6, 45, 200, 8, 0x401, "Static");
+	if(compact)
+	{
+		DbBegin(&b, BGI_DS_SYSMENU, 294, 55, MSG_DLG_INPUT2_TITLE, BGI_DIALOG_FONT_PT);
+		DbItem(&b, DLG_CLASS_BUTTON, ST_DEFBUTTON, 240, 10, 45, 15, 0x3fe, "OK");
+		DbItem(&b, DLG_CLASS_BUTTON, ST_BUTTON, 240, 30, 45, 15, 0x3ff, "Cancel");
+		DbItem(&b, DLG_CLASS_EDIT, ST_EDIT, 20, 25, 50, 15, 0x3fc, NULL);
+		DbItem(&b, DLG_CLASS_EDIT, ST_EDIT, 135, 25, 50, 15, 0x3fd, NULL);
+		DbItem(&b, DLG_CLASS_STATIC, ST_LABEL, 10, 10, 105, 10, 0x400, "Static");
+		DbItem(&b, DLG_CLASS_STATIC, ST_LABEL, 125, 10, 105, 10, 0x401, "Static");
+	}
+	else
+	{
+		DbBegin(&b, BGI_DS_SYSMENU, 213, 107, MSG_DLG_INPUT2_TITLE, BGI_DIALOG_FONT_PT);
+		DbItem(&b, DLG_CLASS_BUTTON, ST_DEFBUTTON, 112, 84, 55, 15, 0x3fe, "OK");
+		DbItem(&b, DLG_CLASS_BUTTON, ST_BUTTON, 169, 84, 37, 15, 0x3ff, "Cancel");
+		DbItem(&b, DLG_CLASS_EDIT, ST_EDIT, 6, 25, 200, 12, 0x3fc, NULL);
+		DbItem(&b, DLG_CLASS_EDIT, ST_EDIT, 6, 60, 200, 12, 0x3fd, NULL);
+		DbItem(&b, DLG_CLASS_STATIC, ST_LABEL, 6, 10, 200, 8, 0x400, "Static");
+		DbItem(&b, DLG_CLASS_STATIC, ST_LABEL, 6, 45, 200, 8, 0x401, "Static");
+	}
 	return (int)DialogBoxIndirectParamW(gWin32Instance, DbEnd(&b), gWin32MainWnd, Input2Proc, (LPARAM)&ctx) == 1;
 }
 

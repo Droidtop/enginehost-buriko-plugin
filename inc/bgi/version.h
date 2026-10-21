@@ -53,6 +53,7 @@ typedef enum EngineGen
 	GEN_1_588,    // sekachu
 	GEN_1_599,    // unmei
 	GEN_1_616,    // kodomo
+	GEN_1_636,    // senmomo (Sen no Hatou, Tsukisome no Kouki, trial)
 	GEN_1_640,    // Tayutama2AS
 	GEN_1_653,    // WakabaironoQuartet
 	GEN_1_654,    // Nekotsuku

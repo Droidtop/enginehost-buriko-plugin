@@ -976,17 +976,59 @@ static int CopyRel(const char* fromWin, const char* toWin)
 	return 1;
 }
 
-/* an overlay entry (file or directory) is renamed, and the old name gets a
- * tombstone when the server has it too; a server file is copied into the
- * overlay and tombstoned; a server directory cannot be moved (0) */
-int OS_FileMove(const char* from, const char* to)
+/* OPEN_ALWAYS for writing, in the overlay: a server file is copied there
+ * first, an overlay file is opened at position 0 without truncating, a
+ * missing one is created (OS_FileCreate); NULL for a directory or when the
+ * overlay refuses */
+OsFile_t* OS_FileOpenWrite(const char* path)
 {
 	Lookup_t l;
-	char rel[WASM_PATH_MAX], relTo[WASM_PATH_MAX];
+	OsFile_t* f;
+	char p[WASM_PATH_MAX];
+	f = (OsFile_t*)calloc(1, sizeof *f);
+	if(!f)
+		return NULL;
+	if(!Lookup(path, &l, f->rel, sizeof f->rel))
+	{
+		free(f);
+		return OS_FileCreate(path);
+	}
+	if((l.attrs & OS_ATTR_DIRECTORY) || (l.where == 2 && !CopyRel(path, path)))
+	{
+		free(f);
+		return NULL;
+	}
+	OverlayPath(f->rel, p, sizeof p);
+	f->overlay = 1;
+	f->f = fopen(p, "r+b");
+	if(!f->f)
+	{
+		free(f);
+		return NULL;
+	}
+	f->written = 1;
+	return f;
+}
+
+/* an overlay entry (file or directory) is renamed, and the old name gets a
+ * tombstone when the server has it too; a server file is copied into the
+ * overlay and tombstoned; a server directory cannot be moved (0).  As
+ * MoveFile, 0 when `to` exists on either side, unless it is `from` under
+ * another case. */
+int OS_FileMove(const char* from, const char* to)
+{
+	Lookup_t l, lt;
+	char rel[WASM_PATH_MAX], relTo[WASM_PATH_MAX], a[WASM_PATH_MAX], b[WASM_PATH_MAX];
 	if(!Lookup(from, &l, rel, sizeof rel))
 		return 0;
 	OsWasm_RelPath(to, relTo, sizeof relTo);
 	if(!relTo[0])
+		return 0;
+	snprintf(a, sizeof a, "%s", rel);
+	snprintf(b, sizeof b, "%s", relTo);
+	LowerAscii(a);
+	LowerAscii(b);
+	if(strcmp(a, b) != 0 && LookupRel(relTo, &lt))
 		return 0;
 	if(l.where == 1)
 	{
