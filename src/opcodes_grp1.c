@@ -164,8 +164,8 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x91 145 */ "Unknown_145",
     /* 0x92 146 */ "Unknown_146",
     /* 0x93 147 */ "Unknown_147",
-    /* 0x94 148 */ "Unknown_148",
-    /* 0x95 149 */ "Unknown_149",
+    /* 0x94 148 */ "SetNameTableEntry",
+    /* 0x95 149 */ "NameTableWordsIn",
     /* 0x96 150 */ "LoadNameTable",
     /* 0x97 151 */ "--Unknown--",
     /* 0x98 152 */ "SetRubyStyle",
@@ -423,8 +423,8 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x91 145 */ Opcode_Grp1_Unknown_145,
     /* 0x92 146 */ Opcode_Grp1_Unknown_146,
     /* 0x93 147 */ Opcode_Grp1_Unknown_147,
-    /* 0x94 148 */ Opcode_Grp1_Unknown_148,
-    /* 0x95 149 */ Opcode_Grp1_Unknown_149,
+    /* 0x94 148 */ Opcode_Grp1_SetNameTableEntry,
+    /* 0x95 149 */ Opcode_Grp1_NameTableWordsIn,
     /* 0x96 150 */ Opcode_Grp1_LoadNameTable,
     /* 0x97 151 */ NULL,
     /* 0x98 152 */ Opcode_Grp1_SetRubyStyle,
@@ -1012,17 +1012,47 @@ uint32_t Opcode_Grp1_Unknown_147(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp1_Unknown_148(Thread_t* thread)
+// 0x00484890 -> 0x004345C0: one word of the ruby dictionary. The script pushes the
+// word, then its reading, so the reading pops first. A null word empties the
+// dictionary and a null reading takes the word out; otherwise the word is set, as a
+// dictionary word (mode 0), as 0x96 loads them. Nothing is pushed.
+uint32_t Opcode_Grp1_SetNameTableEntry(Thread_t* thread)
 {
-    uint8_t* ptr1 = Thread_PopAndResolveAddress(thread);
-    uint8_t* ptr2 = Thread_PopAndResolveAddress(thread);
-    printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
-    return 0;
+	const char* reading = (const char*)Thread_PopAndResolveAddress(thread);
+	const char* word = (const char*)Thread_PopAndResolveAddress(thread);
+	NameTable_t* table = NameTable_Global();
+	if(word == NULL)
+		NameTable_Clear(table);
+	else if(reading == NULL)
+		NameTable_Remove(table, word, 0);
+	else
+		NameTable_Set(table, word, reading, NAMETABLE_MODE_REPLACE);
+	return 0;
 }
 
-uint32_t Opcode_Grp1_Unknown_149(Thread_t* thread)
+// 0x004848C0 -> 0x00434A00 (fureraba.exe; Droidtop/tracker#604): the dictionary's
+// words found in a text, written out as word\reading\n records, and how many. The
+// script pushes the output buffer, then the text, so the text pops first. Cytlan's
+// OpenBGI names these two the other way round; the binary and scrmsg._bp's call at
+// 0x066B agree on this order. With no word found the buffer is not touched at all,
+// not even a terminator: the script keeps its offset only when the count is above 0,
+// and steps back over its own terminator otherwise. The original writes without a
+// bound into the script's 0x400-byte buffer; records are gathered here first, so at
+// most that much is written.
+uint32_t Opcode_Grp1_NameTableWordsIn(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+	char* out = (char*)Thread_PopAndResolveAddress(thread);
+	uint32_t count = 0;
+	if(text != NULL && text[0] != 0 && out != NULL)
+	{
+		char found[0x400];
+		count = NameTable_WordsIn(NameTable_Global(), text, found, sizeof(found));
+		if(count > 0)
+			memcpy(out, found, strlen(found) + 1);
+	}
+	Thread_PushStack(thread, count);
+	return 0;
 }
 
 uint32_t Opcode_Grp1_LoadNameTable(Thread_t* thread)
