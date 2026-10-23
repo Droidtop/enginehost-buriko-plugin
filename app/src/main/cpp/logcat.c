@@ -26,11 +26,30 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
+
+#include "logcat.h"
 
 #define TAG "openbgi"
 
 static int gPipe[2] = { -1, -1 };
+
+// The engine stops its script with a line of its own and then returns as if
+// the game had ended: "[Engine]: Stub opcode 0x9195 encountered in
+// scrmsg._bp+0x066B. Stopping." (Fureraba, Droidtop/tracker#604). The wrapper
+// keeps that line so the person is told it, not shown a game that closed.
+#define STOP_START "[Engine]: "
+#define STOP_END ". Stopping."
+
+// A line only LogcatDrain writes: once the reader has it, it has every line
+// written before it, since a pipe keeps order.
+#define DRAIN_MARK "\001enginehost-drain"
+
+static pthread_mutex_t gLock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t gMarkRead = PTHREAD_COND_INITIALIZER;
+static unsigned gMarks;
+static char gStopped[256];
 
 // A whole line at a time, because that is what a log a host keeps - Android's
 // among them - is made of. The engine's lines end in \n, and a few of the
@@ -44,7 +63,56 @@ static void EmitLine(const char* text, size_t length)
 		length = sizeof(line) - 1;
 	memcpy(line, text, length);
 	line[length] = '\0';
+	if(strcmp(line, DRAIN_MARK) == 0)
+	{
+		pthread_mutex_lock(&gLock);
+		gMarks++;
+		pthread_cond_broadcast(&gMarkRead);
+		pthread_mutex_unlock(&gLock);
+		return;
+	}
+	size_t start = strlen(STOP_START), end = strlen(STOP_END);
+	if(length > start + end && strncmp(line, STOP_START, start) == 0 && strcmp(line + length - end, STOP_END) == 0)
+	{
+		pthread_mutex_lock(&gLock);
+		snprintf(gStopped, sizeof(gStopped), "%.*s", (int)(length - start - end), line + start);
+		pthread_mutex_unlock(&gLock);
+	}
 	__android_log_print(ANDROID_LOG_INFO, TAG, "%s", line);
+}
+
+void LogcatDrain(void)
+{
+	if(gPipe[1] < 0)
+		return;
+	pthread_mutex_lock(&gLock);
+	unsigned want = gMarks + 1;
+	pthread_mutex_unlock(&gLock);
+	static const char mark[] = DRAIN_MARK "\n";
+	if(write(STDOUT_FILENO, mark, sizeof(mark) - 1) != (ssize_t)(sizeof(mark) - 1))
+		return;
+	struct timespec deadline;
+	clock_gettime(CLOCK_REALTIME, &deadline);
+	deadline.tv_sec += 1;
+	pthread_mutex_lock(&gLock);
+	while(gMarks < want)
+	{
+		if(pthread_cond_timedwait(&gMarkRead, &gLock, &deadline) == ETIMEDOUT)
+			break;
+	}
+	pthread_mutex_unlock(&gLock);
+}
+
+int LogcatStopReason(char* out, size_t size)
+{
+	pthread_mutex_lock(&gLock);
+	snprintf(out, size, "%s", gStopped);
+	pthread_mutex_unlock(&gLock);
+	// It goes to Java through NewStringUTF; a script name in Shift-JIS is not UTF-8.
+	for(char* c = out; *c; c++)
+		if((unsigned char)*c >= 0x80 || (unsigned char)*c < 0x20)
+			*c = '?';
+	return out[0] != '\0';
 }
 
 static void* Pump(void* unused)
