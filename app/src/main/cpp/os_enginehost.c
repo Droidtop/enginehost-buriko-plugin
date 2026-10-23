@@ -32,6 +32,7 @@
 #include <unistd.h>
 
 #include "enginehost_audio_ring.h"
+#include "logcat.h"
 #include "engine.h"
 #include "input.h"
 #include "os.h"
@@ -484,6 +485,9 @@ static void* EngineMain(void* unused)
 	char* argv[] = { "openbgi", gGamePath, NULL };
 	int code = SDL_main(2, argv);
 	__android_log_print(ANDROID_LOG_INFO, TAG, "the engine ended (%d)", code);
+	// The host hears of the end from step(); what the engine said on its way
+	// out must have been read by then (NativeStopReason).
+	LogcatDrain();
 	pthread_mutex_lock(&gFrameLock);
 	gEnded = 1;
 	gExitCode = code;
@@ -536,6 +540,19 @@ static jstring JNICALL NativeError(JNIEnv* env, jclass cls)
 {
 	(void)cls;
 	return (*env)->NewStringUTF(env, gError[0] ? gError : "OpenBGI could not start");
+}
+
+/* Why the engine stopped its script, once it has ended; null for an ordinary end. */
+static jstring JNICALL NativeStopReason(JNIEnv* env, jclass cls)
+{
+	(void)cls;
+	char reason[256];
+	pthread_mutex_lock(&gFrameLock);
+	int ended = gEnded;
+	pthread_mutex_unlock(&gFrameLock);
+	if(!ended || !LogcatStopReason(reason, sizeof(reason)))
+		return NULL;
+	return (*env)->NewStringUTF(env, reason);
 }
 
 /*
@@ -655,6 +672,7 @@ void enginehost_register_natives(JNIEnv* env, jclass cls)
 	static const JNINativeMethod methods[] = {
 		{ "nativeStart", "(Ljava/lang/String;II)J", (void*)NativeStart },
 		{ "nativeError", "()Ljava/lang/String;", (void*)NativeError },
+		{ "nativeStopReason", "()Ljava/lang/String;", (void*)NativeStopReason },
 		{ "nativeWidth", "(J)I", (void*)NativeWidth },
 		{ "nativeHeight", "(J)I", (void*)NativeHeight },
 		{ "nativeStep", "(J[I)I", (void*)NativeStep },

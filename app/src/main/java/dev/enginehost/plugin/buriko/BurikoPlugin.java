@@ -47,6 +47,8 @@ public final class BurikoPlugin implements EnginePlugin, EngineStepDriven {
     private static final int MOUSE_RIGHT = 1;
 
     private long engine;
+    private EngineHost host;
+    private boolean ended;
 
     @Override
     public void onCreate(EnginePluginSession session) throws Exception {
@@ -57,7 +59,7 @@ public final class BurikoPlugin implements EnginePlugin, EngineStepDriven {
         if (session.display() != null) {
             throw new IOException("OpenBGI runs only in Enginehost's sandbox");
         }
-        EngineHost host = session.host();
+        host = session.host();
         ParcelFileDescriptor ring = host.isolatedAudioBuffer();
         engine = nativeStart(session.gamePath(), ring == null ? -1 : ring.getFd(), host.isolatedAudioSampleRate());
         if (ring != null) ring.close();
@@ -66,7 +68,33 @@ public final class BurikoPlugin implements EnginePlugin, EngineStepDriven {
 
     @Override public int pixelWidth() { return engine == 0 ? 0 : nativeWidth(engine); }
     @Override public int pixelHeight() { return engine == 0 ? 0 : nativeHeight(engine); }
-    @Override public int step(int[] pixels) { return engine == 0 ? -1 : nativeStep(engine, pixels); }
+
+    @Override
+    public int step(int[] pixels) {
+        if (engine == 0) return -1;
+        int band = nativeStep(engine, pixels);
+        if (band < 0 && !ended) {
+            ended = true;
+            String reason = nativeStopReason();
+            if (reason != null) stopped(reason);
+        }
+        return band;
+    }
+
+    /**
+     * The engine stopped its script rather than the game quitting
+     * (Droidtop/tracker#604: Fureraba's "Stub opcode 0x9195 encountered in
+     * scrmsg._bp+0x066B"), so the person is told why and offered Report a
+     * problem instead of seeing the game close. Called inside step(), so the
+     * host has the reason before it sees the end.
+     */
+    private void stopped(String reason) {
+        try {
+            host.fail("OpenBGI ended its script: " + reason);
+        } catch (IncompatibleClassChangeError olderHost) {
+            // An Enginehost without fail() ends the game as before.
+        }
+    }
 
     @Override public void onPointerMove(int x, int y) {
         if (engine != 0) nativePointer(engine, x, y, true);
@@ -126,6 +154,7 @@ public final class BurikoPlugin implements EnginePlugin, EngineStepDriven {
 
     static native long nativeStart(String gamePath, int audioRingFd, int audioSampleRate);
     static native String nativeError();
+    static native String nativeStopReason();
     static native int nativeWidth(long engine);
     static native int nativeHeight(long engine);
     static native int nativeStep(long engine, int[] pixels);
