@@ -20,6 +20,7 @@
 #include "thread.h"
 #include "gdb.h"
 #include "input.h"
+#include "sjis.h"
 
 static uint32_t Sys0_FlagResult(uint32_t r);
 
@@ -67,7 +68,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x28  40 */ "CreateDirectory",
 	/* 0x29  41 */ "RemoveDirectory",
 	/* 0x2A  42 */ "IsDirectory",
-	/* 0x2B  43 */ "--Unknown--",
+	/* 0x2B  43 */ "SplitPath",
 	/* 0x2C  44 */ "Unknown_44",
 	/* 0x2D  45 */ "Unknown_45",
 	/* 0x2E  46 */ "--Unknown--",
@@ -326,7 +327,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x28  40 */ Opcode_Sys0_CreateDirectory,
 	/* 0x29  41 */ Opcode_Sys0_RemoveDirectory,
 	/* 0x2A  42 */ Opcode_Sys0_IsDirectory,
-	/* 0x2B  43 */ NULL,
+	/* 0x2B  43 */ Opcode_Sys0_SplitPath,
 	/* 0x2C  44 */ Opcode_Sys0_Unknown_44,
 	/* 0x2D  45 */ Opcode_Sys0_Unknown_45,
 	/* 0x2E  46 */ NULL,
@@ -1054,6 +1055,77 @@ uint32_t Opcode_Sys0_IsDirectory(Thread_t* thread)
 		result = stat(local, &info) == 0 && S_ISDIR(info.st_mode) ? 1 : 0;
 	}
 	Thread_PushStack(thread, result);
+	return 0;
+}
+
+/*
+ * Copies at most 255 bytes of [from, from + n) into out and terminates it; nothing when out is
+ * NULL (the script passes NULL for a part it does not want).
+ */
+static void SplitPathPart(char* out, const char* from, size_t n)
+{
+	if(out == NULL)
+		return;
+	if(n > 255)
+		n = 255;
+	memcpy(out, from, n);
+	out[n] = 0;
+}
+
+/*
+ * Sys0 0x2B, from engine 1.69 build 472 on: the C runtime's _splitpath. Pops path, ext, fname,
+ * dir and drive (the script pushes drive first), writes the path's drive ("x:" or empty), its
+ * directory up to and including the last '\' or '/', its file name without the last extension,
+ * and that extension with its dot. A Shift-JIS lead byte protects its trail byte, so a '\'
+ * inside a double-byte character is not a separator. Pushes 1, or 0 with nothing written when
+ * the path is NULL. Fureraba stopped on it about 11 s after Start Game (Droidtop/tracker#550,
+ * 2026-10-24). Ported from upstream OpenBGI's Opcode_Sys_SplitPath and SplitPath
+ * (src/vm/ops_sys.c, src/core/strutil.c; GPL-2.0, as here).
+ */
+uint32_t Opcode_Sys0_SplitPath(Thread_t* thread)
+{
+	const char* path = (const char*)Thread_PopAndResolveAddress(thread);
+	char* ext = (char*)Thread_PopAndResolveAddress(thread);
+	char* fname = (char*)Thread_PopAndResolveAddress(thread);
+	char* dir = (char*)Thread_PopAndResolveAddress(thread);
+	char* drive = (char*)Thread_PopAndResolveAddress(thread);
+	if(path == NULL)
+	{
+		Thread_PushStack(thread, 0);
+		return 0;
+	}
+	const char* p = path;
+	if(p[0] != 0 && p[1] == ':')
+	{
+		SplitPathPart(drive, p, 2);
+		p += 2;
+	}
+	else
+		SplitPathPart(drive, p, 0);
+	const char* lastSep = NULL;
+	const char* lastDot = NULL;
+	const char* end = p;
+	for(; *end != 0; end++)
+	{
+		if(SjisIsTwobyte((uint8_t*)end) && end[1] != 0)
+		{
+			end++;
+			continue;
+		}
+		if(*end == '\\' || *end == '/')
+			lastSep = end + 1;
+		else if(*end == '.')
+			lastDot = end;
+	}
+	SplitPathPart(dir, p, lastSep != NULL ? (size_t)(lastSep - p) : 0);
+	if(lastSep != NULL)
+		p = lastSep;
+	// A dot in the directory is not an extension.
+	if(lastDot != NULL && lastDot < p)
+		lastDot = NULL;
+	SplitPathPart(fname, p, (size_t)((lastDot != NULL ? lastDot : end) - p));
+	SplitPathPart(ext, lastDot != NULL ? lastDot : end, lastDot != NULL ? (size_t)(end - lastDot) : 0);
+	Thread_PushStack(thread, 1);
 	return 0;
 }
 
