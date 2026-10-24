@@ -39,6 +39,7 @@ uint32_t Opcode_Sys0_ListFiles(Thread_t* thread);
 uint32_t Opcode_Sys0_CreateDirectory(Thread_t* thread);
 uint32_t Opcode_Sys0_RemoveDirectory(Thread_t* thread);
 uint32_t Opcode_Sys0_IsDirectory(Thread_t* thread);
+uint32_t Opcode_Sys0_SplitPath(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_44(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_45(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_47(Thread_t* thread);
