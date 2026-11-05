@@ -1080,55 +1080,27 @@ uint32_t Opcode_Grp1_SetPhoneticMargin(Thread_t* thread)
 
 /*
  * Grp1 0x9B: the width a string would take in a font (Droidtop/tracker#123, scrslct+0x10B4
- * after Start Game). From the local lane's description: pops a flag (top), two words it
- * does not use, a font number, a size, the string and an output address; the order is to
- * be confirmed on the official trace. The original walks the string a character at a
- * time, two bytes for a Shift-JIS lead byte, through the kinsoku-aware advance text.c
- * ports, writes the width to the output and pushes 0, or 0x80000001-0x80000003 for a bad
- * font, size or style.
- *
- * Interim, until the trace settles the font and style arguments: a double-byte character
- * advances by the size and a single-byte one by half of it, which is what a Japanese
- * font's cells are. The checks and the answers are the original's.
+ * after Start Game; the local lane's trace, confirmed by the calls in its differential run).
+ * Pops five numbers, then two addresses: the proportional flag (top), the font number, the
+ * width in per cent, the size, the weight, the string and the output. The font is opened as
+ * Text_DrawIntoBitmap opens it, with the same answers (0x80000001-0x80000003, 0 when
+ * measured); the width 0x00434FE0 measures (its third answer) goes to the output.
  */
 uint32_t Opcode_Grp1_MeasureText(Thread_t* thread)
 {
-	uint32_t flag = Thread_PopStack(thread);
-	Thread_PopStack(thread);
-	Thread_PopStack(thread);
+	uint32_t proportional = Thread_PopStack(thread);
 	uint32_t fontNumber = Thread_PopStack(thread);
+	int32_t width = (int32_t)Thread_PopStack(thread);
 	int32_t size = (int32_t)Thread_PopStack(thread);
-	const uint8_t* text = Thread_PopAndResolveAddress(thread);
+	uint32_t bold = Thread_PopStack(thread);
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
 	uint8_t* out = Thread_PopAndResolveAddress(thread);
-	(void)flag;
-	if(Engine_FontNameById(fontNumber) == NULL)
-	{
-		Thread_PushStack(thread, 0x80000001u);
-		return 0;
-	}
-	if(size <= 0)
-	{
-		Thread_PushStack(thread, 0x80000002u);
-		return 0;
-	}
-	int64_t width = 0;
-	for(size_t i = 0; text != NULL && text[i] != 0 && i < 0x10000; i++)
-	{
-		uint8_t c = text[i];
-		int lead = (c >= 0x81 && c <= 0x9F) || (c >= 0xE0 && c <= 0xFC);
-		if(lead && text[i + 1] != 0)
-		{
-			width += size;
-			i++;
-		}
-		else
-			width += size / 2;
-	}
-	if(width > INT32_MAX)
-		width = INT32_MAX;
-	if(out != NULL)
-		Thread_WriteIntToMemory(thread, out, BGI_SIZE_DWORD, (uint32_t)width);
-	Thread_PushStack(thread, 0);
+	int32_t measured = 0;
+	uint32_t result = Text_MeasureInFont(thread->engine->renderer, text, fontNumber, size, width, bold,
+	                                     proportional, &measured);
+	if(result == 0 && out != NULL)
+		Thread_WriteIntToMemory(thread, out, BGI_SIZE_DWORD, (uint32_t)measured);
+	Thread_PushStack(thread, result);
 	return 0;
 }
 
