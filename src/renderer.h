@@ -213,6 +213,9 @@ Screen_t* Renderer_ResolveScreen(Renderer_t* renderer, uint32_t handle);
 // The six-dword descriptor of a window's own pixels - the original keeps it at
 // window+0x144 and hands it to the draw (0x0042B1D0) and to the window's own redraw
 // (0x0042CB10) alike. 0 when that window has none.
+// The pixel mode a window's frame and text surfaces are made in: the device's, 24-bit
+// made 32-bit (0x0041C060 with no template).
+int Renderer_SurfaceMode(Renderer_t* renderer);
 int Renderer_WindowBitmap(Renderer_t* renderer, uint32_t handle, Bitmap_t* out);
 void Renderer_DestroyScreen(Renderer_t* renderer, uint32_t handle);
 void Renderer_DrawScreen(Renderer_t* renderer);
