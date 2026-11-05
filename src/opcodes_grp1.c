@@ -46,7 +46,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x1B  27 */ "--Unknown--",
     /* 0x1C  28 */ "ScaleBitmap",
     /* 0x1D  29 */ "--Unknown--",
-    /* 0x1E  30 */ "Unknown_30",
+    /* 0x1E  30 */ "ApplyAlphaMask",
     /* 0x1F  31 */ "DuplicateBitmap",
     /* 0x20  32 */ "--Unknown--",
     /* 0x21  33 */ "--Unknown--",
@@ -305,7 +305,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x1B  27 */ NULL,
     /* 0x1C  28 */ Opcode_Grp1_ScaleBitmap,
     /* 0x1D  29 */ NULL,
-    /* 0x1E  30 */ Opcode_Grp1_Unknown_30,
+    /* 0x1E  30 */ Opcode_Grp1_ApplyAlphaMask,
     /* 0x1F  31 */ Opcode_Grp1_DuplicateBitmap,
     /* 0x20  32 */ NULL,
     /* 0x21  33 */ NULL,
@@ -675,9 +675,41 @@ uint32_t Opcode_Grp1_ScaleBitmap(Thread_t* thread)
 	}
 }
 
-uint32_t Opcode_Grp1_Unknown_30(Thread_t* thread)
+/*
+ * Grp1 0x1E (0x0000911E; Houkago's bitmap+0x1E63; 1.622 0x00481970 -> 0x00403190): a
+ * greyscale mask applied to a bitmap's alpha (Renderer_ApplyAlphaMask). Popped: the y
+ * offset (top), the x offset, the mask bitmap and the target. Nothing is pushed. An
+ * invalid target or mask, and a mask of the wrong pixel mode, are fatal with the
+ * original's messages. As the RE lane read it on Droidtop/tracker#123.
+ */
+uint32_t Opcode_Grp1_ApplyAlphaMask(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	int mask = (int)Thread_PopStack(thread);
+	int target = (int)Thread_PopStack(thread);
+	switch(Renderer_ApplyAlphaMask(thread->engine->renderer, target, mask, x, y))
+	{
+	case RENDERER_MASK_OK:
+		return 0;
+	case RENDERER_MASK_BAD_TARGET:
+		printf("[Thread %d]: %sError: the specified target bitmap [ %d ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], target);
+		return 0xFFFFFFFF;
+	case RENDERER_MASK_BAD_MASK:
+		printf("[Thread %d]: %sError: the specified reference bitmap [ %d ] is invalid\n",
+		       thread->threadId, TLevel[thread->level], mask);
+		return 0xFFFFFFFF;
+	case RENDERER_MASK_NOT_GREYSCALE:
+		printf("[Thread %d]: %sError: the specified reference bitmap [ %d ] is not grayscale\n",
+		       thread->threadId, TLevel[thread->level], mask);
+		return 0xFFFFFFFF;
+	default:
+		printf("[Thread %d]: %sError: Grp1 0x1E: an 8-bit target [ %d ] with a mask [ %d ] that is not 8-bit"
+		       " goes through 0x00415670's other routines, which are not read yet\n",
+		       thread->threadId, TLevel[thread->level], target, mask);
+		return 0xFFFFFFFF;
+	}
 }
 
 /*

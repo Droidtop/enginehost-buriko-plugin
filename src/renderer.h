@@ -128,6 +128,14 @@ int Renderer_DestroyBitmap(Renderer_t* renderer, int id);
 // Writes one colour over every pixel of a bitmap (0x00408040); 0 when the slot
 // is empty, 1 when it was filled.
 int Renderer_FillBitmap(Renderer_t* renderer, int id, uint32_t colour);
+// Grp1 0x1E: a greyscale mask on a bitmap's alpha, the mask's (tx + x, ty + y) on the
+// target's (tx, ty).
+#define RENDERER_MASK_OK             0
+#define RENDERER_MASK_BAD_TARGET     1
+#define RENDERER_MASK_BAD_MASK       2
+#define RENDERER_MASK_NOT_GREYSCALE  3
+#define RENDERER_MASK_UNREAD         4
+int Renderer_ApplyAlphaMask(Renderer_t* renderer, int target, int mask, int32_t x, int32_t y);
 // 0, or one of the 0x8000000X codes the original's loader returns.
 uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filename, const char* archive);
 // 0 on success, 1 invalid destination, 2 invalid source, 3 invalid range (0x004033A0).

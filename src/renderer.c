@@ -1427,6 +1427,80 @@ void Renderer_Free(Renderer_t* renderer)
 	free(renderer);
 }
 
+/*
+ * Grp1 0x1E's work (0x00403190 -> 0x00415C00 / 0x00415670; the RE lane on
+ * Droidtop/tracker#123): a greyscale mask applied to a bitmap's alpha. The mask pixel
+ * at (tx + x, ty + y) applies to the target pixel (tx, ty), over the overlap of the
+ * two only; no overlap does nothing.
+ *   - A 32-bit target with a 4-byte mask (mode 1 or 2), whose value m is each mask
+ *     pixel's byte +3. Mask mode 1: the alpha becomes m. Mode 2: the alpha is scaled,
+ *     A * (m * 0x100) >> 16, with m = 0 giving 0 and m = 0xFF leaving it as it was;
+ *     on a different bitmap than the target, m = 0 clears the whole pixel.
+ *   - An 8-bit target with an 8-bit mask: the same scaling on the single byte.
+ * The level term of 0x00415D30 is 0 here, so the factor is the whole of m.
+ */
+static uint32_t Renderer_MaskScale(uint32_t value, uint32_t m)
+{
+	if(m == 0)
+		return 0;
+	if(m == 0xFF)
+		return value;
+	return (value * (m * 0x100)) >> 16;
+}
+
+int Renderer_ApplyAlphaMask(Renderer_t* renderer, int target, int mask, int32_t x, int32_t y)
+{
+	Bitmap_t* t = Renderer_ResolveBitmap(renderer, target);
+	if(t == NULL)
+		return RENDERER_MASK_BAD_TARGET;
+	Bitmap_t* m = Renderer_ResolveBitmap(renderer, mask);
+	if(m == NULL)
+		return RENDERER_MASK_BAD_MASK;
+	int wide = Renderer_ModePixelBytes(m->mode) == 4 && (m->mode == BITMAP_MODE_24 || m->mode == BITMAP_MODE_32);
+	if(t->mode == BITMAP_MODE_32 && !wide)
+		return RENDERER_MASK_NOT_GREYSCALE;
+	if(t->mode == BITMAP_MODE_8 && m->mode != BITMAP_MODE_8)
+		return RENDERER_MASK_UNREAD;
+	if(t->mode != BITMAP_MODE_32 && t->mode != BITMAP_MODE_8)
+		return RENDERER_MASK_NOT_GREYSCALE;
+
+	// The overlap, in the target's coordinates: the mask's rectangle moved by (-x, -y).
+	int left = x < 0 ? -x : 0;
+	int top = y < 0 ? -y : 0;
+	int right = m->width - x;
+	int bottom = m->height - y;
+	if(right > t->width)
+		right = t->width;
+	if(bottom > t->height)
+		bottom = t->height;
+	if(left >= right || top >= bottom)
+		return RENDERER_MASK_OK;
+
+	int same = t == m;
+	for(int ty = top; ty < bottom; ty++)
+	{
+		uint8_t* out = t->bitmap + (size_t)ty * t->stride;
+		const uint8_t* in = m->bitmap + (size_t)(ty + y) * m->stride;
+		for(int tx = left; tx < right; tx++)
+		{
+			if(t->mode == BITMAP_MODE_8)
+			{
+				out[tx] = (uint8_t)Renderer_MaskScale(out[tx], in[tx + x]);
+				continue;
+			}
+			uint8_t* pixel = out + (size_t)tx * 4;
+			uint32_t value = in[(size_t)(tx + x) * 4 + 3];
+			if(m->mode == BITMAP_MODE_24)
+				pixel[3] = (uint8_t)value;
+			else if(value == 0 && !same)
+				memset(pixel, 0, 4);
+			else
+				pixel[3] = (uint8_t)Renderer_MaskScale(pixel[3], value);
+		}
+	}
+	return RENDERER_MASK_OK;
+}
+
 int Renderer_BlitAt(Bitmap_t* destination, int x, int y, Bitmap_t* source, int mode, int weight)
 {
 	return Renderer_BlitBitmaps(destination, x, y, source, mode, weight);
