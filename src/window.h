@@ -68,6 +68,9 @@ void Window_SetTextShown(DisplayObject_t* window, uint32_t shown);
 void Window_SetTextTransparency(DisplayObject_t* window, uint32_t transparency);
 // 0x0042BA90: the text surface cleared and the window redrawn.
 void Window_ClearText(Renderer_t* renderer, DisplayObject_t* window);
+// A window emptied, as Window_SetContent, an icon's content and Grp2 0x8E start: text
+// parts off, no content slots, the text surface cleared and hidden, then redrawn.
+void Window_Empty(Renderer_t* renderer, DisplayObject_t* window);
 // 0x0042C3B0: the area text is drawn into, the client area with one font size more on
 // the right when the window keeps a column free (0x0042C360).
 void Window_TextArea(const DisplayObject_t* window, Rect_t* rect);

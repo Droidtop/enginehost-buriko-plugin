@@ -18,7 +18,7 @@ uint32_t Opcode_Grp2_Unknown_31(Thread_t* thread);
 uint32_t Opcode_Grp2_DrawOnWindowBackground(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_140(Thread_t* thread);
 uint32_t Opcode_Grp2_Unknown_141(Thread_t* thread);
-uint32_t Opcode_Grp2_Unknown_142(Thread_t* thread);
+uint32_t Opcode_Grp2_ClearMessageWindow(Thread_t* thread);
 uint32_t Opcode_Grp2_PrintMessage(Thread_t* thread);
 uint32_t Opcode_Grp2_PrintText(Thread_t* thread);
 uint32_t Opcode_Grp2_DrawText(Thread_t* thread);

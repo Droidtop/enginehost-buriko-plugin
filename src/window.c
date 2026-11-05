@@ -558,16 +558,29 @@ int Window_RedrawContentSlot(Renderer_t* renderer, DisplayObject_t* window, uint
 	return 1;
 }
 
+void Window_Empty(Renderer_t* renderer, DisplayObject_t* window)
+{
+	// The eight text parts off (0x0042BC90 -> 0x0042BB90 with 0 each), no content
+	// slots (0x0042BCB0 with 0), the text surface cleared (0x0042BA90 -> 0x0040A620),
+	// its weight +0x19C and flag +0x17C set to 0 (0x0042B630, 0x0042B620), and the
+	// whole window redrawn (0x0042CAE0).
+	if(window == NULL)
+		return;
+	for(int i = 0; i < 8; i++)
+		Window_EnablePart(renderer, window, i, 0);
+	Window_ReserveContent(renderer, window, 0);
+	Bitmap_t text;
+	if(Window_TextSurface(renderer, window, &text))
+		Renderer_ClearBitmap(&text);
+	Window_SetTextTransparency(window, 0);
+	Window_SetTextShown(window, 0);
+	Window_RedrawAll(renderer, window);
+}
+
 uint32_t Window_SetContent(Renderer_t* renderer, DisplayObject_t* window, const IconContent_t* content)
 {
-	// 0x0044B340. First the window is emptied: the eight text parts (0x0042BC90 ->
-	// 0x0042BB90 with 0 each), the content slots (0x0042BCB0 with 0), the text
-	// surface cleared (0x0042BA90 -> 0x0040A620, then 0x0042CAE0), its weight +0x19C
-	// and flag +0x17C set to 0 (0x0042B630, 0x0042B620), and the whole window redrawn
-	// (0x0042CAE0). This engine's windows carry no text layer yet, so of those the
-	// slots and the redraws are what there is to do.
-	Window_ReserveContent(renderer, window, 0);
-	Window_RedrawAll(renderer, window);
+	// 0x0044B340. First the window is emptied.
+	Window_Empty(renderer, window);
 
 	// 0x0044B38D: the entry count in 1..0x100, else 0x80000001.
 	uint32_t count = content->raw[0];
