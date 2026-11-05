@@ -933,6 +933,13 @@ uint32_t Opcode_Grp2_SetLinkFont(Thread_t* thread)
 	int32_t size = (int32_t)Thread_PopStack(thread);
 	int32_t width = (int32_t)Thread_PopStack(thread);
 	uint32_t fontNumber = Thread_PopStack(thread);
+	// Houkago's ipl passes -1, not yet traced: most likely "no separate link font". It is
+	// accepted, and the link font stays as it is (Droidtop/tracker#123).
+	if(fontNumber == 0xFFFFFFFFu)
+	{
+		Thread_PushStack(thread, 0);
+		return 0;
+	}
 	const char* name = Engine_FontNameById(fontNumber);
 	if(name == NULL)
 	{

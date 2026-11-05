@@ -40,7 +40,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x12  18 */ "DestroyBitmap",
 	/* 0x13  19 */ "FillBitmap",
 	/* 0x14  20 */ "Unknown_20",
-	/* 0x15  21 */ "Unknown_21",
+	/* 0x15  21 */ "CopyBitmapOut",
 	/* 0x16  22 */ "GetBitmapInfo",
 	/* 0x17  23 */ "SetBitmapMode",
 	/* 0x18  24 */ "BlitBitmap",
@@ -299,7 +299,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x12  18 */ Opcode_Grp0_DestroyBitmap,
 	/* 0x13  19 */ Opcode_Grp0_FillBitmap,
 	/* 0x14  20 */ Opcode_Grp0_Unknown_20,
-	/* 0x15  21 */ Opcode_Grp0_Unknown_21,
+	/* 0x15  21 */ Opcode_Grp0_CopyBitmapOut,
 	/* 0x16  22 */ Opcode_Grp0_GetBitmapInfo,
 	/* 0x17  23 */ Opcode_Grp0_SetBitmapMode,
 	/* 0x18  24 */ Opcode_Grp0_BlitBitmap,
@@ -910,9 +910,57 @@ uint32_t Opcode_Grp0_Unknown_20(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_21(Thread_t* thread)
+/*
+ * Grp0 0x15 (0x9015): a bitmap's pixels out to script memory (Droidtop/tracker#123, the local
+ * lane's trace: Fureraba's userdata+0x0360 writes the save thumbnail this way, between the
+ * .sud's 0x604-byte header and its SDC part). Pops the bitmap number (top; 0x4000 or more is
+ * fatal), the destination's size, an address that receives the byte count, and the
+ * destination. The rows go out packed, top row first: 2 bytes a pixel in mode 0, 3 in mode 1
+ * (the stored pixel's first three bytes, B G R), 4 in mode 2 and 1 in mode 3. A missing bitmap
+ * or a destination smaller than the pixels is fatal. Nothing is pushed.
+ */
+uint32_t Opcode_Grp0_CopyBitmapOut(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t slot = Thread_PopStack(thread);
+	uint32_t size = Thread_PopStack(thread);
+	uint32_t countAddress = Thread_PopStack(thread);
+	uint32_t destinationAddress = Thread_PopStack(thread);
+	if(slot >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: an invalid bitmap number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)slot);
+		return 0xFFFFFFFC;
+	}
+	Bitmap_t* bitmap = Renderer_ResolveBitmap(thread->engine->renderer, (int)slot);
+	if(bitmap == NULL)
+	{
+		printf("[Thread %d]: %sError: the bitmap [ %d ] does not exist\n", thread->threadId, TLevel[thread->level], (int32_t)slot);
+		return 0xFFFFFFFC;
+	}
+	int out = bitmap->mode == 0 ? 2 : bitmap->mode == 1 ? 3 : bitmap->mode == 2 ? 4 : 1;
+	int stored = Renderer_ModePixelBytes(bitmap->mode);
+	uint64_t total = (uint64_t)bitmap->width * (uint64_t)bitmap->height * (uint64_t)out;
+	uint32_t room = 0, countRoom = 0;
+	uint8_t* destination = Thread_ResolveSpan(thread, destinationAddress, &room);
+	uint8_t* count = Thread_ResolveSpan(thread, countAddress, &countRoom);
+	if(total > size || destination == NULL || total > room || count == NULL || countRoom < 4)
+	{
+		printf("[Thread %d]: %sError: the image cannot be stored in a buffer of size [ %d ]\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)size);
+		return 0xFFFFFFFC;
+	}
+	for(int y = 0; y < bitmap->height; y++)
+	{
+		const uint8_t* src = bitmap->bitmap + (size_t)y * bitmap->stride;
+		uint8_t* dst = destination + (size_t)y * bitmap->width * out;
+		if(out == stored)
+			memcpy(dst, src, (size_t)bitmap->width * out);
+		else
+			for(int x = 0; x < bitmap->width; x++)
+				memcpy(dst + (size_t)x * out, src + (size_t)x * stored, (size_t)out);
+	}
+	Thread_WriteIntToMemory(thread, count, BGI_SIZE_DWORD, (uint32_t)total);
+	return 0;
 }
 
 /*

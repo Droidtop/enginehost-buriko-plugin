@@ -884,3 +884,55 @@ uint16_t SjisGetChar(uint8_t* in, bool* isTwoByte)
 	}
 	return c;
 }
+
+/*
+ * UTF-16 to CP932 (Shift-JIS): the reverse of SjisToUTF16, built once from it by walking every
+ * one- and two-byte code, so there is one table. 1 or 2 bytes into `out`, or 0 when the
+ * character has no CP932 form. Used to match a game font's Japanese family name to the CP932
+ * name a script asks for (Droidtop/tracker#123).
+ */
+static uint16_t* gUtf16ToSjis = NULL;
+
+int Utf16ToSjis(uint16_t ch, uint8_t out[2])
+{
+	if(ch < 0x80)
+	{
+		out[0] = (uint8_t)ch;
+		return ch != 0;
+	}
+	if(gUtf16ToSjis == NULL)
+	{
+		gUtf16ToSjis = (uint16_t*)calloc(0x10000, sizeof(uint16_t));
+		if(gUtf16ToSjis == NULL)
+			return 0;
+		for(int c = 0x80; c < 0x100; c++)
+		{
+			uint8_t in[2] = { (uint8_t)c, 0 };
+			if(sjis[c] == 0)
+			{
+				uint16_t u = SjisToUTF16(in);
+				if(u != 0 && gUtf16ToSjis[u] == 0)
+					gUtf16ToSjis[u] = (uint16_t)c;
+				continue;
+			}
+			for(int d = 0x40; d < 0x100; d++)
+			{
+				in[1] = (uint8_t)d;
+				uint16_t u = SjisToUTF16(in);
+				if(u != 0 && gUtf16ToSjis[u] == 0)
+					gUtf16ToSjis[u] = (uint16_t)((c << 8) | d);
+			}
+		}
+	}
+	uint16_t code = gUtf16ToSjis[ch];
+	if(code == 0)
+		return 0;
+	if(code < 0x100)
+	{
+		out[0] = (uint8_t)code;
+		return 1;
+	}
+	out[0] = (uint8_t)(code >> 8);
+	out[1] = (uint8_t)(code & 0xFF);
+	return 2;
+}
