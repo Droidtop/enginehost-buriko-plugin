@@ -83,7 +83,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x37  55 */ "AddSearchPath",
 	/* 0x38  56 */ "CreateComplexArchive",
 	/* 0x39  57 */ "SetUserDirectory",
-	/* 0x3A  58 */ "Unknown_58",
+	/* 0x3A  58 */ "GetSpecialFolder",
 	/* 0x3B  59 */ "Unknown_59",
 	/* 0x3C  60 */ "Unknown_60",
 	/* 0x3D  61 */ "GetDirectory",
@@ -342,7 +342,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x37  55 */ Opcode_Sys0_AddSearchPath,
 	/* 0x38  56 */ Opcode_Sys0_CreateComplexArchive,
 	/* 0x39  57 */ Opcode_Sys0_SetUserDirectory,
-	/* 0x3A  58 */ Opcode_Sys0_Unknown_58,
+	/* 0x3A  58 */ Opcode_Sys0_GetSpecialFolder,
 	/* 0x3B  59 */ Opcode_Sys0_Unknown_59,
 	/* 0x3C  60 */ Opcode_Sys0_Unknown_60,
 	/* 0x3D  61 */ Opcode_Sys0_GetDirectory,
@@ -1370,9 +1370,43 @@ uint32_t Opcode_Sys0_CreateComplexArchive(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_58(Thread_t* thread)
+/*
+ * Sys0 0x3A (0x00488BB0 -> 0x004676F0; Houkago's errdtctn+0x0038): a Windows special
+ * folder's path into script memory. Popped: the kind (top), then the destination.
+ * The original writes the folder's full path - 0 the Windows directory, 1 the Desktop
+ * (CSIDL 0x10), 2 the Start menu's Programs (2), 3 My Documents (5), 4 Program Files
+ * (0x26), 5 a path from 0x00467680 not read yet - impersonating the logged-on user
+ * when elevated (RE lane on Droidtop/tracker#123).
+ *
+ * No host path ever reaches a script: the user's folders are answered with folders
+ * under the game's own, where its saves are and where every write is confined
+ * (Engine_ResolveWritePath), with no trailing separator, as the originals have none.
+ * Nothing is created; a write into one that does not exist fails as any other would.
+ * The Windows directory and Program Files get an empty string and 0. Pushed: 1 when
+ * a path was written, else 0 (what errdtctn does not look at).
+ */
+uint32_t Opcode_Sys0_GetSpecialFolder(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t kind = Thread_PopStack(thread);
+	uint32_t address = Thread_PopStack(thread);
+	static const char* const kFolders[6] = { "", "./Desktop", "./Programs", "./Documents", "", "." };
+	const char* path = kind < 6 ? kFolders[kind] : "";
+	uint32_t room = 0;
+	char* out = address != 0 ? (char*)Thread_ResolveSpan(thread, address, &room) : NULL;
+	uint32_t written = 0;
+	if(out != NULL && room > 0)
+	{
+		size_t n = strlen(path);
+		if(n + 1 > room)
+			n = room - 1;
+		memcpy(out, path, n);
+		out[n] = 0;
+		written = path[0] != 0;
+	}
+	printf("[Thread %d]: %sSpecial folder %u answered with \"%s\"\n", thread->threadId, TLevel[thread->level],
+	       kind, path);
+	Thread_PushStack(thread, written);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_59(Thread_t* thread)
