@@ -26,7 +26,7 @@ uint32_t Opcode_Ext0_Unknown_36(Thread_t* thread);
 uint32_t Opcode_Ext0_SetTextColor(Thread_t* thread);
 uint32_t Opcode_Ext0_Unknown_38(Thread_t* thread);
 uint32_t Opcode_Ext0_Unknown_39(Thread_t* thread);
-uint32_t Opcode_Ext0_Unknown_128(Thread_t* thread);
+uint32_t Opcode_Ext0_ShowMessage(Thread_t* thread);
 uint32_t Opcode_Ext0_Unknown_129(Thread_t* thread);
 uint32_t Opcode_Ext0_Unknown_130(Thread_t* thread);
 uint32_t Opcode_Ext0_Unknown_132(Thread_t* thread);

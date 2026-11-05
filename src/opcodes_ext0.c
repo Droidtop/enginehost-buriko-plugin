@@ -135,7 +135,7 @@ char* OpcodesExt0Mnemonics[256] = {
     /* 0x7D 125 */ "--Unknown--",
     /* 0x7E 126 */ "--Unknown--",
     /* 0x7F 127 */ "--Unknown--",
-    /* 0x80 128 */ "Unknown_128",
+    /* 0x80 128 */ "ShowMessage",
     /* 0x81 129 */ "Unknown_129",
     /* 0x82 130 */ "Unknown_130",
     /* 0x83 131 */ "--Unknown--",
@@ -394,7 +394,7 @@ OpcodePtr_t OpcodesExt0[256] = {
     /* 0x7D 125 */ NULL,
     /* 0x7E 126 */ NULL,
     /* 0x7F 127 */ NULL,
-    /* 0x80 128 */ Opcode_Ext0_Unknown_128,
+    /* 0x80 128 */ Opcode_Ext0_ShowMessage,
     /* 0x81 129 */ Opcode_Ext0_Unknown_129,
     /* 0x82 130 */ Opcode_Ext0_Unknown_130,
     /* 0x83 131 */ NULL,
@@ -648,9 +648,18 @@ uint32_t Opcode_Ext0_Unknown_39(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Ext0_Unknown_128(Thread_t* thread)
+/*
+ * Ext0 0x80 (0xB080, 221 sites across the owner's five games): pops a string's address and
+ * shows it in an information box titled with the window's title, then carries on
+ * (Droidtop/tracker#123, the local lane's survey). As with base 0x79, it is logged here and
+ * never a box: nothing blocks a game on it.
+ */
+uint32_t Opcode_Ext0_ShowMessage(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+	printf("[Thread %d]: %sScript message (Ext0 0x80): %.*s\n", thread->threadId, TLevel[thread->level],
+	       1024, text != NULL ? text : "(null)");
+	return 0;
 }
 
 uint32_t Opcode_Ext0_Unknown_129(Thread_t* thread)
