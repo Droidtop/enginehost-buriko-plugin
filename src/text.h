@@ -147,6 +147,10 @@ uint32_t Text_SetRubyStyle(uint32_t hangingIndent, int32_t rubyIndent, int32_t r
 // *lines is set to the number of lines the text took. 0 on success, else
 // 0x80000001 (size), 0x80000002 (width), 0x80000003 (font number), 0x80000004 (no
 // such bitmap) as the opcodes report them.
+// Grp1 0x9B: a string's width in the font a number names, opened as Text_DrawIntoBitmap opens
+// it (the same answers); *measured is 0x00434FE0's third answer.
+uint32_t Text_MeasureInFont(Renderer_t* renderer, const char* text, uint32_t fontNumber, int32_t size,
+                            int32_t width, uint32_t bold, uint32_t proportional, int32_t* measured);
 uint32_t Text_DrawIntoBitmap(Renderer_t* renderer, int bitmapId, uint32_t* lines, int32_t x, int32_t y,
                              const char* text, uint32_t ruby, const char* rubyDictionary,
                              uint32_t fontNumber, int32_t size, int32_t width, uint32_t bold,

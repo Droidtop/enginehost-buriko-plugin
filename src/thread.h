@@ -121,6 +121,7 @@ const char* Thread_Where(Thread_t* thread, uint32_t address);
 void Thread_SetInstructionPointer(Thread_t* thread, uint32_t value);
 void Thread_SetUnknownTimestamp(Thread_t* thread, uint32_t value);
 uint8_t* Thread_PopAndResolveAddress(Thread_t* thread);
+uint8_t* Thread_ResolveSpan(Thread_t* thread, uint32_t address, uint32_t* available);
 // A script address, as the resolver 0x0048DF60 reads it: the top six bits are
 // its type and the low 26 bits an offset. Type 0 is global memory, 1 the
 // thread's code space, 2 its local memory, 3 an area the thread object answers

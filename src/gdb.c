@@ -96,7 +96,10 @@ uint32_t SDC_Decode(const uint8_t* file, size_t fileSize, uint8_t* out, uint32_t
 uint32_t SDC_Encode(const uint8_t* data, uint32_t size, uint32_t key, uint8_t** outFile)
 {
 	enum { MAXD = 0x801, MINL = 2, MAXL = 17, HBITS = 16 };
-	uint8_t* lz = (uint8_t*)malloc((size_t)size + size / 128 + 16);
+	// The most a byte can cost is two: a run of one literal is its control byte and the
+	// byte. (This was size + size / 128 + 16, which short matches between single literals
+	// overrun: Droidtop/tracker#123, found by the DCFS round trip under ASan.)
+	uint8_t* lz = (uint8_t*)malloc((size_t)size * 2 + 16);
 	int32_t* head = (int32_t*)malloc(sizeof(int32_t) << HBITS);
 	int32_t* prev = (int32_t*)malloc(sizeof(int32_t) * (size ? size : 1));
 	uint32_t o = 0, i = 0, litStart = 0;
@@ -189,6 +192,141 @@ uint32_t SDC_Encode(const uint8_t* data, uint32_t size, uint32_t key, uint8_t** 
 	}
 	*outFile = file;
 	return 0x20 + o;
+}
+
+// ============================================================================
+// DCFS (0x00447220 encodes, 0x00447410 decodes)
+// ============================================================================
+static const char kDcfsMagic[16] = { 'D','C','F','S',' ','F','O','R','M','A','T',' ','1','.','0','0' };
+
+static size_t PutLeb(uint8_t* p, uint32_t v)
+{
+	size_t n = 0;
+	do
+	{
+		uint8_t b = (uint8_t)(v & 0x7F);
+		v >>= 7;
+		p[n++] = (uint8_t)(b | (v != 0 ? 0x80 : 0));
+	} while(v != 0);
+	return n;
+}
+
+// 1 and the value, or 0 when the stream ends inside it or it does not fit 32 bits.
+static int GetLeb(const uint8_t* p, size_t end, size_t* at, uint32_t* value)
+{
+	uint32_t v = 0;
+	for(int shift = 0; shift < 35; shift += 7)
+	{
+		if(*at >= end)
+			return 0;
+		uint8_t b = p[(*at)++];
+		if(shift == 28 && (b & 0x70) != 0)
+			return 0;
+		v |= (uint32_t)(b & 0x7F) << shift;
+		if((b & 0x80) == 0)
+		{
+			*value = v;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+uint32_t DCFS_Decode(const uint8_t* data, size_t dataSize, uint8_t* out, size_t outSize)
+{
+	if(dataSize < DCFS_HEADER_SIZE || memcmp(data, kDcfsMagic, 16) != 0)
+		return DCFS_NOT_DCFS;
+	uint32_t size = Rd32(data + 0x10);
+	uint32_t count = Rd32(data + 0x14);
+	if(size == 0 || count == 0 || (uint64_t)size * count > outSize)
+		return DCFS_BAD_RUNS;
+	size_t at = DCFS_HEADER_SIZE;
+	if(dataSize - at < size)
+		return DCFS_BAD_RUNS;
+	memcpy(out, data + at, size);
+	at += size;
+	for(uint32_t r = 1; r < count; r++)
+	{
+		const uint8_t* prev = out + (size_t)(r - 1) * size;
+		uint8_t* cur = out + (size_t)r * size;
+		uint32_t filled = 0;
+		int same = 1;
+		while(filled < size)
+		{
+			uint32_t n;
+			if(!GetLeb(data, dataSize, &at, &n) || n > size - filled)
+				return DCFS_BAD_RUNS;
+			if(same)
+				memcpy(cur + filled, prev + filled, n);
+			else
+			{
+				if(dataSize - at < n)
+					return DCFS_BAD_RUNS;
+				memcpy(cur + filled, data + at, n);
+				at += n;
+			}
+			filled += n;
+			same = !same;
+		}
+	}
+	return 0;
+}
+
+uint32_t DCFS_Encode(const uint8_t* records, uint32_t size, uint32_t count, uint8_t** out, size_t* outSize)
+{
+	*out = NULL;
+	*outSize = 0;
+	if(count == 0)
+		return DCFS_ERR_COUNT;
+	if(size == 0)
+		return DCFS_ERR_SIZE;
+	// Worst case: every later record all literal, one length of at most 5 bytes per run.
+	uint64_t worst = (uint64_t)DCFS_HEADER_SIZE + (uint64_t)size * count + (uint64_t)(count - 1) * 10 + 16;
+	if(worst > 0x40000000u)
+		return DCFS_ERR_SIZE;
+	uint8_t* buf = (uint8_t*)malloc((size_t)worst);
+	if(buf == NULL)
+		return 0xFFFFFFFFu;
+	memcpy(buf, kDcfsMagic, 16);
+	Wr32(buf + 0x10, size);
+	Wr32(buf + 0x14, count);
+	size_t at = DCFS_HEADER_SIZE;
+	memcpy(buf + at, records, size);
+	at += size;
+	for(uint32_t r = 1; r < count; r++)
+	{
+		const uint8_t* prev = records + (size_t)(r - 1) * size;
+		const uint8_t* cur = records + (size_t)r * size;
+		uint32_t i = 0;
+		while(i < size)
+		{
+			uint32_t start = i;
+			while(i < size && cur[i] == prev[i])
+				i++;
+			at += PutLeb(buf + at, i - start);
+			if(i == size)
+				break;
+			start = i;
+			while(i < size && cur[i] != prev[i])
+				i++;
+			at += PutLeb(buf + at, i - start);
+			memcpy(buf + at, cur + start, i - start);
+			at += i - start;
+		}
+	}
+	// The original decodes what it wrote and compares before answering.
+	uint8_t* check = (uint8_t*)malloc((size_t)size * count);
+	int same = check != NULL && DCFS_Decode(buf, at, check, (size_t)size * count) == 0
+	           && memcmp(check, records, (size_t)size * count) == 0;
+	free(check);
+	if(!same)
+	{
+		free(buf);
+		return 0xFFFFFFFFu;
+	}
+	*out = buf;
+	*outSize = at;
+	return 0;
 }
 
 // ============================================================================

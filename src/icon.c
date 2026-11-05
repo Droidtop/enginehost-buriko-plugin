@@ -392,8 +392,45 @@ static int32_t Icon_HoverTarget(Icon_t* icon)
 // own (+0x20), under the pointer (+0x24), selected (+0x28) and both (+0x2C); an
 // animation adds its frame, and flag 0x01 (animate only under the pointer) and 0x08
 // (animate under the pointer or while selected) decide when the frame counts.
+// The hit index of (entry, part), or -1. A plain icon's state has the window content slot
+// of the same number.
+static int32_t Icon_HitIndex(const Icon_t* icon, int32_t entry, int32_t part)
+{
+	for(int32_t n = 0; n < icon->hitCount; n++)
+		if(icon->hits[n].entry == entry && icon->hits[n].part == part)
+			return n;
+	return -1;
+}
+
+static uint32_t Icon_PartSlot(const Icon_t* icon, int32_t entry, int32_t part)
+{
+	if(icon->kind == ICON_KIND_PLAIN)
+		return (uint32_t)Icon_HitIndex(icon, entry, part);
+	return icon->states[entry][part].slot;
+}
+
+// The base's vtable+0x20 (0x00449AD0), the plain icon's: the normal image; the lit one
+// instead when lit and it has one; the selected one instead when the selected look is
+// asked for, the part is its entry's selected one and it has one (Droidtop/tracker#123).
+static int Icon_PlainPartBitmap(Icon_t* icon, int32_t* out, int32_t entry, int32_t part, int hovered, int useSelection)
+{
+	if(!Icon_ValidPart(icon, entry, part))
+		return 0;
+	const IconPartRecord_t* rec = &icon->entries[entry].parts[part];
+	if(rec->w0 == 0 || rec->bitmap == -1)
+		return 0;
+	*out = rec->bitmap;
+	if(hovered && rec->hover != -1)
+		*out = rec->hover;
+	if(useSelection && part == icon->entries[entry].selectedPart && rec->selected != -1)
+		*out = rec->selected;
+	return 1;
+}
+
 static int Icon_PartBitmap(Icon_t* icon, int32_t* out, int32_t entry, int32_t part, int hovered, int useSelection)
 {
+	if(icon->kind == ICON_KIND_PLAIN)
+		return Icon_PlainPartBitmap(icon, out, entry, part, hovered, useSelection);
 	if(entry >= (int32_t)icon->root[0])
 		return 0;
 	IconContentEntry_t* copy = &icon->copies[entry];
@@ -452,8 +489,9 @@ static int Icon_PartBitmap(Icon_t* icon, int32_t* out, int32_t entry, int32_t pa
 static void Icon_RefreshPart(Renderer_t* renderer, Icon_t* icon, int32_t entry, int32_t part, int hovered, int useSelection)
 {
 	int32_t bitmap = 0;
-	Icon_PartBitmap(icon, &bitmap, entry, part, hovered, useSelection);
-	uint32_t slot = icon->states[entry][part].slot;
+	if(!Icon_PartBitmap(icon, &bitmap, entry, part, hovered, useSelection))
+		return;
+	uint32_t slot = Icon_PartSlot(icon, entry, part);
 	Window_SlotSetBitmap(renderer, icon->window, slot, bitmap);
 	Window_RedrawContentSlot(renderer, icon->window, slot);
 	Icon_Damage(icon);
@@ -465,6 +503,9 @@ static int Icon_Decidable(Icon_t* icon, int32_t entry, int32_t part)
 {
 	if(!Icon_ValidPart(icon, entry, part))
 		return 0;
+	if(icon->kind == ICON_KIND_PLAIN)
+		return 1;   // the base's +0x28: always
+
 	if(Icon_PartWords(icon, entry, part)[ICON_PART_NODECIDE] != 0 && part == icon->entries[entry].selectedPart)
 		return 0;
 	return 1;
@@ -474,7 +515,7 @@ static int Icon_Decidable(Icon_t* icon, int32_t entry, int32_t part)
 // release over the same part (0): entry flag 0x02 or part flag 0x20 make it wait.
 static int Icon_DecidesOnPress(Icon_t* icon, int32_t index)
 {
-	if(index == -1)
+	if(index == -1 || icon->kind == ICON_KIND_PLAIN)
 		return 1;
 	IconHit_t* hit = &icon->hits[index];
 	if(icon->copies[hit->entry].raw[15] & 2)
@@ -490,7 +531,8 @@ static int Icon_NotifyHover(Icon_t* icon, uint32_t value, uint32_t flag)
 {
 	int32_t entry = (int32_t)value >> 16;
 	int32_t part = (int16_t)(value & 0xFFFF);
-	if(entry >= 0 && entry < (int32_t)icon->root[0] && part >= 0 && part < (int32_t)icon->copies[entry].raw[0])
+	// The base's +0x10 (0x00448750), the plain icon's, always posts.
+	if(icon->kind != ICON_KIND_PLAIN && entry >= 0 && entry < (int32_t)icon->root[0] && part >= 0 && part < (int32_t)icon->copies[entry].raw[0])
 	{
 		if(Icon_PartWords(icon, entry, part)[ICON_PART_FLAGS] & 4)
 			return 0;
@@ -504,6 +546,8 @@ static int Icon_NotifyHover(Icon_t* icon, uint32_t value, uint32_t flag)
 // keyboard.
 static void Icon_ClickOnNothing(Icon_t* icon)
 {
+	if(icon->kind == ICON_KIND_PLAIN)
+		return;   // the base's +0x18 does nothing
 	int32_t x = 0, y = 0;
 	Input_ClickPosition(0, &x, &y);
 	if(!icon->keyboard)
@@ -536,6 +580,8 @@ static int Icon_DecidePart(Icon_t* icon, int32_t entry, int32_t part, uint32_t v
 	icon->lastValue = value;
 	icon->lastEntry = entry;
 	icon->lastPart = part;
+	if(icon->kind == ICON_KIND_PLAIN)
+		return 1;   // the base's +0x2C (0x0044A0E0) records the decision and posts nothing
 	if(entry != -1 && part != -1)
 	{
 		if(value != 0)
@@ -552,6 +598,14 @@ static int Icon_DecideHit(Icon_t* icon, int32_t index, uint32_t value)
 {
 	if(index != -1 && (index < 0 || index >= icon->hitCount))
 		return 0;
+	if(icon->kind == ICON_KIND_PLAIN)
+	{
+		// The base's +0x30 (0x0044A080): the decision recorded, nothing posted.
+		icon->lastEntry = index == -1 ? -1 : icon->hits[index].entry;
+		icon->lastPart = index == -1 ? -1 : icon->hits[index].part;
+		icon->lastValue = value;
+		return 1;
+	}
 	if(index == -1)
 	{
 		icon->lastEntry = icon->lastPart = -1;
@@ -592,8 +646,36 @@ static int Icon_ClearGroup(Renderer_t* renderer, Icon_t* icon, int32_t entry)
 
 // vtable+0x24 (0x0044BFA0): an entry's selected part (-1 for none). Refuses a part
 // that is not used, and answers 0 when nothing changes.
+// The base's +0x24 (0x00449CA0), the plain icon's: the old selected part redrawn as it
+// is (lit if under the pointer); a part whose normal image is -1 is stored but answers 0
+// and is not drawn; otherwise it is drawn selected and its group cleared.
+static int Icon_PlainSelectPart(Renderer_t* renderer, Icon_t* icon, int32_t entry, int32_t part)
+{
+	if(!Icon_ValidEntry(icon, entry))
+		return 0;
+	IconEntry_t* record = &icon->entries[entry];
+	if(part != -1 && (part < 0 || part >= record->partCount))
+		return 0;
+	int32_t old = record->selectedPart;
+	if(part == old)
+		return 0;
+	record->selectedPart = part;
+	if(old != -1)
+		Icon_RefreshPart(renderer, icon, entry, old, Icon_HoverIs(icon, entry, old), 0);
+	Icon_MarkDirty(icon);
+	if(part == -1)
+		return 1;
+	if(record->parts[part].bitmap == -1)
+		return 0;
+	Icon_RefreshPart(renderer, icon, entry, part, Icon_HoverIs(icon, entry, part), 1);
+	Icon_ClearGroup(renderer, icon, entry);
+	return 1;
+}
+
 static int Icon_SelectPart(Renderer_t* renderer, Icon_t* icon, int32_t entry, int32_t part)
 {
+	if(icon->kind == ICON_KIND_PLAIN)
+		return Icon_PlainSelectPart(renderer, icon, entry, part);
 	if(!Icon_ValidEntry(icon, entry))
 		return 0;
 	IconEntry_t* record = &icon->entries[entry];
@@ -686,8 +768,38 @@ static int Icon_SelectEntry(Renderer_t* renderer, Icon_t* icon, int32_t entry)
 // one goes back to its image (and its layer, for an entry with flag 0x01), the new one
 // shows its hover image, one layer band higher, with the part's cursors in window
 // parts 2 and 3. 0 when nothing changes and `force` is clear.
+// The base's +0x1C (0x00449880), the plain icon's: the cursor overlays hidden, the old
+// part drawn unlit, the new one lit with each overlay that has a bitmap shown at the
+// part's place plus its own.
+static int Icon_PlainSetHover(Renderer_t* renderer, Icon_t* icon, int32_t index, int force)
+{
+	if(icon->hover == index && !force)
+		return 0;
+	Window_EnablePart(renderer, icon->window, 2, 0);
+	Window_EnablePart(renderer, icon->window, 3, 0);
+	int32_t old = icon->hover;
+	icon->hover = index;
+	if(old != -1)
+		Icon_RefreshPart(renderer, icon, icon->hits[old].entry, icon->hits[old].part, 0, 1);
+	if(index != -1)
+	{
+		IconHit_t* hit = &icon->hits[index];
+		Icon_RefreshPart(renderer, icon, hit->entry, hit->part, 1, 1);
+		const IconPartRecord_t* rec = hit->record;
+		int32_t triples[6] = {
+			rec->x + rec->cursor[0], rec->y + rec->cursor[1], rec->cursor[2],
+			rec->x + rec->cursor[3], rec->y + rec->cursor[4], rec->cursor[5],
+		};
+		Icon_PlaceCursors(renderer, icon, 2, triples);
+	}
+	Icon_MarkDirty(icon);
+	return 1;
+}
+
 static int Icon_SetHover(Renderer_t* renderer, Icon_t* icon, int32_t index, int force)
 {
+	if(icon->kind == ICON_KIND_PLAIN)
+		return Icon_PlainSetHover(renderer, icon, index, force);
 	if(icon->hover == index && !force)
 		return 0;
 	for(int k = 2; k < 4; k++)
@@ -751,7 +863,24 @@ static void Icon_AfterHover(Icon_t* icon)
 // base's (0x0044A4C0): the hit mask bitmap (-2 none, -1 the whole rectangle).
 static int Icon_SetPartImage(Renderer_t* renderer, Icon_t* icon, int32_t entry, int32_t part, uint32_t which, int32_t value)
 {
-	if(!Icon_ValidEntry(icon, entry) || part < 0 || part >= (int32_t)icon->copies[entry].raw[0])
+	if(icon->kind == ICON_KIND_PLAIN)
+	{
+		// The plain record's three images: 0 normal, 1 selected, 2 lit; 4 the hit mask below.
+		if(!Icon_ValidPart(icon, entry, part))
+			return 0;
+		IconPartRecord_t* rec = &icon->entries[entry].parts[part];
+		if(which < 3)
+		{
+			int32_t* image = which == 0 ? &rec->bitmap : which == 1 ? &rec->selected : &rec->hover;
+			*image = value;
+			Icon_RefreshPart(renderer, icon, entry, part, Icon_HoverIs(icon, entry, part), 1);
+			Icon_MarkDirty(icon);
+			return 1;
+		}
+		if(which != 4)
+			return 0;
+	}
+	else if(!Icon_ValidEntry(icon, entry) || part < 0 || part >= (int32_t)icon->copies[entry].raw[0])
 		return 0;
 	if(which < 4)
 	{
@@ -833,6 +962,8 @@ static int Icon_SetPartAnimation(Icon_t* icon, int32_t entry, int32_t part, uint
 // turns through their keys in 4 ms steps.
 static void Icon_Animate(Renderer_t* renderer, Icon_t* icon)
 {
+	if(icon->kind == ICON_KIND_PLAIN)
+		return;   // the plain icon has no animation
 	int32_t hoverEntry = -1, hoverPart = -1;
 	if(icon->hover != -1)
 	{
@@ -948,8 +1079,40 @@ static void Icon_Animate(Renderer_t* renderer, Icon_t* icon)
 // ----------------------------------------------------------------------------------
 // The messages a script sends (vtable+0x08, 0x0044A330)
 // ----------------------------------------------------------------------------------
+// The base's +0x08 (0x0044A330), the plain icon's (Droidtop/tracker#123): 0x10000000 decide
+// (then the icon stops waiting: +0x14 always agrees), 0x10000001 the current entry,
+// 0x10000002 an entry's selected part, 0x10000003 the icon's value (+0x88), 0x10000004 an
+// image. 0x10000005-0x10000007 are not read yet and, like anything else, answer 0.
+static uint32_t Icon_PlainMessage(Renderer_t* renderer, Icon_t* icon, uint32_t count, const uint32_t* words)
+{
+	switch(words[0])
+	{
+		case 0x10000000u:
+			if(count != 3)
+				return 0;
+			if(Icon_DecidePart(icon, (int16_t)(words[1] >> 16), (int16_t)(words[1] & 0xFFFF), words[2]))
+				icon->ready = 0;
+			return 1;
+		case 0x10000001u:
+			return count == 2 ? (uint32_t)Icon_SelectEntry(renderer, icon, (int32_t)words[1]) : 0;
+		case 0x10000002u:
+			return count == 3 ? (uint32_t)Icon_SelectPart(renderer, icon, (int32_t)words[1], (int32_t)words[2]) : 0;
+		case 0x10000003u:
+			if(count != 2)
+				return 0;
+			icon->active = words[1];
+			return 1;
+		case 0x10000004u:
+			return count == 5 ? (uint32_t)Icon_SetPartImage(renderer, icon, (int32_t)words[1], (int32_t)words[2], words[3], (int32_t)words[4]) : 0;
+		default:
+			return 0;
+	}
+}
+
 static uint32_t Icon_HandleMessage(Renderer_t* renderer, Icon_t* icon, uint32_t count, const uint32_t* words)
 {
+	if(icon->kind == ICON_KIND_PLAIN)
+		return Icon_PlainMessage(renderer, icon, count, words);
 	switch(words[0])
 	{
 		case 0xF0000000u:
@@ -1172,7 +1335,7 @@ static int Icon_Interact(Renderer_t* renderer, Icon_t* icon)
 			Icon_DecideHit(icon, h, 1);
 			if(icon->decideSelects)
 				Icon_SelectPart(renderer, icon, hit->entry, hit->part);
-			finished = 0;   // vtable+0x14
+			finished = icon->kind == ICON_KIND_PLAIN;   // vtable+0x14: always 1 in the base, 0 for Ex
 			if(!finished)
 				Icon_SelectEntry(renderer, icon, hit->entry);
 			icon->pressed = -1;
@@ -1322,20 +1485,7 @@ static void Icon_Update(Renderer_t* renderer, Icon_t* icon)
 	Icon_DrainMessages(renderer, icon);
 	if(!icon->ready)
 		return;
-	if(icon->kind == ICON_KIND_PLAIN)
-	{
-		// The plain icon's own pass (its virtuals: the pointer, the keys, its states
-		// changing and the events they post) is not ported; its content is drawn and
-		// stays as built. Named once rather than run through the Ex code.
-		static int named = 0;
-		if(!named)
-		{
-			named = 1;
-			printf("[Icon]: a DCIPIcon's per-frame pass (pointer, keys, state changes) is not ported; its content stays as built\n");
-		}
-		Icon_FlushDirty(icon);
-		return;
-	}
+	// A plain icon runs this same pass, its base virtuals in place of Ex's (Droidtop/tracker#123).
 	if(icon->active)
 	{
 		uint32_t bits = 0;
@@ -1761,7 +1911,8 @@ uint32_t Icon_SetPlainContent(Thread_t* thread, Renderer_t* renderer, Icon_t* ic
 		item->columns = (columns <= 0 || columns > states) ? states : columns;
 		int32_t initial = (int32_t)item->raw[2];
 		// The initial state, cleared when it names none or a state with no bitmap.
-		item->current = (initial >= 0 && initial < states && item->states[(size_t)initial * ICON_PLAIN_STATE_WORDS] != 0) ? initial : -1;
+		const uint32_t* first = initial >= 0 && initial < states ? item->states + (size_t)initial * ICON_PLAIN_STATE_WORDS : NULL;
+		item->current = (first != NULL && first[0] != 0 && (int32_t)first[3] != -1) ? initial : -1;
 	}
 	free(itemWords);
 	if(result != ICON_PLAIN_OK)
@@ -1773,57 +1924,152 @@ uint32_t Icon_SetPlainContent(Thread_t* thread, Renderer_t* renderer, Icon_t* ic
 		return result;
 	}
 
-	// The old content goes, then the new is drawn: each item's state on show, and the
-	// second bitmap with it, in two window content slots per item at the state's
-	// offset. The icon's size is the area they cover.
+	// The old content goes; the items become the base's entries and their states its
+	// parts, in the records the shared pass reads (0x00447CF0's build, as the local lane
+	// describes it on Droidtop/tracker#123). Every present state gets a window content slot
+	// (its hit index) and a virtual object the pointer hits.
 	Icon_Teardown(icon);
 	DisplayObject_t* window = icon->window;
-	Window_ReserveContent(renderer, window, (uint32_t)itemCount * 2);
-	int32_t right = 0, bottom = 0;
+	int32_t total = 0;
+	for(int32_t i = 0; i < itemCount; i++)
+		total += items[i].stateCount;
+	Window_ReserveContent(renderer, window, (uint32_t)total);
+	icon->entryCount = itemCount;
+	icon->entries = (IconEntry_t*)calloc((size_t)itemCount, sizeof(IconEntry_t));
+	icon->grid = (int32_t*)calloc((size_t)itemCount, 2 * sizeof(int32_t));
+	icon->hits = (IconHit_t*)calloc((size_t)(total ? total : 1), sizeof(IconHit_t));
+	icon->order = (int32_t*)malloc((size_t)(total ? total : 1) * sizeof(int32_t));
+	icon->hitCount = total;
+	icon->orderCount = 0;
+	if(icon->entries == NULL || icon->grid == NULL || icon->hits == NULL || icon->order == NULL)
+	{
+		for(int32_t i = 0; i < itemCount; i++)
+			free(items[i].states);
+		free(items);
+		free(plain);
+		Icon_Teardown(icon);
+		return ICON_PLAIN_BAD_ITEMS;
+	}
+	int32_t right = 0, bottom = 0, slot = 0;
 	for(int32_t i = 0; i < itemCount; i++)
 	{
 		IconPlainItem_t* item = &items[i];
-		item->slot = (uint32_t)i * 2;
-		for(int32_t k = 0; k < item->stateCount; k++)
+		IconEntry_t* record = &icon->entries[i];
+		record->partCount = item->stateCount;
+		record->parts = (IconPartRecord_t*)calloc((size_t)item->stateCount, sizeof(IconPartRecord_t));
+		record->selectedPart = item->current;
+		for(int w = 0; w < 10; w++)
+			record->words[w] = (int32_t)item->raw[3 + w];
+		icon->grid[i * 2] = item->columns;
+		icon->grid[i * 2 + 1] = (item->stateCount + item->columns - 1) / item->columns;
+		for(int32_t k = 0; k < item->stateCount; k++, slot++)
 		{
 			const uint32_t* st = item->states + (size_t)k * ICON_PLAIN_STATE_WORDS;
-			Bitmap_t* image = st[0] != 0 ? Renderer_ResolveBitmap(renderer, (int32_t)st[0]) : NULL;
+			IconPartRecord_t* rec = &record->parts[k];
+			IconHit_t* hit = &icon->hits[slot];
+			hit->entry = i;
+			hit->part = k;
+			hit->record = rec;
+			if(st[0] == 0)
+			{
+				// An empty state: no drawable, its placement words "none".
+				rec->bitmap = rec->selected = rec->hover = rec->hitMask = -1;
+				rec->cursor[2] = rec->cursor[5] = -1;
+				continue;
+			}
+			// [0] present, [1] [2] place, [3] normal, [4] selected, [5] lit, [6] hit mask,
+			// [7..9] and [10..12] two cursor overlays {bitmap, x, y}, [14] a key (bit 31:
+			// held), which the record keeps where the shared pass reads a part's hotkey.
+			rec->w0 = st[0];
+			rec->x = (int32_t)st[1];
+			rec->y = (int32_t)st[2];
+			rec->bitmap = (int32_t)st[3];
+			rec->selected = (int32_t)st[4];
+			rec->hover = (int32_t)st[5];
+			rec->hitMask = (int32_t)st[6];
+			rec->cursor[0] = (int32_t)st[8];  rec->cursor[1] = (int32_t)st[9];  rec->cursor[2] = (int32_t)st[7];
+			rec->cursor[3] = (int32_t)st[11]; rec->cursor[4] = (int32_t)st[12]; rec->cursor[5] = (int32_t)st[10];
+			rec->hotkey = st[14];
+			int32_t bitmap = 0;
+			Bitmap_t* image = Icon_PartBitmap(icon, &bitmap, i, k, 0, 1) ? Renderer_ResolveBitmap(renderer, bitmap) : NULL;
+			hit->hasImage = image != NULL;
 			if(image == NULL)
 				continue;
-			int32_t r = (int32_t)st[1] + image->width, b = (int32_t)st[2] + image->height;
-			if(r > right) right = r;
-			if(b > bottom) bottom = b;
-		}
-		if(item->current < 0)
-			continue;
-		const uint32_t* st = item->states + (size_t)item->current * ICON_PLAIN_STATE_WORDS;
-		Window_SetContentSlot(renderer, window, item->slot, (int32_t)st[0], (int32_t)st[1], (int32_t)st[2], 0, 0, item->slot);
-		Window_RedrawContentSlot(renderer, window, item->slot);
-		if((int32_t)st[6] != -2 && Renderer_ResolveBitmap(renderer, (int32_t)st[6]) != NULL)
-		{
-			Window_SetContentSlot(renderer, window, item->slot + 1, (int32_t)st[6], (int32_t)st[1], (int32_t)st[2], 0, 0, item->slot + 1);
-			Window_RedrawContentSlot(renderer, window, item->slot + 1);
+			Window_SetContentSlot(renderer, window, (uint32_t)slot, bitmap, rec->x, rec->y, 0, 0, (uint32_t)slot);
+			Window_RedrawContentSlot(renderer, window, (uint32_t)slot);
+			if(rec->x + image->width > right) right = rec->x + image->width;
+			if(rec->y + image->height > bottom) bottom = rec->y + image->height;
+			DisplayObject_t* object = Object_CreateVirtual(window);
+			hit->object = object;
+			if(object != NULL)
+			{
+				Object_SetExtent(object, image->width, image->height);
+				Object_SetVisible(object, Object_IsDrawable(window));
+				Object_SetPosition(object, window->x, window->y);
+				Object_SetOrigin(object, window->originX, window->originY);
+				object->priority = window->priority;
+				Object_Attach(window, object, rec->x, rec->y);
+				if(rec->hitMask == -2)
+					Object_DisableHit(object);
+				else if(rec->hitMask != -1)
+				{
+					Bitmap_t* mask = Renderer_ResolveBitmap(renderer, rec->hitMask);
+					if(mask != NULL)
+						Object_SetHitMask(object, mask);
+				}
+				Region_Add(0, Object_DrawKey(object), 0, 0, 0, 0, object);
+			}
+			// Later states are drawn over earlier ones, so the pointer finds them first.
+			memmove(&icon->order[1], &icon->order[0], (size_t)icon->orderCount * sizeof(int32_t));
+			icon->order[0] = slot;
+			icon->orderCount++;
 		}
 	}
 	if(icon->object != NULL)
 		Object_SetExtent(icon->object, right, bottom);
+	{
+		int32_t wx, wy;
+		Object_GetPosition(window, &wx, &wy);
+		Object_Move(window, wx, wy);
+	}
 
 	icon->plain = plain;
 	int32_t focused = (int32_t)plain->raw[2];
 	plain->focused = (focused >= 0 && focused < itemCount) ? focused : -1;
+	icon->currentEntry = plain->focused;
+	icon->keyboard = plain->raw[3];
+	icon->mouseRegion = 0;
+	icon->ignoreBits = 0;
 	icon->keyMap = plain->raw[6] & 7;
+	icon->decideSelects = 0;
+	icon->active = 1;
+	icon->hover = -1;
+	icon->pressed = -1;
+	if(icon->keyboard)
+	{
+		uint32_t key = Icon_WindowKey(icon);
+		Region_Add(0, key, (int32_t)0x80000000, (int32_t)0x80000000, (int32_t)0x7FFFFFFF, (int32_t)0x7FFFFFFF, NULL);
+		Region_Add(1, key, 0, 0, 0, 0, NULL);
+		Input_AddModal(icon->handle | 0x80000000u, key);
+		Icon_SelectEntry(renderer, icon, icon->currentEntry);
+	}
+	// Input waiting from before is taken, and the part under the pointer now lit.
+	Input_RegionStateOf(Icon_WindowKey(icon), Icon_WindowKey(icon));
+	Input_RegionStateOf(0, Object_DrawKey(icon->object));
+	if(Icon_SetHover(renderer, icon, Icon_HoverTarget(icon), 1))
+		Icon_AfterHover(icon);
 	// The pointer is measured from where it is when the focused item starts on a state.
 	if(plain->focused >= 0 && items[plain->focused].current >= 0)
 		Input_GetMouse(&icon->mouseX, &icon->mouseY);
 	else
 		icon->mouseX = icon->mouseY = 0x7FFFFFFF;
+	icon->under = Icon_HitUnderPointer(icon, NULL, NULL, 0, 0);
+	icon->underChecked = -1;
 	icon->ready = 1;
 	Icon_Damage(icon);
 	Icon_MarkDirty(icon);
-	// Not yet done: the original registers the focused item for keyboard and pad
-	// navigation when root[3] is set, registers each state's event id (state[14]) and
-	// reports the first state to whoever waits on the icon. Their exact forms are with
-	// the local lane (Droidtop/tracker#123).
+	// Not yet done: the first-state report at the end of 0x00447CF0, whose event words
+	// are with the local lane (Droidtop/tracker#123).
 	return ICON_PLAIN_OK;
 }
 

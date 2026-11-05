@@ -2204,6 +2204,32 @@ uint32_t Text_PrintVertical(Renderer_t* renderer, Bitmap_t* target, int32_t* cur
 	return 1;
 }
 
+uint32_t Text_MeasureInFont(Renderer_t* renderer, const char* text, uint32_t fontNumber, int32_t size,
+                            int32_t width, uint32_t bold, uint32_t proportional, int32_t* measured)
+{
+	// Grp1 0x9B (Droidtop/tracker#123): the font opened as 0x004035A0 opens it for
+	// Text_DrawIntoBitmap, with the same answers, then 0x00434FE0's third answer.
+	*measured = 0;
+	const char* name = Engine_FontNameById(fontNumber);
+	uint32_t fontId = 0;
+	uint32_t result = Font_Open(name, size, width, bold, &fontId);
+	if(result == 0x80000002)
+		return 0x80000001;
+	if(result == 0x80000003)
+		return 0x80000002;
+	if(result == 0x80000004)
+		return 0x80000003;
+	if(result != 0)
+		return (uint32_t)width;
+	FontEntryInfo_t font;
+	if(!Font_GetInfo(fontId, &font))
+		return 0x80000001;
+	int32_t out[3] = { 0, 0, 0 };
+	Text_Measure(renderer, out, text != NULL ? text : "", &font, proportional);
+	*measured = out[2];
+	return 0;
+}
+
 uint32_t Text_DrawIntoBitmap(Renderer_t* renderer, int bitmapId, uint32_t* lines, int32_t x, int32_t y,
                              const char* text, uint32_t ruby, const char* rubyDictionary,
                              uint32_t fontNumber, int32_t size, int32_t width, uint32_t bold,
