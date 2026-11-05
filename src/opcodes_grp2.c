@@ -156,7 +156,7 @@ char* OpcodesGrp2Mnemonics[256] = {
     /* 0x8B 139 */ "--Unknown--",
     /* 0x8C 140 */ "Unknown_140",
     /* 0x8D 141 */ "Unknown_141",
-    /* 0x8E 142 */ "Unknown_142",
+    /* 0x8E 142 */ "ClearMessageWindow",
     /* 0x8F 143 */ "--Unknown--",
     /* 0x90 144 */ "PrintMessage",
     /* 0x91 145 */ "PrintText",
@@ -415,7 +415,7 @@ OpcodePtr_t OpcodesGrp2[256] = {
     /* 0x8B 139 */ NULL,
     /* 0x8C 140 */ Opcode_Grp2_Unknown_140,
     /* 0x8D 141 */ Opcode_Grp2_Unknown_141,
-    /* 0x8E 142 */ Opcode_Grp2_Unknown_142,
+    /* 0x8E 142 */ Opcode_Grp2_ClearMessageWindow,
     /* 0x8F 143 */ NULL,
     /* 0x90 144 */ Opcode_Grp2_PrintMessage,
     /* 0x91 145 */ Opcode_Grp2_PrintText,
@@ -656,9 +656,28 @@ uint32_t Opcode_Grp2_Unknown_141(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp2_Unknown_142(Thread_t* thread)
+/*
+ * Grp2 0x8E (0x0000928E; Fureraba's scrslct+0x00D2): a message window emptied. Popped:
+ * the window; an invalid one is fatal. Its eight text parts and content slots go, its
+ * text surface is cleared, the text position goes back to the client area's top-left
+ * (0x0042C690) and the window is redrawn - the same emptying Window_SetContent starts
+ * with (RE lane, Droidtop/tracker#123). Nothing is pushed.
+ */
+uint32_t Opcode_Grp2_ClearMessageWindow(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	Window_Empty(thread->engine->renderer, window);
+	Window_ResetTextCursor(window);
+	if(Object_IsDrawable(window))
+		gObjectDamage++;
+	return 0;
 }
 
 /*

@@ -105,6 +105,10 @@ Thread_t* Engine_CreateThread(Engine_t* engine, uint32_t stackSize, uint32_t cod
 
 char* Engine_SearchForArchive(const char* archive)
 {
+	// Archive 0 is the scripts' "no archive at all" (Sys0 0x35, 0x31, 0x2F...): there
+	// is no archive folder to look for, and the caller reads the name loose instead.
+	if(archive == NULL || archive[0] == '\0' || strlen(archive) >= 256)
+		return NULL;
 	char arcName[256];
 	strcpy(arcName, archive);
 	for(int i = 0; arcName[i] != '\0'; i++)
@@ -209,6 +213,10 @@ char* Engine_SearchForFile(const char* archive, const char* filename)
 
 uint8_t* Engine_ReadFile(Engine_t* engine, const char* archive, const char* filename, size_t* outSize)
 {
+	if(filename == NULL)
+		return NULL;
+	if(archive == NULL || archive[0] == '\0')
+		return Engine_ReadLooseFile(filename, outSize);
 	printf("[Engine]: Attempting to read file \"%s\" from archive \"%s\"\n", filename, archive);
 	char* path = Engine_SearchForFile(archive, filename);
 	if(!path)
@@ -289,8 +297,21 @@ uint32_t Engine_LoadProgram(Engine_t* engine, const char* archive, const char* f
 
 uint32_t Engine_ReadFileToMemory(Engine_t* engine, const char* archive, const char* filename, uint8_t* buffer)
 {
+	if(filename == NULL)
+		return 0;
+	if(archive == NULL || archive[0] == '\0')
+	{
+		size_t looseSize = 0;
+		uint8_t* loose = Engine_ReadLooseFile(filename, &looseSize);
+		if(loose == NULL)
+			return 0;
+		if(buffer != NULL)
+			memcpy(buffer, loose, looseSize);
+		free(loose);
+		return (uint32_t)looseSize;
+	}
 	printf("[Engine]: Attempting to read file \"%s\" from archive \"%s\" into memory\n", filename, archive);
-	
+
 	char* path = Engine_SearchForFile(archive, filename);
 	if(!path)
 	{
@@ -1964,41 +1985,41 @@ void Engine_AddSearchPath(char* path)
 // before the walk at 0x00466620, so a disabled list is skipped rather than emptied.
 //
 // OpenBGI has one root, the game folder it was pointed at, and no second data root.
+static char* Engine_ResolveLoosePath(const char* name);
+
+static int Engine_IsLooseFile(const char* name)
+{
+	char* path = Engine_ResolveLoosePath(name);
+	if(path == NULL)
+		return 0;
+	struct stat info;
+	int found = stat(path, &info) == 0 && S_ISREG(info.st_mode);
+	free(path);
+	return found;
+}
+
 int Engine_FileExists(const char* archive, const char* filename)
 {
 	if(filename == NULL || filename[0] == 0)
 		return 0;
 
-	char* path = Engine_ResolveInDirectory(".", filename);
-	if(path != NULL)
-	{
-		free(path);
+	if(Engine_IsLooseFile(filename))
 		return 1;
-	}
 
 	if(gEnableSearchPaths)
 	{
 		for(SearchPathNode_t* node = gSearchPaths; node != NULL; node = node->next)
 		{
-			char directory[512];
-			int length = snprintf(directory, sizeof(directory), "./%s", node->path);
-			if(length < 0 || length >= (int)sizeof(directory))
+			char joined[1024];
+			int length = snprintf(joined, sizeof(joined), "%s\\%s", node->path, filename);
+			if(length < 0 || length >= (int)sizeof(joined))
 				continue;
-			for(char* c = directory; *c != 0; c++)
-			{
-				if(*c == '\\')
-					*c = '/';
-			}
-
-			path = Engine_ResolveInDirectory(directory, filename);
-			if(path != NULL)
-			{
-				free(path);
+			if(Engine_IsLooseFile(joined))
 				return 1;
-			}
 		}
 	}
 
+	char* path;
 	if(archive == NULL || archive[0] == 0)
 		return 0;
 
@@ -2255,27 +2276,52 @@ int Engine_LoadSynchronously(void)
 }
 
 /*
- * A file the game directory holds loose, as the loaders try before any
- * archive: the directory at 0x00517F18 and the name joined by 0x00464B70 ("%s%s",
- * 0x004E5EA8) and opened as a file. Names use backslashes and Windows matches
- * them without regard to case, so each part is looked up that way.
+ * A name the scripts give for a loose file, as the loaders try before any archive:
+ * the directory at 0x00517F18 and the name joined by 0x00464B70 ("%s%s", 0x004E5EA8).
+ * Names use backslashes and Windows matches them without regard to case, so each part
+ * is looked up that way. The engine is confined to the game's folder, which is also
+ * where the saves live (UserData\...): a ".." part is refused ("." is skipped, as
+ * Sys0 0x3D gives the scripts "./" for the game's folder to build names on), and a
+ * leading separator or drive letter does not lead out of the folder - the name is
+ * taken from the folder's root instead. Returns the path found, or NULL.
  */
-uint8_t* Engine_ReadLooseFile(const char* name, size_t* size)
+static const char* Engine_SkipRoot(const char* name)
 {
+	if(isalpha((unsigned char)name[0]) && name[1] == ':')
+		name += 2;
+	while(*name == '\\' || *name == '/')
+		name++;
+	return name;
+}
+
+static char* Engine_ResolveLoosePath(const char* name)
+{
+	if(name == NULL)
+		return NULL;
 	char path[1024];
 	char part[256];
 	strcpy(path, ".");
-	const char* p = name;
+	const char* p = Engine_SkipRoot(name);
+	if(*p == '\0')
+		return NULL;
 	while(*p != '\0')
 	{
 		size_t n = 0;
 		while(*p == '\\' || *p == '/')
 			p++;
-		while(*p != '\0' && *p != '\\' && *p != '/' && n + 1 < sizeof(part))
+		while(*p != '\0' && *p != '\\' && *p != '/')
+		{
+			if(n + 1 >= sizeof(part))
+				return NULL;
 			part[n++] = *p++;
+		}
 		part[n] = '\0';
 		if(n == 0)
 			break;
+		if(strcmp(part, ".") == 0)
+			continue;
+		if(strcmp(part, "..") == 0)
+			return NULL;
 		DIR* dir = opendir(path);
 		if(dir == NULL)
 			return NULL;
@@ -2298,22 +2344,37 @@ uint8_t* Engine_ReadLooseFile(const char* name, size_t* size)
 		if(!found)
 			return NULL;
 	}
+	char* out = (char*)malloc(strlen(path) + 1);
+	if(out != NULL)
+		strcpy(out, path);
+	return out;
+}
+
+uint8_t* Engine_ReadLooseFile(const char* name, size_t* size)
+{
+	char* path = Engine_ResolveLoosePath(name);
+	if(path == NULL)
+		return NULL;
 	struct stat info;
-	if(stat(path, &info) != 0 || !S_ISREG(info.st_mode))
+	FILE* f = NULL;
+	if(stat(path, &info) != 0 || !S_ISREG(info.st_mode) || (f = fopen(path, "rb")) == NULL)
+	{
+		free(path);
 		return NULL;
-	FILE* f = fopen(path, "rb");
-	if(f == NULL)
-		return NULL;
+	}
 	uint8_t* data = (uint8_t*)malloc(info.st_size > 0 ? (size_t)info.st_size : 1);
 	if(data == NULL || fread(data, 1, (size_t)info.st_size, f) != (size_t)info.st_size)
 	{
 		free(data);
 		fclose(f);
+		free(path);
 		return NULL;
 	}
 	fclose(f);
-	*size = (size_t)info.st_size;
-	printf("[Engine]: Read \"%s\" (%zu bytes)\n", path, *size);
+	if(size != NULL)
+		*size = (size_t)info.st_size;
+	printf("[Engine]: Read \"%s\" (%zu bytes)\n", path, (size_t)info.st_size);
+	free(path);
 	return data;
 }
 
@@ -2326,14 +2387,23 @@ uint8_t* Engine_ReadLooseFile(const char* name, size_t* size)
 void Engine_ResolveWritePath(const char* name, char* out, size_t outSize)
 {
 	char path[1024];
-	snprintf(path, sizeof(path), "%s", name);
+	snprintf(path, sizeof(path), "%s", Engine_SkipRoot(name));
 	for(char* c = path; *c != 0; c++)
 		if(*c == '\\')
 			*c = '/';
-	if(path[0] == '/')
+	// Confined to the game's folder like every read: a ".." part is refused (an
+	// empty out makes the caller's open fail); "." parts are skipped below.
+	for(char* part = path; part != NULL; )
 	{
-		snprintf(out, outSize, "%s", path);
-		return;
+		char* slash = strchr(part, '/');
+		size_t n = slash != NULL ? (size_t)(slash - part) : strlen(part);
+		if(n == 2 && part[0] == '.' && part[1] == '.')
+		{
+			if(outSize > 0)
+				out[0] = 0;
+			return;
+		}
+		part = slash != NULL ? slash + 1 : NULL;
 	}
 	char built[2048] = ".";
 	char* part = path;
@@ -2342,6 +2412,11 @@ void Engine_ResolveWritePath(const char* name, char* out, size_t outSize)
 		char* slash = strchr(part, '/');
 		if(slash != NULL)
 			*slash = 0;
+		if(part[0] == 0 || strcmp(part, ".") == 0)
+		{
+			part = slash != NULL ? slash + 1 : NULL;
+			continue;
+		}
 		char chosen[1024];
 		snprintf(chosen, sizeof(chosen), "%s", part);
 		DIR* dir = opendir(built);

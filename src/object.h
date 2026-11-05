@@ -317,6 +317,12 @@ extern uint32_t gObjectDamage;
 #define OBJECT_PARAM_UNREAD        0xFFFF00FFu
 
 uint32_t Object_SetParameter(DisplayObject_t* object, uint32_t number, uint32_t value1, uint32_t value2, const char** unread);
+// vtable+0x60 (Grp1 0x38): one parameter read into `words` (OBJECT_GET_WORDS long,
+// word 0 an input for 0x7FFFFFFF); *count is how many words were answered. Answers an
+// OBJECT_PARAM_ code.
+#define OBJECT_GET_WORDS 5
+uint32_t Object_GetParameter(DisplayObject_t* object, uint32_t number, int32_t* words, uint32_t* count,
+                             const char** unread);
 
 // The worker behind Grp0 0x38 (0x00443990), the parameter write with its own
 // bracket. Its results are the original's: 0 done, 5 unsupported number, 0xFE wrong

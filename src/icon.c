@@ -1628,10 +1628,7 @@ uint32_t Icon_SetContent(Renderer_t* renderer, Icon_t* icon, const IconContent_t
 	// its weight and flag reset (0x0042BA90, 0x0042B630, 0x0042B620), and the whole
 	// window redrawn (0x0042CAE0).
 	Icon_Teardown(icon);
-	for(int k = 0; k < 8; k++)
-		Window_EnablePart(renderer, window, k, 0);
-	Window_ReserveContent(renderer, window, 0);
-	Window_RedrawAll(renderer, window);
+	Window_Empty(renderer, window);
 
 	uint32_t result = ICON_CONTENT_SET_BAD_COUNT;
 	int32_t count = (int32_t)content->raw[0];

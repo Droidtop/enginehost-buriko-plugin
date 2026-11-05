@@ -618,6 +618,69 @@ uint32_t Object_SetParameter(DisplayObject_t* object, uint32_t number, uint32_t 
 	return Object_SetParameterBase(object, number, value1, value2, unread);
 }
 
+// vtable+0x60, the getter that pairs with vtable+0x5C (Grp1 0x38). `words` is the
+// script's in/out area, at least OBJECT_GET_WORDS long; *count says how many of
+// them the answer filled. The base (0x0041BBB0) answers the position, +0xA8, the
+// effect level, the user words and the draw-order key; a sprite (0x004289C0) adds
+// 0x41, 0x10000000 and 0x10000100, which sprite5.c answers. As described by the RE
+// lane on Droidtop/tracker#123.
+uint32_t Object_GetParameter(DisplayObject_t* object, uint32_t number, int32_t* words, uint32_t* count,
+                             const char** unread)
+{
+	const char* ignored = NULL;
+	if(unread == NULL)
+		unread = &ignored;
+	*unread = NULL;
+	*count = 0;
+	if(object == NULL)
+		return OBJECT_PARAM_UNSUPPORTED;
+
+	uint32_t spriteResult;
+	if(object->type == OBJECT_TYPE_SPRITE
+	   && Sprite5_GetParameter(Object_Renderer(), object, number, words, &spriteResult))
+	{
+		if(spriteResult == OBJECT_PARAM_OK)
+			*count = number == 0x41 ? 1 : number == 0x10000000 ? 5 : 4;
+		return spriteResult;
+	}
+
+	switch(number)
+	{
+	case 0x00:                              // vtable+0x30
+		Object_GetPosition(object, &words[0], &words[1]);
+		*count = 2;
+		return OBJECT_PARAM_OK;
+	case 0x01:                              // +0xA8
+		words[0] = (int32_t)object->unknownA8;
+		*count = 1;
+		return OBJECT_PARAM_OK;
+	case 0x02:                              // vtable+0x4C, the getter of set 0x02
+		words[0] = (int32_t)Object_GetEffectLevel(object);
+		*count = 1;
+		return OBJECT_PARAM_OK;
+	case 0x03:
+		*unread = "vtable+0x58";
+		return OBJECT_PARAM_UNREAD;
+	case 0x20:
+		*unread = "vtable+0x40's three words";
+		return OBJECT_PARAM_UNREAD;
+	case 0x7FFFFFFF:                        // user word: index in word 0, value out in word 1
+		if((uint32_t)words[0] >= 16)
+			return OBJECT_PARAM_BAD_ARGUMENT;
+		words[1] = (int32_t)object->userData[words[0]];
+		*count = 2;
+		return OBJECT_PARAM_OK;
+	case 0xFFFFFFFE:                        // vtable+0x1C, the draw-order key
+		words[0] = (int32_t)Object_DrawKey(object);
+		*count = 1;
+		return OBJECT_PARAM_OK;
+	case 0xFFFFFFFF:
+		*unread = "0x0041C1F0";
+		return OBJECT_PARAM_UNREAD;
+	}
+	return OBJECT_PARAM_UNSUPPORTED;
+}
+
 uint32_t Object_ApplyParameter(DisplayObject_t* object, uint32_t number, uint32_t value1, uint32_t value2, const char** unread)
 {
 	if(object == NULL)
