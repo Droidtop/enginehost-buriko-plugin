@@ -434,6 +434,19 @@ Bitmap_t* Renderer_CreateBitmap(Renderer_t* renderer, int id, int width, int hei
  * holds it (mode 1 is four bytes in the table at 0x004E41B0); the fourth byte is set
  * opaque, which is what a bitmap with no alpha channel means to the blitter.
  */
+// BGI's raw bitmap has no magic: it is recognised by its ten zero header bytes, a bit count of
+// 8, 24 or 32 and a size of exactly 16 + width * height * bits / 8.
+static int Renderer_IsRawBitmap(const uint8_t* file, size_t size)
+{
+	for(int i = 6; i < 16; i++)
+		if(file[i] != 0)
+			return 0;
+	uint32_t width = file[0] | (file[1] << 8), height = file[2] | (file[3] << 8), bits = file[4] | (file[5] << 8);
+	if(width == 0 || height == 0 || (bits != 8 && bits != 24 && bits != 32))
+		return 0;
+	return (uint64_t)16 + (uint64_t)width * height * (bits / 8) == (uint64_t)size;
+}
+
 uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filename, const char* archive)
 {
 	size_t fileSize;
@@ -452,6 +465,19 @@ uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filenam
 	{
 		pixels = CBG_Decode(file, fileSize, &width, &height, &bits);
 		CBG_ReadOffset(file, fileSize, &offsetX, &offsetY);
+	}
+	else if(fileSize >= 16 && Renderer_IsRawBitmap(file, fileSize))
+	{
+		// BGI's raw bitmap (Droidtop/tracker#123, Houkago's and Yoake's UI images): a 16-byte
+		// header - width, height and bits per pixel as u16, then ten zero bytes - and the
+		// pixels top-down in B, G, R(, A) order, the order this engine holds them in.
+		width = file[0] | (file[1] << 8);
+		height = file[2] | (file[3] << 8);
+		bits = file[4] | (file[5] << 8);
+		size_t bytes = (size_t)width * (size_t)height * (size_t)(bits / 8);
+		pixels = (uint8_t*)malloc(bytes ? bytes : 1);
+		if(pixels != NULL)
+			memcpy(pixels, file + 16, bytes);
 	}
 	else if(fileSize > 4 && file[0] == 0x89 && file[1] == 'P' && file[2] == 'N' && file[3] == 'G')
 	{
@@ -493,7 +519,11 @@ uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filenam
 	int pixelBytes = Renderer_ModePixelBytes(mode);
 	if(bits / 8 == pixelBytes)
 	{
-		memcpy(bitmap->bitmap, pixels, (size_t)bitmap->stride * (size_t)height);
+		// Row by row: a bitmap's stride can be wider than its pixels (an 8-bit image's rows
+		// are padded), and the decoded pixels are packed.
+		size_t row = (size_t)width * (size_t)pixelBytes;
+		for(int y = 0; y < height; y++)
+			memcpy(bitmap->bitmap + (size_t)y * bitmap->stride, pixels + (size_t)y * row, row);
 	}
 	else
 	{

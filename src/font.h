@@ -29,6 +29,9 @@ void Font_Free();
 // Number of distinct families found, and family i's name. Names are in the
 // order they were found and are unique.
 uint32_t Font_GetFamilyCount();
+// A game's own font file (Ext0 0xC3), registered for this engine alone under the family names
+// the file declares; the first face's family into `family`. 1 on success.
+int Font_RegisterMemory(const uint8_t* data, size_t size, char* family, size_t familySize);
 const char* Font_GetFamilyName(uint32_t index);
 
 // ----------------------------------------------------------------------------

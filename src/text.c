@@ -279,6 +279,19 @@ static void Text_VerticalForm(const char* p, int32_t out[3])
 // `out`.
 // Base opcode 0x6C: whether the character at `p` is one Japanese typesetting will not start a
 // line with (the table 0x00434FE0's layout uses).
+// Grp2 0x9D (0x00438080) and 0x9F (0x00438130): the font and colour a <l> link is drawn in.
+void Text_SetLinkFont(const char* name, int32_t size, int32_t width)
+{
+	snprintf(gTextLinkFont, sizeof(gTextLinkFont), "%s", name != NULL ? name : "");
+	gTextLinkSize = size;
+	gTextLinkWidth = width;
+}
+
+void Text_SetLinkColour(uint32_t colour)
+{
+	gTextLinkColour = colour;
+}
+
 int Text_IsNoLineStart(const char* p)
 {
 	return p != NULL && *p != 0 && Text_InList(p, gTextNoLineStart);

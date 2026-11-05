@@ -30,4 +30,6 @@ uint32_t Opcode_Grp2_ClearPreloadCache(Thread_t* thread);
 uint32_t Opcode_Grp2_PlayMovie(Thread_t* thread);
 uint32_t Opcode_Grp2_ShowWindowBackground(Thread_t* thread);
 uint32_t Opcode_Grp2_FillWindowBackground(Thread_t* thread);
+uint32_t Opcode_Grp2_SetLinkFont(Thread_t* thread);
+uint32_t Opcode_Grp2_SetLinkColour(Thread_t* thread);
 #endif

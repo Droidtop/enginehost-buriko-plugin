@@ -531,3 +531,19 @@ uint32_t Input_SetSwapButtons(uint32_t v)
 	gSwapButtons = v;
 	return 1;
 }
+
+// The pad button to key table (Sys1 0x1B, Droidtop/tracker#123).
+static uint32_t gPadKeys[INPUT_PAD_BUTTONS];
+
+int Input_SetPadKey(uint32_t button, uint32_t vk)
+{
+	if(button >= INPUT_PAD_BUTTONS)
+		return 0;
+	gPadKeys[button] = vk;
+	return 1;
+}
+
+uint32_t Input_PadKey(uint32_t button)
+{
+	return button < INPUT_PAD_BUTTONS ? gPadKeys[button] : 0;
+}

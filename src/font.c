@@ -228,13 +228,10 @@ static uint8_t* Font_LoadFile(const char* path, size_t* sizeOut)
 	return file;
 }
 
-static void Font_ReadFile(const char* path)
+// Every face in a font file's bytes added as a family under `path`; the first face's family
+// name into `first` when it is not NULL.
+static void Font_ReadBuffer(const uint8_t* file, size_t size, const char* path, char* first, size_t firstSize)
 {
-	size_t size = 0;
-	uint8_t* file = Font_LoadFile(path, &size);
-	if(file == NULL)
-		return;
-
 	uint32_t fontCount = 1;
 	int collection = memcmp(file, "ttcf", 4) == 0;
 	if(collection)
@@ -257,9 +254,38 @@ static void Font_ReadFile(const char* path)
 			continue;
 		int regular = Font_ReadName(file, size, base, 2, style, sizeof(style)) && strcmp(style, "Regular") == 0;
 		Font_AddFamily(family, path, (int)i, regular);
+		if(first != NULL && first[0] == 0)
+			snprintf(first, firstSize, "%s", family);
 	}
+}
 
+static void Font_ReadFile(const char* path)
+{
+	size_t size = 0;
+	uint8_t* file = Font_LoadFile(path, &size);
+	if(file == NULL)
+		return;
+	Font_ReadBuffer(file, size, path, NULL, 0);
 	free(file);
+}
+
+// A game's own font files (Ext0 0xC3), held in memory and named "mem:<n>" where a host
+// font has its path, so a family and a face find them the same way.
+#define FONT_MAX_MEMORY 16
+static struct { uint8_t* data; size_t size; } gMemoryFonts[FONT_MAX_MEMORY];
+static int gMemoryFontCount = 0;
+
+static uint8_t* Font_LoadMemory(const char* path, size_t* sizeOut)
+{
+	int k = atoi(path + 4);
+	if(k < 0 || k >= gMemoryFontCount)
+		return NULL;
+	uint8_t* copy = (uint8_t*)malloc(gMemoryFonts[k].size);
+	if(copy == NULL)
+		return NULL;
+	memcpy(copy, gMemoryFonts[k].data, gMemoryFonts[k].size);
+	*sizeOut = gMemoryFonts[k].size;
+	return copy;
 }
 
 static int Font_HasFontExtension(const char* name)
@@ -315,6 +341,30 @@ void Font_Init()
 	printf("[Font]: Found %d font families\n", gFamilyCount);
 }
 
+int Font_RegisterMemory(const uint8_t* data, size_t size, char* family, size_t familySize)
+{
+	family[0] = 0;
+	if(!gInitialised)
+		Font_Init();
+	if(data == NULL || size <= 12 || size > 64 * 1024 * 1024 || gMemoryFontCount >= FONT_MAX_MEMORY)
+		return 0;
+	stbtt_fontinfo probe;
+	int offset = stbtt_GetFontOffsetForIndex(data, 0);
+	if(offset < 0 || !stbtt_InitFont(&probe, data, offset))
+		return 0;
+	uint8_t* copy = (uint8_t*)malloc(size);
+	if(copy == NULL)
+		return 0;
+	memcpy(copy, data, size);
+	int k = gMemoryFontCount++;
+	gMemoryFonts[k].data = copy;
+	gMemoryFonts[k].size = size;
+	char path[16];
+	snprintf(path, sizeof(path), "mem:%d", k);
+	Font_ReadBuffer(copy, size, path, family, familySize);
+	return family[0] != 0;
+}
+
 uint32_t Font_GetFamilyCount()
 {
 	return gFamilyCount;
@@ -358,7 +408,7 @@ static FontFace_t* Font_LoadFace(const char* path, int faceIndex)
 			return face;
 
 	size_t size = 0;
-	uint8_t* file = Font_LoadFile(path, &size);
+	uint8_t* file = strncmp(path, "mem:", 4) == 0 ? Font_LoadMemory(path, &size) : Font_LoadFile(path, &size);
 	if(file == NULL)
 		return NULL;
 	int offset = stbtt_GetFontOffsetForIndex(file, faceIndex);

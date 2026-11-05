@@ -38,6 +38,8 @@
 // ----------------------------------------------------------------------------------
 
 #define GAMEID_PATTERN_LENGTH 37
+// 1.622's handler copies a fixed sixteen bytes; its identifier is terminated within them.
+#define GAMEID_FIXED_COPY 16
 
 typedef struct
 {
@@ -161,6 +163,28 @@ static int MatchHandler(const uint8_t* p, uint32_t* addresses)
 	return 1;
 }
 
+// The identifier between `prefix` and " is executing." in an executable's text: printable,
+// 1 to ENGINE_GAME_ID_SIZE - 1 characters, no spaces.
+static int GameId_FromBanner(const uint8_t* data, size_t size, const char* prefix, char* out)
+{
+	static const char suffix[] = " is executing.";
+	size_t pl = strlen(prefix), sl = sizeof(suffix) - 1;
+	for(size_t i = 0; i + pl + 1 + sl <= size; i++)
+	{
+		if(memcmp(data + i, prefix, pl) != 0)
+			continue;
+		size_t start = i + pl, n = 0;
+		while(start + n < size && n < ENGINE_GAME_ID_SIZE && data[start + n] > 0x20 && data[start + n] <= 0x7E)
+			n++;
+		if(n == 0 || n >= ENGINE_GAME_ID_SIZE || start + n + sl > size || memcmp(data + start + n, suffix, sl) != 0)
+			continue;
+		memcpy(out, data + start, n);
+		out[n] = 0;
+		return 1;
+	}
+	return 0;
+}
+
 int GameId_ReadFromExecutable(const char* path, char* out)
 {
 	if(path == NULL || out == NULL)
@@ -219,7 +243,7 @@ int GameId_ReadFromExecutable(const char* path, char* out)
 			continue;
 
 		long offset = PeOffsetOf(sections, sectionCount, size, addresses[0]);
-		if(offset < 0 || (size_t)offset + ENGINE_GAME_ID_SIZE > size)
+		if(offset < 0 || (size_t)offset + GAMEID_FIXED_COPY > size)
 			continue;
 
 		const uint8_t* raw = data + offset;
@@ -227,7 +251,7 @@ int GameId_ReadFromExecutable(const char* path, char* out)
 		// The original copies a fixed sixteen bytes. Every identifier seen so far is
 		// shorter than that and terminated, and requiring the terminator is what
 		// tells a real identifier from sixteen bytes of something else.
-		if(raw[ENGINE_GAME_ID_SIZE - 1] != 0)
+		if(raw[GAMEID_FIXED_COPY - 1] != 0)
 			continue;
 
 		size_t idLength = strlen((const char*)raw);
@@ -249,6 +273,13 @@ int GameId_ReadFromExecutable(const char* path, char* out)
 		memcpy(out, raw, idLength + 1);
 		found = 1;
 	}
+
+	// Older runtimes (1.580.1, 1.69) do not have 1.622's handler, but the identifier is in
+	// the text they print: "Buriko General Interpreter for <ID> is executing.", or the
+	// uninstaller's "Uninstaller for <ID> is executing." (the local lane, tracker#123).
+	if(!found)
+		found = GameId_FromBanner(data, size, "Buriko General Interpreter for ", out)
+		     || GameId_FromBanner(data, size, "Uninstaller for ", out);
 
 	free(data);
 	return found;

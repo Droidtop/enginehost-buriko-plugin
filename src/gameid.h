@@ -4,8 +4,9 @@
 #include <stddef.h>
 
 // Recovers a BGI game's identifier - the constant Sys0 0xE8 returns - from an
-// original executable. Writes a NUL-terminated string of at most 15 characters into
-// `out`, which must have room for ENGINE_GAME_ID_SIZE bytes. Returns 1 on success.
+// original executable: 1.622's code pattern first, then the "Buriko General Interpreter for
+// <ID> is executing." text older runtimes carry. Writes a NUL-terminated string into `out`,
+// which must have room for ENGINE_GAME_ID_SIZE bytes. Returns 1 on success.
 int GameId_ReadFromExecutable(const char* path, char* out);
 
 // Tries every *.exe in `folder` in turn. On success `out` holds the identifier and
