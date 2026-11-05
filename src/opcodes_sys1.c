@@ -125,8 +125,8 @@ char* OpcodesSys1Mnemonics[256] = {
 	/* 0x67 103 */ "--Unknown--",
 	/* 0x68 104 */ "SetAudioResumeOnActivate",
 	/* 0x69 105 */ "Unknown_105",
-	/* 0x6A 106 */ "Unknown_106",
-	/* 0x6B 107 */ "Unknown_107",
+	/* 0x6A 106 */ "CatchScriptErrors",
+	/* 0x6B 107 */ "LastScriptError",
 	/* 0x6C 108 */ "--Unknown--",
 	/* 0x6D 109 */ "Unknown_109",
 	/* 0x6E 110 */ "Unknown_110",
@@ -384,8 +384,8 @@ OpcodePtr_t OpcodesSys1[256] = {
 	/* 0x67 103 */ NULL,
 	/* 0x68 104 */ Opcode_Sys1_SetAudioResumeOnActivate,
 	/* 0x69 105 */ Opcode_Sys1_Unknown_105,
-	/* 0x6A 106 */ Opcode_Sys1_Unknown_106,
-	/* 0x6B 107 */ Opcode_Sys1_Unknown_107,
+	/* 0x6A 106 */ Opcode_Sys1_CatchScriptErrors,
+	/* 0x6B 107 */ Opcode_Sys1_LastScriptError,
 	/* 0x6C 108 */ NULL,
 	/* 0x6D 109 */ Opcode_Sys1_Unknown_109,
 	/* 0x6E 110 */ Opcode_Sys1_Unknown_110,
@@ -816,14 +816,24 @@ uint32_t Opcode_Sys1_Unknown_105(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys1_Unknown_106(Thread_t* thread)
+// Sys1 0x6A (0x0000816A; errdtctn+0x0008, Houkago): fatal script errors caught or not.
+// Pops the flag; nothing is pushed. See Engine_SetCatchScriptErrors.
+uint32_t Opcode_Sys1_CatchScriptErrors(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Engine_SetCatchScriptErrors(Thread_PopStack(thread));
+	return 0;
 }
 
-uint32_t Opcode_Sys1_Unknown_107(Thread_t* thread)
+// Sys1 0x6B (0x0000816B): the last caught error's text. Pops a destination (0 for
+// none); the text is copied there, bounded by the script area, and its length + 1 is
+// pushed, or 0 when no error is kept.
+uint32_t Opcode_Sys1_LastScriptError(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t address = Thread_PopStack(thread);
+	uint32_t room = 0;
+	char* out = address != 0 ? (char*)Thread_ResolveSpan(thread, address, &room) : NULL;
+	Thread_PushStack(thread, Engine_LastScriptError(out, out != NULL ? room : 0));
+	return 0;
 }
 
 uint32_t Opcode_Sys1_Unknown_109(Thread_t* thread)

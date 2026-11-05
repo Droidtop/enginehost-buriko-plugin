@@ -566,6 +566,57 @@ static uint32_t Engine_RunInstructions(Engine_t* engine, Thread_t* thread)
 	return 0;
 }
 
+// Sys1 0x6A / 0x6B (0x0048C3C0 / 0x0048C3E0; the RE lane on Droidtop/tracker#123):
+// whether fatal script errors are caught (0x00566000) and the last one caught (a heap
+// copy at 0x00566004). With catching on, the original's fatal-error path (0x0048D139,
+// 0x004646A0) keeps the error's text if none is kept yet, posts a broadcast
+// (0x004966D0 with -1, 0, 0) and ends only the failing thread (0x00444BF0); the engine
+// and its other threads - errdtctn's among them - go on. It shows the report in a modal
+// box either way; here it is a log line.
+//
+// Only an error the original raises itself is caught: a handler's 0xFFFFFFFC. A stop
+// for something this engine has not written (0xFFFFFFFF, an unknown opcode) is not a
+// script error in the original, and still stops the engine.
+static uint32_t gCatchScriptErrors = 0;
+static char* gLastScriptError = NULL;
+
+void Engine_SetCatchScriptErrors(uint32_t value)
+{
+	gCatchScriptErrors = value;
+}
+
+uint32_t Engine_LastScriptError(char* out, uint32_t room)
+{
+	if(gLastScriptError == NULL)
+		return 0;
+	uint32_t length = (uint32_t)strlen(gLastScriptError);
+	if(out != NULL && room > 0)
+	{
+		uint32_t n = length + 1 <= room ? length + 1 : room;
+		memcpy(out, gLastScriptError, n);
+		out[n - 1] = 0;
+	}
+	return length + 1;
+}
+
+static void Engine_CatchScriptError(Thread_t* thread)
+{
+	const char* where = Thread_Where(thread, Thread_GetInstructionPointer(thread));
+	if(gLastScriptError == NULL)
+	{
+		char text[256];
+		snprintf(text, sizeof(text), "Thread %d, %s (IP 0x%08X): a script error ended this thread",
+		         thread->threadId, where, Thread_GetInstructionPointer(thread));
+		gLastScriptError = (char*)malloc(strlen(text) + 1);
+		if(gLastScriptError != NULL)
+			strcpy(gLastScriptError, text);
+	}
+	Engine_PushGlobalList(0xFFFFFFFFu, 0, 0);
+	thread->flags |= THREAD_FLAG_TERMINATED;
+	thread->running = 0;
+	printf("[Engine]: Error in %s, caught (Sys1 0x6A): thread %d ends, the engine goes on.\n", where, thread->threadId);
+}
+
 void Engine_Execute(Engine_t* engine)
 {
 	engine->isRunning = 1;
@@ -597,6 +648,12 @@ void Engine_Execute(Engine_t* engine)
 				printf("[Engine]: Stub opcode 0x%.4X encountered in %s. Stopping.\n", thread->opcode, Thread_Where(thread, Thread_GetInstructionPointer(thread)));
 				engine->isRunning = 0;
 				break;
+			}
+			if(res == 0xFFFFFFFC && gCatchScriptErrors)
+			{
+				Engine_CatchScriptError(thread);
+				thread = Engine_NextLiveThread(engine, thread->threadId);
+				continue;
 			}
 			if(res == 0xFFFFFFFE || res == 0xFFFFFFFD || res == 0xFFFFFFFC)
 			{
