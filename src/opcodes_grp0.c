@@ -2644,8 +2644,10 @@ uint32_t Opcode_Grp0_DestroyIcon(Thread_t* thread)
 
 /*
  * Grp0 0xBA (0x0047F080 -> 0x0046CA60): a DCIPIcon's content from a descriptor
- * (0x0046C8D0 copies it, 0x00447CF0 builds it). Pushes 1 for a handle that is not an
- * icon and 4 for an Ex icon. The plain icon's content is not ported.
+ * (0x0046C8D0 copies it, 0x00447CF0 builds it; icon.h has the layout). Pops the
+ * descriptor's address, then the icon's handle, and pushes 0 when it is built, 1 for a
+ * handle that is not an icon, 4 when the icon is busy (an Ex icon here), 2 or 3 for a bad
+ * item or state count (Droidtop/tracker#123, the local lane's description).
  */
 uint32_t Opcode_Grp0_SetIconContent(Thread_t* thread)
 {
@@ -2654,17 +2656,16 @@ uint32_t Opcode_Grp0_SetIconContent(Thread_t* thread)
 	Icon_t* icon = Icon_Resolve(handle);
 	if(icon == NULL)
 	{
-		Thread_PushStack(thread, 1);
+		Thread_PushStack(thread, ICON_PLAIN_NOT_ICON);
 		return 0;
 	}
 	if(icon->kind != ICON_KIND_PLAIN)
 	{
-		Thread_PushStack(thread, 4);
+		Thread_PushStack(thread, ICON_PLAIN_BUSY);
 		return 0;
 	}
-	printf("[Thread %d]: %sError: a DCIPIcon's content (0x0046C8D0 / 0x00447CF0, descriptor 0x%08X) is not ported\n",
-	       thread->threadId, TLevel[thread->level], address);
-	return 0xFFFFFFFF;
+	Thread_PushStack(thread, Icon_SetPlainContent(thread, thread->engine->renderer, icon, address));
+	return 0;
 }
 
 /*

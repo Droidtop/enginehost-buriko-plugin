@@ -215,8 +215,56 @@ struct Icon
 	IconPartState_t** states;       // +0xCC
 	int32_t*         order;         // +0xD0: hits by layer, highest first
 	int32_t          orderCount;    // +0xD4
+	// DCIPIcon: the content 0x00447CF0 builds (Grp0 0xBA), the icon's own copy.
+	struct IconPlain* plain;
 	Icon_t*          next;          // the +0x08 link of the registration node
 };
+
+// ----------------------------------------------------------------------------------
+// A DCIPIcon's content (Grp0 0xBA, 0x0046C8D0 copies the descriptor, 0x00447CF0 builds)
+//
+// From the local lane's description (Droidtop/tracker#123, 2026-11-05):
+//   the root, 8 words: the item count (1..256, else 2), the script address of the items,
+//     the initially focused item, a focus/keyboard flag, a second display flag (used when
+//     the first is clear), a word kept as is, a mode (low 3 bits) and a word kept as is
+//   an item, 13 words: the state count S (low 16 bits, 1..255, else 3) and the states per
+//     row G (high 16 bits; 0 or G > S is one row), the script address of the states, the
+//     initial state, and ten words kept for the item queries
+//   a state, 15 words: [0] its bitmap (0 an empty state), [1] [2] its offset on the icon,
+//     [6] a second bitmap drawn with it (-2 none), [14] an event id; the rest kept.
+// ----------------------------------------------------------------------------------
+#define ICON_PLAIN_ROOT_WORDS  8
+#define ICON_PLAIN_ITEM_WORDS  13
+#define ICON_PLAIN_STATE_WORDS 15
+#define ICON_PLAIN_MAX_ITEMS   256
+#define ICON_PLAIN_MAX_STATES  255
+
+typedef struct
+{
+	uint32_t  raw[ICON_PLAIN_ITEM_WORDS];
+	int32_t   stateCount;
+	int32_t   columns;
+	uint32_t* states;      // stateCount * ICON_PLAIN_STATE_WORDS, the icon's own copy
+	int32_t   current;     // the state shown, or -1
+	uint32_t  slot;        // the first of the item's two window content slots
+} IconPlainItem_t;
+
+typedef struct IconPlain
+{
+	uint32_t         raw[ICON_PLAIN_ROOT_WORDS];
+	int32_t          itemCount;
+	IconPlainItem_t* items;
+	int32_t          focused;  // root[2] when it names an item, else -1
+} IconPlain_t;
+
+// The answers of Grp0 0xBA.
+#define ICON_PLAIN_OK        0
+#define ICON_PLAIN_NOT_ICON  1
+#define ICON_PLAIN_BAD_ITEMS 2
+#define ICON_PLAIN_BAD_STATE 3
+#define ICON_PLAIN_BUSY      4
+// Copies the descriptor at `root` out of script memory and builds the plain icon's content.
+uint32_t Icon_SetPlainContent(Thread_t* thread, Renderer_t* renderer, Icon_t* icon, uint32_t rootAddress);
 
 // 0x0046C7B0. The icon's handle, or 0.
 uint32_t Icon_Create(uint32_t windowHandle, uint32_t kind);
