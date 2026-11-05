@@ -103,7 +103,7 @@ uint32_t Opcode_Grp0_SetWindowClientArea(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_137(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_138(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_139(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_144(Thread_t* thread);
+uint32_t Opcode_Grp0_PrintShortMessage(Thread_t* thread);
 uint32_t Opcode_Grp0_SetMessageRegion(Thread_t* thread);
 uint32_t Opcode_Grp0_SetMessageNoFlush(Thread_t* thread);
 uint32_t Opcode_Grp0_SetMessageCharacterWait(Thread_t* thread);

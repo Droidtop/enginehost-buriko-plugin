@@ -515,9 +515,11 @@ uint32_t Message_Print(Thread_t* thread, uint32_t windowHandle, const char* text
 
 	// 0x00434EC0 and 0x00434EE0: the colour, the ruby colour and the style asked for
 	// (a style 0x00434F10 refuses leaves the default).
+	// With no style (Grp0 0x90's short form) the default stays.
 	m->colour = request->colour;
 	m->rubyColour = request->rubyColour;
-	Text_MakeStyle(&m->style, style->kind, style->a, style->b, style->colour, style->weight);
+	if(style != NULL)
+		Text_MakeStyle(&m->style, style->kind, style->a, style->b, style->colour, style->weight);
 
 	// 0x004351A0: the text laid out from the window's cursor within its client area,
 	// in its font, line height and proportional setting, against the global ruby

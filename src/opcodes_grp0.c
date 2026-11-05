@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 #include "engine.h"
 #include "message.h"
 #include "renderer.h"
@@ -163,7 +164,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x8D 141 */ "--Unknown--",
 	/* 0x8E 142 */ "--Unknown--",
 	/* 0x8F 143 */ "--Unknown--",
-	/* 0x90 144 */ "Unknown_144",
+	/* 0x90 144 */ "PrintShortMessage",
 	/* 0x91 145 */ "SetMessageRegion",
 	/* 0x92 146 */ "SetMessageNoFlush",
 	/* 0x93 147 */ "--Unknown--",
@@ -422,7 +423,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x8D 141 */ NULL,
 	/* 0x8E 142 */ NULL,
 	/* 0x8F 143 */ NULL,
-	/* 0x90 144 */ Opcode_Grp0_Unknown_144,
+	/* 0x90 144 */ Opcode_Grp0_PrintShortMessage,
 	/* 0x91 145 */ Opcode_Grp0_SetMessageRegion,
 	/* 0x92 146 */ Opcode_Grp0_SetMessageNoFlush,
 	/* 0x93 147 */ NULL,
@@ -2223,9 +2224,46 @@ uint32_t Opcode_Grp0_Unknown_139(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_144(Thread_t* thread)
+/*
+ * Grp0 0x90 (0x00009090; Fureraba's scrmsg+0x15B9): the short form of Grp2 0x90. It
+ * runs the same routine, 0x004913B0, in mode 0 with no style, no ruby and colour -1.
+ * Popped: the same first three flags as Grp2 0x90 - the configured buttons count, the
+ * skip key counts, wait for a key at the end - then a value it does not look at, the
+ * text and the window. The thread waits on the message, which pushes whether it was
+ * skipped; the handler answers 2. As the RE lane read it on Droidtop/tracker#123.
+ *
+ * What mode 0 changes inside 0x004913B0 against Grp2 0x90's mode 1 is not read yet;
+ * until it is, both run the same way.
+ */
+uint32_t Opcode_Grp0_PrintShortMessage(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	MessageRequest_t request;
+	memset(&request, 0, sizeof(request));
+	request.buttonsAllowed = Thread_PopStack(thread);
+	request.skipKeyAllowed = Thread_PopStack(thread);
+	request.waitForKey = Thread_PopStack(thread);
+	(void)Thread_PopStack(thread);
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t window = Thread_PopStack(thread);
+	request.colour = 0xFFFFFFFFu;
+	request.rubyColour = 0xFFFFFFFFu;
+
+	uint32_t result = Message_Print(thread, window, text, NULL, &request);
+	if(result == 0xFFFFFFFFu)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], window);
+		return 0xFFFFFFFC;
+	}
+	if(result == 0x80000001u)
+	{
+		printf("[Thread %d]: %sError: the specified window has no font set\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFC;
+	}
+	if(result != 0)
+		return 0xFFFFFFFF;
+	return 2;
 }
 
 /*

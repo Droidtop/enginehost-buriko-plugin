@@ -62,7 +62,8 @@ typedef struct MessageRequest
 // it (0x004452A0). The message draws its characters into the window's text surface
 // over time, waits at the end as asked, and when it is done pushes whether it was
 // skipped. 0 once the thread waits; 0xFFFFFFFF when the handle is not a window,
-// 0x80000001 when the window has no font, 0xFFFFFFFE when memory ran out.
+// 0x80000001 when the window has no font, 0xFFFFFFFE when memory ran out. A NULL
+// style keeps the default, as Grp0 0x90 (mode 0) asks.
 uint32_t Message_Print(struct Thread* thread, uint32_t windowHandle, const char* text,
                        const struct TextStyle* style, const MessageRequest_t* request);
 
