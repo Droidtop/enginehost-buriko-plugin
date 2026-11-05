@@ -99,6 +99,7 @@ uint32_t Opcode_Grp0_Unknown_131(Thread_t* thread);
 uint32_t Opcode_Grp0_ShowWindow(Thread_t* thread);
 uint32_t Opcode_Grp0_SetWindowPlacement(Thread_t* thread);
 uint32_t Opcode_Grp0_SetWindowLayerOrder(Thread_t* thread);
+uint32_t Opcode_Grp0_SetWindowLayer(Thread_t* thread);
 uint32_t Opcode_Grp0_SetWindowValue3BC(Thread_t* thread);
 uint32_t Opcode_Grp0_SetWindowClientArea(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_137(Thread_t* thread);
