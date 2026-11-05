@@ -203,6 +203,25 @@ void Window_Redraw(Renderer_t* renderer, DisplayObject_t* window, const Rect_t* 
 	}
 }
 
+// 0x0042C950: the order the three compose steps run in (+0x3C0, +0x3C4, +0x3C8), one of
+// six permutations; anything above 5 leaves it as it is, and the setter answers 1
+// either way (RE lane on Droidtop/tracker#123). A new window has order 0.
+void Window_SetLayerOrder(DisplayObject_t* window, uint32_t order)
+{
+	static const uint32_t kOrders[6][3] = {
+		{ WINDOW_LAYER_BACKGROUND, WINDOW_LAYER_FRAME, WINDOW_LAYER_CONTENT },
+		{ WINDOW_LAYER_BACKGROUND, WINDOW_LAYER_CONTENT, WINDOW_LAYER_FRAME },
+		{ WINDOW_LAYER_FRAME, WINDOW_LAYER_BACKGROUND, WINDOW_LAYER_CONTENT },
+		{ WINDOW_LAYER_FRAME, WINDOW_LAYER_CONTENT, WINDOW_LAYER_BACKGROUND },
+		{ WINDOW_LAYER_CONTENT, WINDOW_LAYER_BACKGROUND, WINDOW_LAYER_FRAME },
+		{ WINDOW_LAYER_CONTENT, WINDOW_LAYER_FRAME, WINDOW_LAYER_BACKGROUND },
+	};
+	if(window == NULL || order > 5)
+		return;
+	for(int i = 0; i < 3; i++)
+		window->layerOrder[i] = kOrders[order][i];
+}
+
 void Window_RedrawAll(Renderer_t* renderer, DisplayObject_t* window)
 {
 	// 0x0042CAE0: the window's own rectangle, straight out of its pixels.

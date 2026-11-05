@@ -150,7 +150,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x7F 127 */ "--Unknown--",
 	/* 0x80 128 */ "CreateWindowObject",
 	/* 0x81 129 */ "DestroyWindowObject",
-	/* 0x82 130 */ "--Unknown--",
+	/* 0x82 130 */ "SetWindowLayerOrder",
 	/* 0x83 131 */ "Unknown_131",
 	/* 0x84 132 */ "ShowWindow",
 	/* 0x85 133 */ "SetWindowPlacement",
@@ -409,7 +409,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x7F 127 */ NULL,
 	/* 0x80 128 */ Opcode_Grp0_CreateWindowObject,
 	/* 0x81 129 */ Opcode_Grp0_DestroyWindowObject,
-	/* 0x82 130 */ NULL,
+	/* 0x82 130 */ Opcode_Grp0_SetWindowLayerOrder,
 	/* 0x83 131 */ Opcode_Grp0_Unknown_131,
 	/* 0x84 132 */ Opcode_Grp0_ShowWindow,
 	/* 0x85 133 */ Opcode_Grp0_SetWindowPlacement,
@@ -2103,6 +2103,33 @@ uint32_t Opcode_Grp0_ShowWindow(Thread_t* thread)
 	int before = Object_IsDrawable(window);
 	Object_SetVisible(window, (int)visible);
 	if(before || Object_IsDrawable(window))
+		gObjectDamage++;
+	return 0;
+}
+
+/*
+ * Grp0 0x82 (0x00009082; Houkago's msgwndctrl+0x05FA; 1.622 0x0047DD90 -> 0x00463040 ->
+ * 0x00440E40 -> 0x0042C950): the order a window's frame surface is composed in. Popped:
+ * the order (top), then the window; nothing is pushed. A handle that is not a window
+ * is fatal. The order is one of six (Window_SetLayerOrder); above 5 nothing changes, as
+ * the setter answers 1 regardless, so its "invalid draw order" message never shows.
+ * Then the frame surface is composed again (0x0042CAE0), and the screen redrawn if the
+ * window is shown. As the RE lane read it on Droidtop/tracker#123.
+ */
+uint32_t Opcode_Grp0_SetWindowLayerOrder(Thread_t* thread)
+{
+	uint32_t order = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	Window_SetLayerOrder(window, order);
+	Window_RedrawAll(thread->engine->renderer, window);
+	if(Object_IsDrawable(window))
 		gObjectDamage++;
 	return 0;
 }
