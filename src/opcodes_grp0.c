@@ -1877,18 +1877,21 @@ uint32_t Opcode_Grp0_Unknown_91(Thread_t* thread)
 }
 
 /*
- * Grp0 0x5C (0x0000905C; Daitoshokan's title+0x20A8; 1.622 handler 0x0047CD90): a sprite
- * whose picture is two same-sized bitmaps mixed by a ratio, drawn like any sprite with
- * its own blend mode, effect level and layer. It pops seventeen values and pushes
- * nothing. Known, from the handler's checks (RE lane on Droidtop/tracker#123), counting
- * from the top as 1:
- *   1 the layer (<= 0xFFFF), 2 the effect level (<= 0x100), 3 the blend mode (one of the
- *   engine's), 6 a projection scale (has its own "invalid" error; its valid range is not
- *   read), 11 the mix ratio (<= 0x100), 12 the second bitmap and 13 the first (0..0x3FFF;
- *   both must exist and match in size and pixel mode), 17 probably the target sprite.
- * Unknown: 4, 5, 7-10 and 14-16 (likely place, size and source offsets). Until they are
- * read the call is checked as the original checks it and then stops by name with every
- * value logged, rather than drawing on guessed positions.
+ * Grp0 0x5C (0x0000905C; Daitoshokan's title+0x20A8; 1.622 handler 0x0047CD90 ->
+ * 0x004625E0 -> 0x0043EB90 -> 0x00427240): a sprite becomes kind 5, the crossfade of
+ * two same-sized bitmaps placed in 3D (sprite5.h). It pops seventeen values and pushes
+ * nothing. Counting from the top as 1, as they reach 0x00427240 (RE lane on
+ * Droidtop/tracker#123, comments 6665834812, 6665928649 and 6669538385):
+ *   1 layer (<= 0xFFFF), 2 effect level (<= 0x100), 3 blend mode (one of the engine's),
+ *   4 smooth (+0x280), 5 perspective (+0x27C), 6 focal distance (+0x278, 0 = no
+ *   depth scaling), 7 angle (+0x250, 16.16 degrees), 8 and 9 the anchor's y and x in
+ *   the bitmap (+0x24C, +0x248, whole pixels), 10 content kind (+0x244), 11 the
+ *   crossfade level (<= 0x100: 0 shows the first bitmap, 0x100 the second), 12 the
+ *   second bitmap (-1 for none: no checks on it, level 0 and content kind -1), 13 the
+ *   first, 14/15/16 z, y and x (16.16, from the projection centre), 17 the sprite.
+ * The crossfade is redrawn from both bitmaps on every draw, so later changes to either
+ * show through. Not read: the valid range of 6 behind the handler's "invalid
+ * projection scale"; it is taken as it comes.
  */
 static int Grp0_IsBlendMode(uint32_t mode)
 {
@@ -1901,7 +1904,6 @@ uint32_t Opcode_Grp0_MixBitmapsSprite(Thread_t* thread)
 	uint32_t v[18];
 	for(int i = 1; i <= 17; i++)
 		v[i] = Thread_PopStack(thread);
-	Renderer_t* renderer = thread->engine->renderer;
 	const char* error = NULL;
 	if(v[1] > 0xFFFF)
 		error = "invalid priority";
@@ -1911,28 +1913,40 @@ uint32_t Opcode_Grp0_MixBitmapsSprite(Thread_t* thread)
 		error = "invalid effect mode";
 	else if(v[11] > 0x100)
 		error = "invalid mix ratio";
-	else
-	{
-		Bitmap_t* first = v[13] <= 0x3FFF ? Renderer_ResolveBitmap(renderer, (int)v[13]) : NULL;
-		Bitmap_t* second = v[12] <= 0x3FFF ? Renderer_ResolveBitmap(renderer, (int)v[12]) : NULL;
-		if(first == NULL || second == NULL)
-			error = "one of the bitmaps is invalid";
-		else if(first->width != second->width || first->height != second->height || first->mode != second->mode)
-			error = "the bitmaps differ in size or pixel mode";
-	}
-	printf("[Thread %d]: %sGrp0 0x5C values (top first):", thread->threadId, TLevel[thread->level]);
-	for(int i = 1; i <= 17; i++)
-		printf(" %d=0x%X", i, v[i]);
-	printf("\n");
 	if(error != NULL)
 	{
-		printf("[Thread %d]: %sError: Grp0 0x5C: %s (bitmaps [ %d, %d ])\n", thread->threadId,
-		       TLevel[thread->level], error, (int32_t)v[13], (int32_t)v[12]);
+		printf("[Thread %d]: %sError: Grp0 0x5C: %s\n", thread->threadId, TLevel[thread->level], error);
 		return 0xFFFFFFFC;
 	}
-	Engine_StopWithMessage("Grp0 0x5C, a sprite mixing two bitmaps, is not built yet: positions 4, 5, 7-10 and "
-	                       "14-16 of its call are not read");
-	return 0xFFFFFFFF;
+
+	DisplayObject_t* sprite = Object_ResolveKind(v[17], OBJECT_TYPE_SPRITE);
+	if(sprite == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid sprite handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], v[17]);
+		return 0xFFFFFFFC;
+	}
+
+	const char* unread = NULL;
+	uint32_t result = Sprite5_Setup(thread->engine->renderer, sprite, 1,
+	                                (int32_t)v[16], (int32_t)v[15], (int32_t)v[14],
+	                                (int32_t)v[13], (int32_t)v[12], v[11], (int32_t)v[10],
+	                                (int32_t)v[9], (int32_t)v[8], (int32_t)v[7],
+	                                v[6], v[5], v[4], v[3], v[2], v[1], &unread);
+	if(unread != NULL)
+		printf("[Thread %d]: %sWarning: Grp0 0x5C reached unported work: %s\n",
+		       thread->threadId, TLevel[thread->level], unread);
+	if(result == 0)
+		return 0;
+	if(result == SPRITE5_MISMATCH)
+		error = "the bitmaps differ in size or pixel mode";
+	else if(result == SPRITE5_TOO_SMALL)
+		error = "the transformed picture is smaller than 2 pixels";
+	else
+		error = "one of the bitmaps is invalid";
+	printf("[Thread %d]: %sError: Grp0 0x5C: %s (bitmaps [ %d, %d ])\n", thread->threadId,
+	       TLevel[thread->level], error, (int32_t)v[13], (int32_t)v[12]);
+	return 0xFFFFFFFC;
 }
 
 /*
