@@ -2,7 +2,7 @@
   "upstream": {
     "repo": "Droidtop/enginehost-buriko-plugin",
     "ref": "engine/0.0.1",
-    "commit": "b50550f0483c10214f21e8378486af236153086a",
+    "commit": "9b4de96367f4bb4250ae0c93ee10b50ec58115de",
     "basedOn": "Cytlan/openbgi e2500e0badd04aab472e4620477747973e5e5544"
   },
   "version": "0.0.1"
