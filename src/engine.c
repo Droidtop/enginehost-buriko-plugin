@@ -2105,9 +2105,13 @@ void Engine_AddSearchPath(char* path)
 //
 // OpenBGI has one root, the game folder it was pointed at, and no second data root.
 static char* Engine_ResolveLoosePath(const char* name);
+typedef struct AnswerFile AnswerFile_t;
+static AnswerFile_t** Engine_FindAnswerFile(const char* name);
 
 static int Engine_IsLooseFile(const char* name)
 {
+	if(Engine_FindAnswerFile(name) != NULL)
+		return 1;
 	char* path = Engine_ResolveLoosePath(name);
 	if(path == NULL)
 		return 0;
@@ -2469,8 +2473,90 @@ static char* Engine_ResolveLoosePath(const char* name)
 	return out;
 }
 
+/*
+ * Files the core answers in place of a program the game would have run (Sys0 0xE0):
+ * kept in memory, read by the loose-file lookup as if they lay in the game's folder,
+ * and gone once the script deletes them (Sys0 0x33). Nothing is written to the
+ * player's folder. Names are compared as the loose lookup does: without regard to
+ * case, a leading "./" or separator ignored.
+ */
+struct AnswerFile
+{
+	char* name;
+	uint8_t* data;
+	size_t size;
+	struct AnswerFile* next;
+};
+static AnswerFile_t* gAnswerFiles = NULL;
+
+static const char* Engine_AnswerName(const char* name)
+{
+	while(name[0] == '.' && (name[1] == '/' || name[1] == '\\'))
+		name += 2;
+	while(*name == '/' || *name == '\\')
+		name++;
+	return name;
+}
+
+static AnswerFile_t** Engine_FindAnswerFile(const char* name)
+{
+	if(name == NULL)
+		return NULL;
+	name = Engine_AnswerName(name);
+	for(AnswerFile_t** link = &gAnswerFiles; *link != NULL; link = &(*link)->next)
+		if(strcasecmp((*link)->name, name) == 0)
+			return link;
+	return NULL;
+}
+
+void Engine_ProvideAnswerFile(const char* name, const uint8_t* data, size_t size)
+{
+	Engine_DropAnswerFile(name);
+	AnswerFile_t* file = (AnswerFile_t*)calloc(1, sizeof(AnswerFile_t));
+	if(file == NULL)
+		return;
+	file->name = Engine_DupString(Engine_AnswerName(name));
+	file->data = (uint8_t*)malloc(size > 0 ? size : 1);
+	if(file->name == NULL || file->data == NULL)
+	{
+		free(file->name);
+		free(file->data);
+		free(file);
+		return;
+	}
+	memcpy(file->data, data, size);
+	file->size = size;
+	file->next = gAnswerFiles;
+	gAnswerFiles = file;
+}
+
+int Engine_DropAnswerFile(const char* name)
+{
+	AnswerFile_t** link = Engine_FindAnswerFile(name);
+	if(link == NULL)
+		return 0;
+	AnswerFile_t* file = *link;
+	*link = file->next;
+	free(file->name);
+	free(file->data);
+	free(file);
+	return 1;
+}
+
 uint8_t* Engine_ReadLooseFile(const char* name, size_t* size)
 {
+	AnswerFile_t** answer = Engine_FindAnswerFile(name);
+	if(answer != NULL)
+	{
+		uint8_t* copy = (uint8_t*)malloc((*answer)->size > 0 ? (*answer)->size : 1);
+		if(copy == NULL)
+			return NULL;
+		memcpy(copy, (*answer)->data, (*answer)->size);
+		if(size != NULL)
+			*size = (*answer)->size;
+		printf("[Engine]: Read \"%s\", answered in place of a program (%zu bytes)\n", (*answer)->name, (*answer)->size);
+		return copy;
+	}
 	char* path = Engine_ResolveLoosePath(name);
 	if(path == NULL)
 		return NULL;
