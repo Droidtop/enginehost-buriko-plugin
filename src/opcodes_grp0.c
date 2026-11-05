@@ -1605,6 +1605,9 @@ uint32_t Opcode_Grp0_SetScreenTransition(Thread_t* thread)
 	int32_t y = (int32_t)Thread_PopStack(thread);
 	int32_t x = (int32_t)Thread_PopStack(thread);
 	uint32_t r = Screen_SetTransition(x, y, bitmap, fromX, fromY, fromBitmap, rule, ruleParameter, level);
+	if(gLogDraws)
+		printf("[Draws]: Grp0 0x43: image [ 0x%X ] at (%d,%d) over [ 0x%X ] at (%d,%d), rule %d (%u), level 0x%X: %u\n",
+		       bitmap, x, y, fromBitmap, fromX, fromY, rule, ruleParameter, level, r);
 	if(r != 0)
 	{
 		printf("[Thread %d]: %sError: the screen transition failed (%u): image %d, previous %d, rule %d\n",
@@ -1655,6 +1658,8 @@ uint32_t Opcode_Grp0_ShowScreen(Thread_t* thread)
 	// drawn, then whether the screen is visible (root+0x58 and root+0x54).
 	uint32_t content = Thread_PopStack(thread);
 	uint32_t visible = Thread_PopStack(thread);
+	if(gLogDraws)
+		printf("[Draws]: Grp0 0x4C: screen visible %u, content %u\n", visible, content);
 	Screen_SetShown(visible, content);
 	return 0;
 }
