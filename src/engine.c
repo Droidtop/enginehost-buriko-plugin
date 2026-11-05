@@ -974,8 +974,36 @@ void Engine_SetFontCharset(const char* name, int charset)
 FontName_t* gFontNames = NULL;
 static uint32_t gFontNameCounter = 0;
 
+// 0x00468CF0, from the display root's set-up (0x0046D600): the font-name table is
+// cleared (0x00468CB0) and two defaults interned before any script runs, font 0
+// "ＭＳ ゴシック" and font 1 "ＭＳ 明朝" (MS Gothic / MS Mincho on a system that is
+// not Japanese, 0x0046F890; this engine is always the Japanese one). So the game's
+// own fonts, through Ext0 0xC1, number from 2: Houkago's saved font 2 is Shin Go (RE
+// lane on Droidtop/tracker#123). The font code resolves both names to its host
+// stand-ins. Seeded at the table's first use, whatever runs first.
+static void Engine_SeedFontNames(void)
+{
+	static const char* const kDefaults[2] = {
+		"\x82\x6C\x82\x72\x20\x83\x53\x83\x56\x83\x62\x83\x4E",   // ＭＳ ゴシック
+		"\x82\x6C\x82\x72\x20\x96\xBE\x92\xA9",                       // ＭＳ 明朝
+	};
+	if(gFontNameCounter != 0)
+		return;
+	for(uint32_t i = 0; i < 2; i++)
+	{
+		FontName_t* entry = (FontName_t*)malloc(sizeof(FontName_t));
+		if(entry == NULL)
+			return;
+		entry->id = gFontNameCounter++;
+		entry->name = Engine_DupString(kDefaults[i]);
+		entry->next = gFontNames;
+		gFontNames = entry;
+	}
+}
+
 uint32_t Engine_InternFontName(const char* name)
 {
+	Engine_SeedFontNames();
 	if(name == NULL)
 		return 0;
 
@@ -997,6 +1025,7 @@ uint32_t Engine_InternFontName(const char* name)
 
 const char* Engine_FontNameById(uint32_t id)
 {
+	Engine_SeedFontNames();
 	for(FontName_t* entry = gFontNames; entry != NULL; entry = entry->next)
 	{
 		if(entry->id == id)
