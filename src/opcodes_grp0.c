@@ -249,7 +249,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xE2 226 */ "--Unknown--",
 	/* 0xE3 227 */ "--Unknown--",
 	/* 0xE4 228 */ "ShowGroupObject",
-	/* 0xE5 229 */ "SetObjectPlaceAndLevel",
+	/* 0xE5 229 */ "SetGroupPlaceAndLevel",
 	/* 0xE6 230 */ "--Unknown--",
 	/* 0xE7 231 */ "--Unknown--",
 	/* 0xE8 232 */ "AddObjectToGroup",
@@ -508,7 +508,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xE2 226 */ NULL,
 	/* 0xE3 227 */ NULL,
 	/* 0xE4 228 */ Opcode_Grp0_ShowGroupObject,
-	/* 0xE5 229 */ Opcode_Grp0_SetObjectPlaceAndLevel,
+	/* 0xE5 229 */ Opcode_Grp0_SetGroupPlaceAndLevel,
 	/* 0xE6 230 */ NULL,
 	/* 0xE7 231 */ NULL,
 	/* 0xE8 232 */ Opcode_Grp0_AddObjectToGroup,
@@ -3159,20 +3159,22 @@ uint32_t Opcode_Grp0_ShowGroupObject(Thread_t* thread)
 }
 
 /*
- * Grp0 0xE5 (0x000090E5; 1.622 0x00480180 -> 0x004636F0 -> 0x004427F0): an object's
+ * Grp0 0xE5 (0x000090E5; 1.622 0x00480180 -> 0x004636F0 -> 0x004427F0): a group's
  * place and effect level at once. Popped (top first): the effect level, y, x and the
- * object; nothing is pushed. A level above 0x100 is fatal (0x00497F40), and so is a
- * handle that names nothing. Then vtable+0x2C with x and y and vtable+0x48 with the
- * level (a window's is the base's 0x0041B6F0: +0xAC, then each child), bracketed by
- * the drawable test and damage.
+ * group; nothing is pushed. A level above 0x100 is fatal (0x00497F40), and so is a
+ * handle that is not a group (the RE lane's correction on Droidtop/tracker#123). Then
+ * vtable+0x2C with x and y and vtable+0x48 with the level, which the base setter
+ * (0x0041B6F0) stores and passes to every member, bracketed by the drawable test and
+ * damage.
  *
- * Fureraba's msgwndctrl+0x042B brings the message window to level 0 with it, right
- * after Grp0 0x85 set 0x100 (title+0x05BD sets 0x100). The original's first prologue
+ * Fureraba's msgwndctrl+0x042B brings group F1000000, and with it the message window
+ * it holds, to level 0, right after Grp0 0x85 set the window's 0x100 (title+0x05BD
+ * sets 0x100). The original's first prologue
  * line then draws opaque (the RE lane's live read on Droidtop/tracker#123, comment
  * 6662589011). This was OpenBGI's dummy that popped four values and did nothing,
  * which left the message window fully transparent and its text unseen.
  */
-uint32_t Opcode_Grp0_SetObjectPlaceAndLevel(Thread_t* thread)
+uint32_t Opcode_Grp0_SetGroupPlaceAndLevel(Thread_t* thread)
 {
 	uint32_t level = Thread_PopStack(thread);
 	int32_t y = (int32_t)Thread_PopStack(thread);
@@ -3184,10 +3186,12 @@ uint32_t Opcode_Grp0_SetObjectPlaceAndLevel(Thread_t* thread)
 		       " was specified\n", thread->threadId, TLevel[thread->level], level);
 		return 0xFFFFFFFC;
 	}
-	DisplayObject_t* object = Object_Resolve(handle);
+	// 0x004427F0 looks the handle up among groups only (0xF1..., index < 8); anything
+	// else is fatal. Fureraba's msgwndctrl+0x042B and title+0x05BD pass F1000000.
+	DisplayObject_t* object = Object_ResolveKind(handle, OBJECT_TYPE_GROUP);
 	if(object == NULL)
 	{
-		printf("[Thread %d]: %sError: an invalid object handle [ 0x%.8X ] was specified\n",
+		printf("[Thread %d]: %sError: an invalid group handle [ 0x%.8X ] was specified\n",
 		       thread->threadId, TLevel[thread->level], handle);
 		return 0xFFFFFFFC;
 	}
