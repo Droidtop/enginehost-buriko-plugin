@@ -277,6 +277,19 @@ static void Text_VerticalForm(const char* p, int32_t out[3])
 
 // 0x00437AF0: how many characters from `p` on may not start a line, copied into
 // `out`.
+// Base opcode 0x6C: whether the character at `p` is one Japanese typesetting will not start a
+// line with (the table 0x00434FE0's layout uses).
+int Text_IsNoLineStart(const char* p)
+{
+	return p != NULL && *p != 0 && Text_InList(p, gTextNoLineStart);
+}
+
+// 0x0042EAF0 for base opcode 0x6C: the character's code and whether it took two bytes.
+int Text_DecodeCharacter(const char* p, uint32_t* code)
+{
+	return Text_Decode(p, code);
+}
+
 static int Text_CountNoLineStart(const char* p, char* out)
 {
 	int n = 0;
