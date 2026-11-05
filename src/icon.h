@@ -230,8 +230,14 @@ struct Icon
 //   an item, 13 words: the state count S (low 16 bits, 1..255, else 3) and the states per
 //     row G (high 16 bits; 0 or G > S is one row), the script address of the states, the
 //     initial state, and ten words kept for the item queries
-//   a state, 15 words: [0] its bitmap (0 an empty state), [1] [2] its offset on the icon,
-//     [6] a second bitmap drawn with it (-2 none), [14] an event id; the rest kept.
+//   a state, 15 words (corrected by the local lane, 2026-11-05): [0] present (0 an empty
+//     state), [1] [2] its place on the icon, [3] its normal image (-1: cannot be shown or
+//     selected), [4] its selected image and [5] its lit image (-1: use [3]), [6] its hit
+//     mask (-2 none, -1 the whole rectangle, else a bitmap), [7..9] and [10..12] two cursor
+//     overlays {bitmap, x, y} shown while it is under the pointer, [13] kept, [14] a key.
+//
+// The items become the base's entries and the states its parts, and the plain icon runs the
+// same per-frame pass as the Ex one with the base's virtuals in place of the Ex overrides.
 // ----------------------------------------------------------------------------------
 #define ICON_PLAIN_ROOT_WORDS  8
 #define ICON_PLAIN_ITEM_WORDS  13
@@ -246,7 +252,6 @@ typedef struct
 	int32_t   columns;
 	uint32_t* states;      // stateCount * ICON_PLAIN_STATE_WORDS, the icon's own copy
 	int32_t   current;     // the state shown, or -1
-	uint32_t  slot;        // the first of the item's two window content slots
 } IconPlainItem_t;
 
 typedef struct IconPlain
