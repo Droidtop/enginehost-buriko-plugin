@@ -299,6 +299,11 @@ extern ListNode_t* gLinkedListHead;
 extern ListNode_t* gLinkedListTailNext;
 extern ListNode_t  gLinkedListSentinel;
 void Engine_PushGlobalList(uint32_t value1, uint32_t value2, uint32_t value3);
+// Sys1 0x6A: catch fatal script errors (end only the failing thread) or not.
+void Engine_SetCatchScriptErrors(uint32_t value);
+// Sys1 0x6B: the last caught error's text into `out` (at most `room` bytes, ended by a
+// NUL); answers its length + 1, or 0 when none is kept.
+uint32_t Engine_LastScriptError(char* out, uint32_t room);
 int Engine_PopGlobalList(uint32_t* output);
 
 extern int gSomethingToDoWithKeylots;
