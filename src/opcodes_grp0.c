@@ -2126,6 +2126,9 @@ uint32_t Opcode_Grp0_SetWindowPlacement(Thread_t* thread)
 	int32_t y = (int32_t)Thread_PopStack(thread);
 	int32_t x = (int32_t)Thread_PopStack(thread);
 	uint32_t handle = Thread_PopStack(thread);
+	if(gLogDraws)
+		printf("[Draws]: Grp0 0x85 on [ 0x%08X ]: x %d, y %d, blend 0x%02X, effect level 0x%X,"
+		       " unused level 0x%X, layer 0x%04X\n", handle, x, y, blend, level, unused, layer);
 	if(layer >= 0x10000 || unused > 0x100 || level > 0x100)
 	{
 		printf("[Thread %d]: %sError: Grp0 0x85 out of range: layer %d, levels %d %d\n",

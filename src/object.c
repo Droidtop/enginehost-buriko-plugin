@@ -1098,6 +1098,10 @@ const char* Object_ApplyEffectLevel(DisplayObject_t* object, uint32_t level)
 	// use: it dirties the screen when the object would be drawn before OR after,
 	// not when that answer moved. An effect level changes how a thing looks
 	// without changing whether it is drawn, so "it moved" would never fire.
+	// With --draws, every change says which object and from what, since the effect
+	// level is one of the three terms of the draw transparency (0x0041B840).
+	if(gLogDraws && object->unknownAC != level)
+		printf("[Draws]: [ 0x%08X ] effect level 0x%X -> 0x%X\n", object->handle, object->unknownAC, level);
 	int before = Object_IsDrawable(object);
 	const char* unread = Object_SetEffectLevel(object, level);
 	int after = Object_IsDrawable(object);
@@ -1536,10 +1540,10 @@ static int Object_DrawTo(Renderer_t* renderer, DisplayObject_t* object,
 		Rect_t where;
 		Object_ScreenBounds(object, &where);
 		printf("[Draws]:   [ 0x%08X ] type %u layer 0x%04X: visible %d enabled %d"
-		       " hidden %d transparency 0x%X opacity 0x%X blend 0x%02X"
+		       " hidden %d transparency 0x%X effect level 0x%X opacity 0x%X blend 0x%02X"
 		       " -> draw transparency 0x%X; surface %dx%d at (%d,%d)-(%d,%d)\n",
 		       object->handle, object->type, object->layer, object->visible,
-		       object->enabled, object->hidden, object->transparency,
+		       object->enabled, object->hidden, object->transparency, object->unknownAC,
 		       object->opacity, object->unknownA8, Object_DrawTransparency(object),
 		       object->surfaceWidth, object->surfaceHeight,
 		       where.left, where.top, where.right, where.bottom);
