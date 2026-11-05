@@ -103,6 +103,8 @@ uint32_t Text_PrintVertical(Renderer_t* renderer, Bitmap_t* target, int32_t* cur
                             Rect_t* drawn, uint32_t* drawnCount);
 // 0x00437110: the records freed.
 void Text_FreeLayout(TextLayout_t* layout);
+int Text_IsNoLineStart(const char* p);
+int Text_DecodeCharacter(const char* p, uint32_t* code);
 // 0x00437180: the ruby's size for text of this size.
 int32_t Text_RubySize(int32_t size);
 // 0x004345B0: how far ruby pushes the first line in (0x00565BDC).

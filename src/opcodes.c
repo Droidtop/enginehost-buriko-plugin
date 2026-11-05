@@ -9,6 +9,7 @@
 #include "opcodes_sys1.h"
 #include "opcodes_grp0.h"
 #include "xform.h"
+#include "text.h"
 #include <math.h>
 #include "opcodes_grp1.h"
 #include "opcodes_grp2.h"
@@ -30,7 +31,7 @@ char* OpcodesMnemonics[256] = {
 	/* 0x08   8 */ "ReadMem",
 	/* 0x09   9 */ "WriteCopy",
 	/* 0x0A  10 */ "WriteMem",
-	/* 0x0B  11 */ "Unknown",
+	/* 0x0B  11 */ "InlineData",
 	/* 0x0C  12 */ "CopyStack",
 	/* 0x0D  13 */ "Unknown",
 	/* 0x0E  14 */ "Unknown",
@@ -86,7 +87,7 @@ char* OpcodesMnemonics[256] = {
 	/* 0x40  64 */ "Ternary",
 	/* 0x41  65 */ "Unknown",
 	/* 0x42  66 */ "MulDiv",
-	/* 0x43  67 */ "Unknown",
+	/* 0x43  67 */ "Direction",
 	/* 0x44  68 */ "Length3",
 	/* 0x45  69 */ "Unknown",
 	/* 0x46  70 */ "Unknown",
@@ -101,9 +102,9 @@ char* OpcodesMnemonics[256] = {
 	/* 0x4F  79 */ "Unknown",
 	/* 0x50  80 */ "Unknown",
 	/* 0x51  81 */ "Unknown",
-	/* 0x52  82 */ "Unknown",
-	/* 0x53  83 */ "Unknown",
-	/* 0x54  84 */ "Unknown",
+	/* 0x52  82 */ "Mul64",
+	/* 0x53  83 */ "Div64",
+	/* 0x54  84 */ "Mod64",
 	/* 0x55  85 */ "Unknown",
 	/* 0x56  86 */ "Unknown",
 	/* 0x57  87 */ "Unknown",
@@ -117,19 +118,19 @@ char* OpcodesMnemonics[256] = {
 	/* 0x5F  95 */ "Unknown",
 	/* 0x60  96 */ "Memcpy",
 	/* 0x61  97 */ "Memclr",
-	/* 0x62  98 */ "Unknown",
+	/* 0x62  98 */ "Memset",
 	/* 0x63  99 */ "Memeq",
-	/* 0x64 100 */ "Unknown",
-	/* 0x65 101 */ "Unknown",
-	/* 0x66 102 */ "Unknown",
-	/* 0x67 103 */ "Unknown",
+	/* 0x64 100 */ "Replicate",
+	/* 0x65 101 */ "FindElement",
+	/* 0x66 102 */ "FindBytes",
+	/* 0x67 103 */ "Replace",
 	/* 0x68 104 */ "Strlen",
 	/* 0x69 105 */ "Streq",
 	/* 0x6A 106 */ "Strcpy",
-	/* 0x6B 107 */ "Unknown",
-	/* 0x6C 108 */ "Unknown",
+	/* 0x6B 107 */ "Concat",
+	/* 0x6C 108 */ "CharacterInfo",
 	/* 0x6D 109 */ "StrToLower",
-	/* 0x6E 110 */ "Unknown",
+	/* 0x6E 110 */ "Enclose",
 	/* 0x6F 111 */ "Sprintf",
 	/* 0x70 112 */ "Unknown",
 	/* 0x71 113 */ "Unknown",
@@ -142,7 +143,7 @@ char* OpcodesMnemonics[256] = {
 	/* 0x78 120 */ "Unknown",
 	/* 0x79 121 */ "ShowString",
 	/* 0x7A 122 */ "ShowNumber",
-	/* 0x7B 123 */ "Unknown",
+	/* 0x7B 123 */ "HexDump",
 	/* 0x7C 124 */ "Unknown",
 	/* 0x7D 125 */ "Unknown",
 	/* 0x7E 126 */ "Unknown",
@@ -289,7 +290,7 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0x08   8 */ Opcode_ReadMem,
 	/* 0x09   9 */ Opcode_WriteCopy,
 	/* 0x0A  10 */ Opcode_WriteMem,
-	/* 0x0B  11 */ 0,
+	/* 0x0B  11 */ Opcode_InlineData,
 	/* 0x0C  12 */ Opcode_CopyStack,
 	/* 0x0D  13 */ 0,
 	/* 0x0E  14 */ 0,
@@ -345,7 +346,7 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0x40  64 */ Opcode_Ternary,
 	/* 0x41  65 */ 0,
 	/* 0x42  66 */ Opcode_MulDiv,
-	/* 0x43  67 */ 0,
+	/* 0x43  67 */ Opcode_Direction,
 	/* 0x44  68 */ Opcode_Length3,
 	/* 0x45  69 */ 0,
 	/* 0x46  70 */ 0,
@@ -360,9 +361,9 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0x4F  79 */ 0,
 	/* 0x50  80 */ 0,
 	/* 0x51  81 */ 0,
-	/* 0x52  82 */ 0,
-	/* 0x53  83 */ 0,
-	/* 0x54  84 */ 0,
+	/* 0x52  82 */ Opcode_Mul64,
+	/* 0x53  83 */ Opcode_Div64,
+	/* 0x54  84 */ Opcode_Mod64,
 	/* 0x55  85 */ 0,
 	/* 0x56  86 */ 0,
 	/* 0x57  87 */ 0,
@@ -376,19 +377,19 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0x5F  95 */ 0,
 	/* 0x60  96 */ Opcode_Memcpy,
 	/* 0x61  97 */ Opcode_Memclr,
-	/* 0x62  98 */ 0,
+	/* 0x62  98 */ Opcode_Memset,
 	/* 0x63  99 */ Opcode_Memeq,
-	/* 0x64 100 */ 0,
-	/* 0x65 101 */ 0,
-	/* 0x66 102 */ 0,
-	/* 0x67 103 */ 0,
+	/* 0x64 100 */ Opcode_Replicate,
+	/* 0x65 101 */ Opcode_FindElement,
+	/* 0x66 102 */ Opcode_FindBytes,
+	/* 0x67 103 */ Opcode_Replace,
 	/* 0x68 104 */ Opcode_Strlen,
 	/* 0x69 105 */ Opcode_Streq,
 	/* 0x6A 106 */ Opcode_Strcpy,
-	/* 0x6B 107 */ 0,
-	/* 0x6C 108 */ 0,
+	/* 0x6B 107 */ Opcode_Concat,
+	/* 0x6C 108 */ Opcode_CharacterInfo,
 	/* 0x6D 109 */ Opcode_StrToLower,
-	/* 0x6E 110 */ 0,
+	/* 0x6E 110 */ Opcode_Enclose,
 	/* 0x6F 111 */ Opcode_Sprintf,
 	/* 0x70 112 */ 0,
 	/* 0x71 113 */ 0,
@@ -401,7 +402,7 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0x78 120 */ 0,
 	/* 0x79 121 */ Opcode_ShowString,
 	/* 0x7A 122 */ Opcode_ShowNumber,
-	/* 0x7B 123 */ 0,
+	/* 0x7B 123 */ Opcode_HexDump,
 	/* 0x7C 124 */ 0,
 	/* 0x7D 125 */ 0,
 	/* 0x7E 126 */ 0,
@@ -1317,5 +1318,329 @@ uint32_t Opcode_Cos(Thread_t* thread)
 {
 	double theta = Xform_AngleRadians((int32_t)Thread_PopStack(thread));
 	Thread_PushStack(thread, (uint32_t)(int32_t)(cos(theta) * 65536.0));
+	return 0;
+}
+
+/*
+ * More base opcodes, from the local lane's trace (Droidtop/tracker#123, BGI 1.622). Pops are
+ * listed top first. Every pointer the original trusts is checked here against the room its
+ * script area has (Thread_ResolveSpan); one that does not fit stops the thread by name.
+ */
+static uint8_t* Opcode_Span(Thread_t* thread, uint32_t address, uint64_t need, const char* what)
+{
+	uint32_t room = 0;
+	uint8_t* p = Thread_ResolveSpan(thread, address, &room);
+	if(p == NULL || need > room)
+	{
+		printf("[Thread %d]: %sError: %s at 0x%08X needs %llu bytes; the area has %u\n", thread->threadId,
+		       TLevel[thread->level], what, address, (unsigned long long)need, room);
+		thread->running = 0;
+		thread->error = 1;
+		return NULL;
+	}
+	return p;
+}
+
+// A NUL-terminated string at a script address, its length within the area, or NULL.
+static const char* Opcode_String(Thread_t* thread, uint32_t address, size_t* length, const char* what)
+{
+	uint32_t room = 0;
+	const char* p = (const char*)Thread_ResolveSpan(thread, address, &room);
+	size_t n = p != NULL ? strnlen(p, room) : 0;
+	if(p == NULL || n == room)
+	{
+		printf("[Thread %d]: %sError: %s at 0x%08X is not a string inside its area\n", thread->threadId,
+		       TLevel[thread->level], what, address);
+		thread->running = 0;
+		thread->error = 1;
+		return NULL;
+	}
+	*length = n;
+	return p;
+}
+
+/*
+ * 0x0B: inline data. Pops a destination, reads one operand byte n and copies the next n
+ * bytes of code there, skipping them. The original copies nothing and does not advance
+ * when fewer than n bytes remain; that stops the thread here.
+ */
+uint32_t Opcode_InlineData(Thread_t* thread)
+{
+	uint32_t address = Thread_PopStack(thread);
+	uint32_t n = Thread_ReadCode8(thread);
+	if(thread->nextInstructionPointer > thread->codeSize || n > thread->codeSize - thread->nextInstructionPointer)
+	{
+		printf("[Thread %d]: %sError: 0x0B's %u bytes run past the code\n", thread->threadId, TLevel[thread->level], n);
+		thread->running = 0;
+		thread->error = 1;
+		return 0xFFFFFFFF;
+	}
+	uint8_t* dst = Opcode_Span(thread, address, n, "0x0B's destination");
+	if(dst == NULL)
+		return 0xFFFFFFFF;
+	memcpy(dst, thread->code + thread->nextInstructionPointer, n);
+	thread->nextInstructionPointer += n;
+	return 0;
+}
+
+/*
+ * 0x43: pops y (top), then x, and pushes the direction of (x, y) in degrees x 65536 in
+ * [0, 360): 0 for (0, 0), 90 or 270 for x = 0, atan(y / x) for x > 0 and y >= 0, 360 less
+ * it for x > 0 and y < 0, and 180 plus it for x < 0. y / x is in floating point.
+ */
+uint32_t Opcode_Direction(Thread_t* thread)
+{
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	const double scale = 180.0 * 65536.0 / 3.141592653589793;
+	int64_t result;
+	if(x == 0)
+		result = y == 0 ? 0 : y > 0 ? 90 * 65536 : 270 * 65536;
+	else
+	{
+		double a = atan((double)y / (double)x);
+		if(x > 0 && y >= 0)
+			result = (int64_t)(a * scale);
+		else if(x > 0)
+			result = 360LL * 65536 - (int64_t)(a * -scale);
+		else
+			result = 180LL * 65536 - (int64_t)(a * -scale);
+	}
+	Thread_PushStack(thread, (uint32_t)result);
+	return 0;
+}
+
+/*
+ * 0x52 / 0x53 / 0x54: pop pointers A, B and R; *R = *B * *A, *B / *A or *B % *A on signed
+ * 64-bit values in memory. The original faults on a zero divisor; here 0 is written and
+ * logged.
+ */
+static uint32_t Opcode_Arith64(Thread_t* thread, int op)
+{
+	uint32_t a = Thread_PopStack(thread), b = Thread_PopStack(thread), r = Thread_PopStack(thread);
+	uint8_t* pa = Opcode_Span(thread, a, 8, "a 64-bit operand");
+	uint8_t* pb = pa != NULL ? Opcode_Span(thread, b, 8, "a 64-bit operand") : NULL;
+	uint8_t* pr = pb != NULL ? Opcode_Span(thread, r, 8, "a 64-bit result") : NULL;
+	if(pr == NULL)
+		return 0xFFFFFFFF;
+	int64_t va, vb, vr;
+	memcpy(&va, pa, 8);
+	memcpy(&vb, pb, 8);
+	if(op == 0)
+		vr = (int64_t)((uint64_t)vb * (uint64_t)va);
+	else if(va == 0 || (va == -1 && vb == INT64_MIN))
+	{
+		printf("[Thread %d]: %sWarning: a 64-bit %s by %lld; 0 written\n", thread->threadId, TLevel[thread->level],
+		       op == 1 ? "division" : "remainder", (long long)va);
+		vr = 0;
+	}
+	else
+		vr = op == 1 ? vb / va : vb % va;
+	memcpy(pr, &vr, 8);
+	return 0;
+}
+uint32_t Opcode_Mul64(Thread_t* thread) { return Opcode_Arith64(thread, 0); }
+uint32_t Opcode_Div64(Thread_t* thread) { return Opcode_Arith64(thread, 1); }
+uint32_t Opcode_Mod64(Thread_t* thread) { return Opcode_Arith64(thread, 2); }
+
+// 0x62: pops a value v, a count n and a pointer D; n bytes at D become v's low byte.
+uint32_t Opcode_Memset(Thread_t* thread)
+{
+	uint32_t v = Thread_PopStack(thread), n = Thread_PopStack(thread), d = Thread_PopStack(thread);
+	uint8_t* p = Opcode_Span(thread, d, n, "0x62's destination");
+	if(p == NULL)
+		return 0xFFFFFFFF;
+	memset(p, (int)(v & 0xFF), n);
+	return 0;
+}
+
+// 0x64: pops a source S, a count c, an element size s and a destination D; S's s bytes are
+// copied into D c times, end to end.
+uint32_t Opcode_Replicate(Thread_t* thread)
+{
+	uint32_t src = Thread_PopStack(thread), c = Thread_PopStack(thread), size = Thread_PopStack(thread), dst = Thread_PopStack(thread);
+	uint8_t* ps = Opcode_Span(thread, src, size, "0x64's source");
+	uint8_t* pd = ps != NULL ? Opcode_Span(thread, dst, (uint64_t)size * c, "0x64's destination") : NULL;
+	if(pd == NULL)
+		return 0xFFFFFFFF;
+	for(uint32_t k = 0; k < c; k++)
+		memmove(pd + (size_t)k * size, ps, size);
+	return 0;
+}
+
+// 0x65: pops a key K, a count n, an element size s and an array A; pushes the index of the
+// first element equal to K's s bytes, or -1 (also for n = 0).
+uint32_t Opcode_FindElement(Thread_t* thread)
+{
+	uint32_t key = Thread_PopStack(thread), n = Thread_PopStack(thread), size = Thread_PopStack(thread), array = Thread_PopStack(thread);
+	int32_t found = -1;
+	if(n != 0 && size != 0)
+	{
+		uint8_t* pk = Opcode_Span(thread, key, size, "0x65's key");
+		uint8_t* pa = pk != NULL ? Opcode_Span(thread, array, (uint64_t)size * n, "0x65's array") : NULL;
+		if(pa == NULL)
+			return 0xFFFFFFFF;
+		for(uint32_t k = 0; k < n && found < 0; k++)
+			if(memcmp(pa + (size_t)k * size, pk, size) == 0)
+				found = (int32_t)k;
+	}
+	Thread_PushStack(thread, (uint32_t)found);
+	return 0;
+}
+
+// 0x66: pops a needle N and a haystack H; pushes N's first byte offset in H, or -1. A plain
+// byte search, as the original's: a double-byte character can match across a boundary.
+uint32_t Opcode_FindBytes(Thread_t* thread)
+{
+	uint32_t needle = Thread_PopStack(thread), hay = Thread_PopStack(thread);
+	size_t nl, hl;
+	const char* pn = Opcode_String(thread, needle, &nl, "0x66's needle");
+	const char* ph = pn != NULL ? Opcode_String(thread, hay, &hl, "0x66's haystack") : NULL;
+	if(ph == NULL)
+		return 0xFFFFFFFF;
+	const char* at = strstr(ph, pn);
+	Thread_PushStack(thread, at != NULL ? (uint32_t)(at - ph) : 0xFFFFFFFFu);
+	return 0;
+}
+
+// 0x67: pops a replacement R, a search S, a source X and a destination D; D gets X with
+// every S replaced by R, and the count of replacements is pushed. An empty S is refused
+// (the original loops on it).
+uint32_t Opcode_Replace(Thread_t* thread)
+{
+	uint32_t r = Thread_PopStack(thread), s = Thread_PopStack(thread), x = Thread_PopStack(thread), d = Thread_PopStack(thread);
+	size_t rl, sl, xl;
+	const char* pr = Opcode_String(thread, r, &rl, "0x67's replacement");
+	const char* ps = pr != NULL ? Opcode_String(thread, s, &sl, "0x67's search") : NULL;
+	const char* px = ps != NULL ? Opcode_String(thread, x, &xl, "0x67's source") : NULL;
+	if(px == NULL)
+		return 0xFFFFFFFF;
+	if(sl == 0)
+	{
+		printf("[Thread %d]: %sError: 0x67 with an empty search string\n", thread->threadId, TLevel[thread->level]);
+		thread->running = 0;
+		thread->error = 1;
+		return 0xFFFFFFFF;
+	}
+	// Built aside first: the destination may be the source.
+	size_t cap = xl + 1, len = 0;
+	uint32_t count = 0;
+	for(const char* q = px; (q = strstr(q, ps)) != NULL; q += sl)
+		count++;
+	cap += (size_t)count * (rl > sl ? rl - sl : 0);
+	char* out = (char*)malloc(cap);
+	if(out == NULL)
+		return 0xFFFFFFFF;
+	for(const char* q = px; *q != 0;)
+	{
+		if(strncmp(q, ps, sl) == 0)
+		{
+			memcpy(out + len, pr, rl);
+			len += rl;
+			q += sl;
+		}
+		else
+			out[len++] = *q++;
+	}
+	out[len] = 0;
+	uint8_t* pd = Opcode_Span(thread, d, len + 1, "0x67's destination");
+	if(pd != NULL)
+		memcpy(pd, out, len + 1);
+	free(out);
+	if(pd == NULL)
+		return 0xFFFFFFFF;
+	Thread_PushStack(thread, count);
+	return 0;
+}
+
+// 0x6B: pops A, B and D; D becomes B followed by A.
+uint32_t Opcode_Concat(Thread_t* thread)
+{
+	uint32_t a = Thread_PopStack(thread), b = Thread_PopStack(thread), d = Thread_PopStack(thread);
+	size_t al, bl;
+	const char* pa = Opcode_String(thread, a, &al, "0x6B's second part");
+	const char* pb = pa != NULL ? Opcode_String(thread, b, &bl, "0x6B's first part") : NULL;
+	if(pb == NULL)
+		return 0xFFFFFFFF;
+	char* out = (char*)malloc(al + bl + 1);
+	if(out == NULL)
+		return 0xFFFFFFFF;
+	memcpy(out, pb, bl);
+	memcpy(out + bl, pa, al + 1);
+	uint8_t* pd = Opcode_Span(thread, d, al + bl + 1, "0x6B's destination");
+	if(pd != NULL)
+		memcpy(pd, out, al + bl + 1);
+	free(out);
+	return pd != NULL ? 0 : 0xFFFFFFFF;
+}
+
+// 0x6C: pops a string and reads its first character; pushes its code (lead byte high), then
+// whether it took two bytes, then whether it is in the line-start kinsoku list (on top).
+uint32_t Opcode_CharacterInfo(Thread_t* thread)
+{
+	size_t n;
+	const char* p = Opcode_String(thread, Thread_PopStack(thread), &n, "0x6C's string");
+	if(p == NULL)
+		return 0xFFFFFFFF;
+	uint32_t code = 0;
+	int wide = n >= 1 ? Text_DecodeCharacter(p, &code) : 0;
+	if(wide && n < 2)
+		wide = 0, code = (uint8_t)p[0];
+	Thread_PushStack(thread, code);
+	Thread_PushStack(thread, (uint32_t)wide);
+	Thread_PushStack(thread, (uint32_t)(Text_IsNoLineStart(p) != 0));
+	return 0;
+}
+
+// 0x6E: pops a character c, a string S and a destination D; D becomes c, S, c.
+uint32_t Opcode_Enclose(Thread_t* thread)
+{
+	uint32_t c = Thread_PopStack(thread), s = Thread_PopStack(thread), d = Thread_PopStack(thread);
+	size_t sl;
+	const char* ps = Opcode_String(thread, s, &sl, "0x6E's string");
+	if(ps == NULL)
+		return 0xFFFFFFFF;
+	char* out = (char*)malloc(sl + 3);
+	if(out == NULL)
+		return 0xFFFFFFFF;
+	out[0] = (char)c;
+	memcpy(out + 1, ps, sl);
+	out[sl + 1] = (char)c;
+	out[sl + 2] = 0;
+	uint8_t* pd = Opcode_Span(thread, d, sl + 3, "0x6E's destination");
+	if(pd != NULL)
+		memcpy(pd, out, sl + 3);
+	free(out);
+	return pd != NULL ? 0 : 0xFFFFFFFF;
+}
+
+// 0x7B: pops a size n (1-0x400, else fatal), a source and a title; a hex dump, 16 bytes a
+// line, logged rather than shown.
+uint32_t Opcode_HexDump(Thread_t* thread)
+{
+	uint32_t n = Thread_PopStack(thread), src = Thread_PopStack(thread), title = Thread_PopStack(thread);
+	if(n < 1 || n > 0x400)
+	{
+		printf("[Thread %d]: %sError: 0x7B with a size of %u\n", thread->threadId, TLevel[thread->level], n);
+		thread->running = 0;
+		thread->error = 1;
+		return 0xFFFFFFFF;
+	}
+	size_t tl;
+	const char* pt = Opcode_String(thread, title, &tl, "0x7B's title");
+	const uint8_t* ps = pt != NULL ? Opcode_Span(thread, src, n, "0x7B's source") : NULL;
+	if(ps == NULL)
+		return 0xFFFFFFFF;
+	printf("[Thread %d]: %sScript dump (0x7B): %s\n", thread->threadId, TLevel[thread->level], pt);
+	for(uint32_t at = 0; at < n; at += 16)
+	{
+		char hex[16 * 3 + 1] = { 0 }, text[17] = { 0 };
+		for(uint32_t k = 0; k < 16 && at + k < n; k++)
+		{
+			snprintf(hex + k * 3, 4, "%02X ", ps[at + k]);
+			text[k] = ps[at + k] < 0x20 ? ' ' : (char)ps[at + k];
+		}
+		printf("[Thread %d]: %s0x%04X : %-48s%s\n", thread->threadId, TLevel[thread->level], at, hex, text);
+	}
 	return 0;
 }
