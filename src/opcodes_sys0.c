@@ -2408,9 +2408,20 @@ uint32_t Opcode_Sys0_Unknown_227(Thread_t* thread)
 
 uint32_t Opcode_Sys0_GetGameId(Thread_t* thread)
 {
-	uint8_t* destination = Thread_PopAndResolveAddress(thread);
-	memcpy(destination, gGameId, ENGINE_GAME_ID_SIZE);
-	printf("[Thread %d]: %sGame id is \"%.*s\"\n", thread->threadId, TLevel[thread->level], ENGINE_GAME_ID_SIZE, gGameId);
+	// Copied up to its NUL, as the original does: a fixed longer copy would overwrite the
+	// script's neighbouring variables (Droidtop/tracker#123).
+	uint32_t room = 0;
+	uint8_t* destination = Thread_ResolveSpan(thread, Thread_PopStack(thread), &room);
+	size_t length = strnlen(gGameId, ENGINE_GAME_ID_SIZE - 1);
+	if(destination == NULL || length + 1 > room)
+	{
+		printf("[Thread %d]: %sError: the game id does not fit where Sys0 0xE8 was asked to put it\n",
+		       thread->threadId, TLevel[thread->level]);
+		return 0xFFFFFFFF;
+	}
+	memcpy(destination, gGameId, length);
+	destination[length] = 0;
+	printf("[Thread %d]: %sGame id is \"%s\"\n", thread->threadId, TLevel[thread->level], gGameId);
 	return 0;
 }
 

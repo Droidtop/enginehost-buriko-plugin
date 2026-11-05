@@ -64,6 +64,12 @@ uint32_t Input_RegionTake(uint32_t vk, uint32_t key); // Sys0 0x1D (0x00488410)
 uint32_t Input_SetSwapButtons(uint32_t v);     // Sys0 0x1E (0x0048EFE0)
 uint32_t Input_ListTotals(const uint32_t* keys);// Sys0 0x12 (0x004881C0)
 
+// Sys1 0x1B: the pad button (0-35) to virtual-key table the original's joystick code
+// translates through. 1 when stored, 0 for a button out of range.
+#define INPUT_PAD_BUTTONS 36
+int      Input_SetPadKey(uint32_t button, uint32_t vk);
+uint32_t Input_PadKey(uint32_t button);
+
 // 0x0046D990 / 0x0046D9B0: whether a region key has the keyboard, the mouse.
 int Input_HasKeyboard(uint32_t key);
 int Input_HasMouse(uint32_t key);

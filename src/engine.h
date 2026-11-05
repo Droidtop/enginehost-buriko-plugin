@@ -269,7 +269,9 @@ extern uint32_t gLoadWaitDeadline;
 void Engine_SetLoadWaitTimeout(uint32_t timeout);
 int  Engine_LoadSynchronously(void);
 
-#define ENGINE_GAME_ID_SIZE 16
+// The longest game identifier seen is 25 characters (Yoake, BGI 1.69); 1.622's own copy is a
+// fixed 16 bytes, which cut longer ones and made ipl end every thread (Droidtop/tracker#123).
+#define ENGINE_GAME_ID_SIZE 64
 extern char gGameId[ENGINE_GAME_ID_SIZE];
 void Engine_SetGameId(const char* id);
 

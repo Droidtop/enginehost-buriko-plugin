@@ -104,6 +104,8 @@ uint32_t Text_PrintVertical(Renderer_t* renderer, Bitmap_t* target, int32_t* cur
 // 0x00437110: the records freed.
 void Text_FreeLayout(TextLayout_t* layout);
 int Text_IsNoLineStart(const char* p);
+void Text_SetLinkFont(const char* name, int32_t size, int32_t width);
+void Text_SetLinkColour(uint32_t colour);
 int Text_DecodeCharacter(const char* p, uint32_t* code);
 // 0x00437180: the ruby's size for text of this size.
 int32_t Text_RubySize(int32_t size);

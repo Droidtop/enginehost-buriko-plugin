@@ -1808,11 +1808,11 @@ void Engine_SetGameId(const char* id)
 	memset(gGameId, 0, sizeof(gGameId));
 	if(id == NULL)
 		return;
-	// The original copies a fixed 16 bytes, so an identifier that fills the field
-	// leaves no terminator; do the same rather than truncating to 15.
+	// Kept whole and terminated: identifiers run to 25 characters (tracker#123), and
+	// Sys0 0xE8 copies up to the NUL.
 	size_t length = strlen(id);
-	if(length > sizeof(gGameId))
-		length = sizeof(gGameId);
+	if(length > sizeof(gGameId) - 1)
+		length = sizeof(gGameId) - 1;
 	memcpy(gGameId, id, length);
 }
 

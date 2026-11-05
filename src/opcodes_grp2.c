@@ -171,9 +171,9 @@ char* OpcodesGrp2Mnemonics[256] = {
     /* 0x9A 154 */ "--Unknown--",
     /* 0x9B 155 */ "--Unknown--",
     /* 0x9C 156 */ "DrawText",
-    /* 0x9D 157 */ "--Unknown--",
+    /* 0x9D 157 */ "SetLinkFont",
     /* 0x9E 158 */ "--Unknown--",
-    /* 0x9F 159 */ "--Unknown--",
+    /* 0x9F 159 */ "SetLinkColour",
     /* 0xA0 160 */ "--Unknown--",
     /* 0xA1 161 */ "--Unknown--",
     /* 0xA2 162 */ "--Unknown--",
@@ -430,9 +430,9 @@ OpcodePtr_t OpcodesGrp2[256] = {
     /* 0x9A 154 */ NULL,
     /* 0x9B 155 */ NULL,
     /* 0x9C 156 */ Opcode_Grp2_DrawText,
-    /* 0x9D 157 */ NULL,
+    /* 0x9D 157 */ Opcode_Grp2_SetLinkFont,
     /* 0x9E 158 */ NULL,
-    /* 0x9F 159 */ NULL,
+    /* 0x9F 159 */ Opcode_Grp2_SetLinkColour,
     /* 0xA0 160 */ NULL,
     /* 0xA1 161 */ NULL,
     /* 0xA2 162 */ NULL,
@@ -918,5 +918,40 @@ uint32_t Opcode_Grp2_FillWindowBackground(Thread_t* thread)
 	}
 	if(Object_IsDrawable(window))
 		gObjectDamage++;
+	return 0;
+}
+
+/*
+ * Grp2 0x9D (0x00438080, Droidtop/tracker#123): the font a <l> link is drawn in. Pops two
+ * unused words, then the size, the width and the font number; pushes 0, or 0x80000004 for a
+ * font number that names no font and 0x80000005 for a size that is not one.
+ */
+uint32_t Opcode_Grp2_SetLinkFont(Thread_t* thread)
+{
+	Thread_PopStack(thread);
+	Thread_PopStack(thread);
+	int32_t size = (int32_t)Thread_PopStack(thread);
+	int32_t width = (int32_t)Thread_PopStack(thread);
+	uint32_t fontNumber = Thread_PopStack(thread);
+	const char* name = Engine_FontNameById(fontNumber);
+	if(name == NULL)
+	{
+		Thread_PushStack(thread, 0x80000004u);
+		return 0;
+	}
+	if(size <= 0)
+	{
+		Thread_PushStack(thread, 0x80000005u);
+		return 0;
+	}
+	Text_SetLinkFont(name, size, width);
+	Thread_PushStack(thread, 0);
+	return 0;
+}
+
+// Grp2 0x9F (0x00438130): the colour a <l> link is drawn in. Pops it; no push.
+uint32_t Opcode_Grp2_SetLinkColour(Thread_t* thread)
+{
+	Text_SetLinkColour(Thread_PopStack(thread));
 	return 0;
 }

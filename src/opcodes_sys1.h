@@ -25,7 +25,7 @@ uint32_t Opcode_Sys1_Unknown_22(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_23(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_24(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_25(Thread_t* thread);
-uint32_t Opcode_Sys1_Unknown_27(Thread_t* thread);
+uint32_t Opcode_Sys1_SetPadKey(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_29(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_30(Thread_t* thread);
 uint32_t Opcode_Sys1_SetSkipButtons(Thread_t* thread);

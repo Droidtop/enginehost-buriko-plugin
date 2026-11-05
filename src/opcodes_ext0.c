@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include "font.h"
+#include <string.h>
 #include "engine.h"
 #include "opcodes.h"
 #include "opcodes_ext0.h"
@@ -9,7 +11,7 @@
 char* OpcodesExt0Mnemonics[256] = {
     /* 0x00   0 */ "Unknown_0",
     /* 0x01   1 */ "--Unknown--",
-    /* 0x02   2 */ "--Unknown--",
+    /* 0x02   2 */ "CentreWindow",
     /* 0x03   3 */ "MoveWindow",
     /* 0x04   4 */ "Unknown_4",
     /* 0x05   5 */ "SetCursorAutoHideTimeout",
@@ -202,7 +204,7 @@ char* OpcodesExt0Mnemonics[256] = {
     /* 0xC0 192 */ "--Unknown--",
     /* 0xC1 193 */ "RegisterFont",
     /* 0xC2 194 */ "--Unknown--",
-    /* 0xC3 195 */ "--Unknown--",
+    /* 0xC3 195 */ "RegisterFontFile",
     /* 0xC4 196 */ "EnumerateFontFamilies",
     /* 0xC5 197 */ "--Unknown--",
     /* 0xC6 198 */ "--Unknown--",
@@ -268,7 +270,7 @@ char* OpcodesExt0Mnemonics[256] = {
 OpcodePtr_t OpcodesExt0[256] = {
     /* 0x00   0 */ Opcode_Ext0_Unknown_0,
     /* 0x01   1 */ NULL,
-    /* 0x02   2 */ NULL,
+    /* 0x02   2 */ Opcode_Ext0_CentreWindow,
     /* 0x03   3 */ Opcode_Ext0_MoveWindow,
     /* 0x04   4 */ Opcode_Ext0_Unknown_4,
     /* 0x05   5 */ Opcode_Ext0_SetCursorAutoHideTimeout,
@@ -461,7 +463,7 @@ OpcodePtr_t OpcodesExt0[256] = {
     /* 0xC0 192 */ NULL,
     /* 0xC1 193 */ Opcode_Ext0_RegisterFont,
     /* 0xC2 194 */ NULL,
-    /* 0xC3 195 */ NULL,
+    /* 0xC3 195 */ Opcode_Ext0_RegisterFontFile,
     /* 0xC4 196 */ Opcode_Ext0_EnumerateFontFamilies,
     /* 0xC5 197 */ NULL,
     /* 0xC6 198 */ NULL,
@@ -705,5 +707,59 @@ uint32_t Opcode_Ext0_MoveWindow(Thread_t* thread)
 	(void)top;
 	(void)left;
 	Thread_PushStack(thread, 0);
+	return 0;
+}
+
+// Ext0 0x02 (0xB002): the original centres its window when windowed; this host's screen is the
+// game's, so there is nothing to move. Pushes 1, as the original does (Droidtop/tracker#123).
+uint32_t Opcode_Ext0_CentreWindow(Thread_t* thread)
+{
+	Thread_PushStack(thread, 1);
+	return 0;
+}
+
+/*
+ * Ext0 0xC3 (0xB0C3): a game's own font file (Droidtop/tracker#123, the local lane's trace of
+ * Houkago and Daitoshokan's ipl). Pops the file name (top) and the archive name; an archive of
+ * 0 is a loose file in the game folder. The original registers a loose one system-wide and an
+ * archived one privately; here both are private to the engine, under the family names the file
+ * declares, which the script then names to Ext0 0xC1. A file already registered is not read
+ * again. Pushes 0 when it is registered, 1 when it could not be.
+ */
+#define EXT0_FONT_FILES_MAX 16
+static char gRegisteredFontFiles[EXT0_FONT_FILES_MAX][128];
+static int gRegisteredFontFileCount = 0;
+
+uint32_t Opcode_Ext0_RegisterFontFile(Thread_t* thread)
+{
+	const char* file = (const char*)Thread_PopAndResolveAddress(thread);
+	uint32_t archiveAddress = Thread_PopStack(thread);
+	const char* archive = archiveAddress != 0 ? (const char*)Thread_ResolveAddr(thread, archiveAddress) : NULL;
+	if(file == NULL)
+	{
+		Thread_PushStack(thread, 1);
+		return 0;
+	}
+	char key[128];
+	snprintf(key, sizeof(key), "%s|%s", archive != NULL ? archive : "", file);
+	for(int i = 0; i < gRegisteredFontFileCount; i++)
+	{
+		if(strcmp(gRegisteredFontFiles[i], key) == 0)
+		{
+			Thread_PushStack(thread, 0);
+			return 0;
+		}
+	}
+	size_t size = 0;
+	uint8_t* data = archive != NULL ? Engine_ReadFile(thread->engine, archive, file, &size) : Engine_ReadLooseFile(file, &size);
+	char family[128];
+	int ok = data != NULL && Font_RegisterMemory(data, size, family, sizeof(family));
+	free(data);
+	if(ok && gRegisteredFontFileCount < EXT0_FONT_FILES_MAX)
+		snprintf(gRegisteredFontFiles[gRegisteredFontFileCount++], sizeof(key), "%s", key);
+	printf("[Thread %d]: %sGame font %s%s%s: %s%s\n", thread->threadId, TLevel[thread->level],
+	       archive != NULL ? archive : "", archive != NULL ? " : " : "", file,
+	       ok ? "registered as " : "could not be registered", ok ? family : "");
+	Thread_PushStack(thread, ok ? 0 : 1);
 	return 0;
 }

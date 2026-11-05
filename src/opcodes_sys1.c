@@ -5,6 +5,7 @@
 #include "engine.h"
 #include "opcodes.h"
 #include "opcodes_sys1.h"
+#include "input.h"
 #include "thread.h"
 
 // process.c: 0x00507690.
@@ -45,7 +46,7 @@ char* OpcodesSys1Mnemonics[256] = {
 	/* 0x18  24 */ "Unknown_24",
 	/* 0x19  25 */ "Unknown_25",
 	/* 0x1A  26 */ "--Unknown--",
-	/* 0x1B  27 */ "Unknown_27",
+	/* 0x1B  27 */ "SetPadKey",
 	/* 0x1C  28 */ "--Unknown--",
 	/* 0x1D  29 */ "Unknown_29",
 	/* 0x1E  30 */ "Unknown_30",
@@ -304,7 +305,7 @@ OpcodePtr_t OpcodesSys1[256] = {
 	/* 0x18  24 */ Opcode_Sys1_Unknown_24,
 	/* 0x19  25 */ Opcode_Sys1_Unknown_25,
 	/* 0x1A  26 */ NULL,
-	/* 0x1B  27 */ Opcode_Sys1_Unknown_27,
+	/* 0x1B  27 */ Opcode_Sys1_SetPadKey,
 	/* 0x1C  28 */ NULL,
 	/* 0x1D  29 */ Opcode_Sys1_Unknown_29,
 	/* 0x1E  30 */ Opcode_Sys1_Unknown_30,
@@ -620,9 +621,19 @@ uint32_t Opcode_Sys1_Unknown_25(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys1_Unknown_27(Thread_t* thread)
+/*
+ * Sys1 0x1B (0x811B): one pad mapping (Droidtop/tracker#123, Houkago's yesnownd+0x16C6). Pops a
+ * virtual-key code (top) and a pad button index 0-35, and stores the key in the pad button to
+ * key table the original's joystick code translates through; pushes 0, or 0x80000002 for an
+ * index of 36 or more. The table is kept (Input_SetPadKey); this host's controller reaches the
+ * game through Enginehost's own key mapping, which does not read it yet.
+ */
+uint32_t Opcode_Sys1_SetPadKey(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t vk = Thread_PopStack(thread);
+	uint32_t button = Thread_PopStack(thread);
+	Thread_PushStack(thread, Input_SetPadKey(button, vk) ? 0 : 0x80000002u);
+	return 0;
 }
 
 uint32_t Opcode_Sys1_Unknown_29(Thread_t* thread)
