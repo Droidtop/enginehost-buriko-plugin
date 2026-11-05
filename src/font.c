@@ -228,6 +228,8 @@ static uint8_t* Font_LoadFile(const char* path, size_t* sizeOut)
 	return file;
 }
 
+static void Font_AddAllFamilyNames(const uint8_t* file, size_t fileSize, uint32_t base, const char* path, int faceIndex);
+
 // Every face in a font file's bytes added as a family under `path`; the first face's family
 // name into `first` when it is not NULL.
 static void Font_ReadBuffer(const uint8_t* file, size_t size, const char* path, char* first, size_t firstSize)
@@ -256,6 +258,69 @@ static void Font_ReadBuffer(const uint8_t* file, size_t size, const char* path, 
 		Font_AddFamily(family, path, (int)i, regular);
 		if(first != NULL && first[0] == 0)
 			snprintf(first, firstSize, "%s", family);
+		// A game's own font answers to every name it declares, Japanese included.
+		if(strncmp(path, "mem:", 4) == 0)
+			Font_AddAllFamilyNames(file, size, base, path, (int)i);
+	}
+}
+
+// Every family name (name id 1) a font's name table holds, each added as a family of `path`:
+// the Windows records turned from UTF-16 into CP932, the names a Japanese system reports and
+// a script passes (Ext0 0xC1, 0xC7). A record with a character CP932 cannot hold is skipped.
+// For a game's own fonts (Droidtop/tracker#123: Houkago names "A-OTF UD Reimin Pro L" by its
+// Japanese family name).
+static void Font_AddAllFamilyNames(const uint8_t* file, size_t fileSize, uint32_t base, const char* path, int faceIndex)
+{
+	if(base + 12 > fileSize)
+		return;
+	uint16_t tableCount = Font_ReadU16(file + base + 4);
+	uint32_t nameOffset = 0;
+	for(uint16_t i = 0; i < tableCount; i++)
+	{
+		uint32_t entry = base + 12 + i * 16;
+		if(entry + 16 > fileSize)
+			return;
+		if(memcmp(file + entry, "name", 4) == 0)
+		{
+			nameOffset = Font_ReadU32(file + entry + 8);
+			break;
+		}
+	}
+	if(nameOffset == 0 || nameOffset + 6 > fileSize)
+		return;
+	uint16_t recordCount = Font_ReadU16(file + nameOffset + 2);
+	uint16_t stringBase = Font_ReadU16(file + nameOffset + 4);
+	for(uint16_t i = 0; i < recordCount; i++)
+	{
+		uint32_t record = nameOffset + 6 + i * 12;
+		if(record + 12 > fileSize)
+			return;
+		uint16_t platform = Font_ReadU16(file + record);
+		uint16_t id = Font_ReadU16(file + record + 6);
+		uint16_t length = Font_ReadU16(file + record + 8);
+		uint16_t offset = Font_ReadU16(file + record + 10);
+		uint32_t at = nameOffset + stringBase + offset;
+		if(id != 1 || platform != 3 || at + length > fileSize)
+			continue;
+		char name[FONT_MAX_NAME];
+		size_t n = 0;
+		int ok = 1;
+		for(uint16_t k = 0; k + 1 < length && ok; k += 2)
+		{
+			uint8_t bytes[2];
+			int got = Utf16ToSjis(Font_ReadU16(file + at + k), bytes);
+			if(got == 0 || n + (size_t)got + 1 > sizeof(name))
+				ok = 0;
+			else
+			{
+				memcpy(name + n, bytes, (size_t)got);
+				n += (size_t)got;
+			}
+		}
+		if(!ok || n == 0)
+			continue;
+		name[n] = 0;
+		Font_AddFamily(name, path, faceIndex, 1);
 	}
 }
 
