@@ -112,7 +112,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x59  89 */ "Unknown_89",
 	/* 0x5A  90 */ "Unknown_90",
 	/* 0x5B  91 */ "Unknown_91",
-	/* 0x5C  92 */ "Unknown_92",
+	/* 0x5C  92 */ "MixBitmapsSprite",
 	/* 0x5D  93 */ "--Unknown--",
 	/* 0x5E  94 */ "--Unknown--",
 	/* 0x5F  95 */ "--Unknown--",
@@ -371,7 +371,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x59  89 */ Opcode_Grp0_Unknown_89,
 	/* 0x5A  90 */ Opcode_Grp0_Unknown_90,
 	/* 0x5B  91 */ Opcode_Grp0_Unknown_91,
-	/* 0x5C  92 */ Opcode_Grp0_Unknown_92,
+	/* 0x5C  92 */ Opcode_Grp0_MixBitmapsSprite,
 	/* 0x5D  93 */ NULL,
 	/* 0x5E  94 */ NULL,
 	/* 0x5F  95 */ NULL,
@@ -1871,8 +1871,62 @@ uint32_t Opcode_Grp0_Unknown_91(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Grp0_Unknown_92(Thread_t* thread)
+/*
+ * Grp0 0x5C (0x0000905C; Daitoshokan's title+0x20A8; 1.622 handler 0x0047CD90): a sprite
+ * whose picture is two same-sized bitmaps mixed by a ratio, drawn like any sprite with
+ * its own blend mode, effect level and layer. It pops seventeen values and pushes
+ * nothing. Known, from the handler's checks (RE lane on Droidtop/tracker#123), counting
+ * from the top as 1:
+ *   1 the layer (<= 0xFFFF), 2 the effect level (<= 0x100), 3 the blend mode (one of the
+ *   engine's), 6 a projection scale (has its own "invalid" error; its valid range is not
+ *   read), 11 the mix ratio (<= 0x100), 12 the second bitmap and 13 the first (0..0x3FFF;
+ *   both must exist and match in size and pixel mode), 17 probably the target sprite.
+ * Unknown: 4, 5, 7-10 and 14-16 (likely place, size and source offsets). Until they are
+ * read the call is checked as the original checks it and then stops by name with every
+ * value logged, rather than drawing on guessed positions.
+ */
+static int Grp0_IsBlendMode(uint32_t mode)
 {
+	return mode <= 9 || (mode >= 0x20 && mode <= 0x27) || mode == 0x40 || mode == 0x41 || mode == 0x80
+	    || mode == 0xC0 || mode == 0xC1 || mode == 0xF0 || mode == 0xFF;
+}
+
+uint32_t Opcode_Grp0_MixBitmapsSprite(Thread_t* thread)
+{
+	uint32_t v[18];
+	for(int i = 1; i <= 17; i++)
+		v[i] = Thread_PopStack(thread);
+	Renderer_t* renderer = thread->engine->renderer;
+	const char* error = NULL;
+	if(v[1] > 0xFFFF)
+		error = "invalid priority";
+	else if(v[2] > 0x100)
+		error = "invalid effect level";
+	else if(!Grp0_IsBlendMode(v[3]))
+		error = "invalid effect mode";
+	else if(v[11] > 0x100)
+		error = "invalid mix ratio";
+	else
+	{
+		Bitmap_t* first = v[13] <= 0x3FFF ? Renderer_ResolveBitmap(renderer, (int)v[13]) : NULL;
+		Bitmap_t* second = v[12] <= 0x3FFF ? Renderer_ResolveBitmap(renderer, (int)v[12]) : NULL;
+		if(first == NULL || second == NULL)
+			error = "one of the bitmaps is invalid";
+		else if(first->width != second->width || first->height != second->height || first->mode != second->mode)
+			error = "the bitmaps differ in size or pixel mode";
+	}
+	printf("[Thread %d]: %sGrp0 0x5C values (top first):", thread->threadId, TLevel[thread->level]);
+	for(int i = 1; i <= 17; i++)
+		printf(" %d=0x%X", i, v[i]);
+	printf("\n");
+	if(error != NULL)
+	{
+		printf("[Thread %d]: %sError: Grp0 0x5C: %s (bitmaps [ %d, %d ])\n", thread->threadId,
+		       TLevel[thread->level], error, (int32_t)v[13], (int32_t)v[12]);
+		return 0xFFFFFFFC;
+	}
+	Engine_StopWithMessage("Grp0 0x5C, a sprite mixing two bitmaps, is not built yet: positions 4, 5, 7-10 and "
+	                       "14-16 of its call are not read");
 	return 0xFFFFFFFF;
 }
 

@@ -79,7 +79,7 @@ uint32_t Opcode_Grp0_Unknown_88(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_89(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_90(Thread_t* thread);
 uint32_t Opcode_Grp0_Unknown_91(Thread_t* thread);
-uint32_t Opcode_Grp0_Unknown_92(Thread_t* thread);
+uint32_t Opcode_Grp0_MixBitmapsSprite(Thread_t* thread);
 uint32_t Opcode_Grp0_CreateFilterObject(Thread_t* thread);
 uint32_t Opcode_Grp0_DestroyFilterObject(Thread_t* thread);
 uint32_t Opcode_Grp0_ShowFilterObject(Thread_t* thread);
