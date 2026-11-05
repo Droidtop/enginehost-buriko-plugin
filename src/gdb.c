@@ -716,8 +716,17 @@ static int gGdbUnreadable = 0;
 
 static uint32_t GDB_Read(uint8_t* globalMem, uint32_t globalSize, int32_t* left, int32_t* top);
 
+// Which layout BGI.gdb was read in, so a save writes it back the same way: a game's own
+// runtime reads only its own layout (1.580 rejects a 3.00 file, RE lane on #123). The
+// older layout also keeps the window position it was read with, since this engine's
+// window has none of its own to write.
+static int gGdbOldLayout = 0;
+static int32_t gGdbOldLeft = 0;
+static int32_t gGdbOldTop = 0;
+
 uint32_t GDB_Load(uint8_t* globalMem, uint32_t globalSize, int32_t* left, int32_t* top)
 {
+	gGdbOldLayout = 0;
 	uint32_t status = GDB_Read(globalMem, globalSize, left, top);
 	gGdbUnreadable = status == 0x80000002u;
 	return status;
@@ -782,8 +791,11 @@ static uint32_t GDB_ReadOldLayout(const uint8_t* d, uint32_t dsize, uint8_t* glo
 		}
 	}
 
-	if(left) *left = (int32_t)Rd32(d + 0x00);
-	if(top) *top = (int32_t)Rd32(d + 0x04);
+	gGdbOldLeft = (int32_t)Rd32(d + 0x00);
+	gGdbOldTop = (int32_t)Rd32(d + 0x04);
+	gGdbOldLayout = 1;
+	if(left) *left = gGdbOldLeft;
+	if(top) *top = gGdbOldTop;
 	if(globalMem)
 		memcpy(globalMem, d + 0x08, globalSize < 0x400 ? globalSize : 0x400);
 	uint8_t* block = Persistent_Block();
@@ -818,8 +830,12 @@ static uint32_t GDB_ReadOldLayout(const uint8_t* d, uint32_t dsize, uint8_t* glo
 		uint32_t bits = Rd32(r + 0x18);
 		if(bits == 0)
 			continue;
-		char name[25];
+		// A name runs to its NUL within 0x18 bytes: one of more than 0x17 characters is
+		// invalid to 1.580's reader (RE lane on #123) and is skipped here too.
+		char name[24];
 		size_t n = strnlen((const char*)r, 24);
+		if(n > 0x17)
+			continue;
 		memcpy(name, r, n);
 		name[n] = 0;
 		if(Flags_Define(name, bits) != 0)
@@ -906,6 +922,100 @@ static uint32_t GDB_Read(uint8_t* globalMem, uint32_t globalSize, int32_t* left,
 	return 0;
 }
 
+/*
+ * The older layout written back, as 1.580's writer (0x00455710) writes it: always the
+ * long form, one flat image wrapped in SDC, no 3.00 header (RE lane on #123):
+ *   +0 the window position; +8 0x400 bytes of global memory; +0x408 0x40000 bytes of
+ *   the persistent block; +0x40408 0x4000 string slots of 32 bytes, table 0x80000000's
+ *   strings in order; +0xC0408 0x800 flag slots of 32 bytes (name up to 0x17 characters,
+ *   +0x18 bit count, +0x1C byte offset), the rest zero; +0xD0408 each flag array's
+ *   (bits + 7) >> 3 bytes, back to back in slot order.
+ * What does not fit those fixed slots is logged and left out - a string of 32 bytes or
+ * more is cut to 31, strings past 0x4000 and flag arrays past 0x800 or with a longer
+ * name are dropped - which is all the original's own file can hold.
+ */
+static uint32_t GDB_WriteOldLayout(const uint8_t* globalMem, uint32_t globalSize)
+{
+	uint32_t data = 0;
+	for(FlagEntry_t* f = gFlags; f; f = f->next)
+		data += FlagBytes(f->bits);
+	uint32_t total = 0xD0408u + data;
+	uint8_t* d = (uint8_t*)calloc(1, total);
+	if(d == NULL)
+		return 0;
+	Wr32(d + 0x00, (uint32_t)gGdbOldLeft);
+	Wr32(d + 0x04, (uint32_t)gGdbOldTop);
+	if(globalMem)
+		memcpy(d + 0x08, globalMem, globalSize < 0x400 ? globalSize : 0x400);
+	memcpy(d + 0x408, Persistent_Block(), 0x40000);
+
+	uint32_t strings = StrTab_Count(STRTAB_GLOBAL_ID), cut = 0;
+	if(strings > GDB_OLD_LONG_SLOTS)
+	{
+		printf("[GDB]: %u strings, the older layout holds 0x%X: the rest are left out\n", strings, GDB_OLD_LONG_SLOTS);
+		strings = GDB_OLD_LONG_SLOTS;
+	}
+	for(uint32_t i = 0; i < strings; i++)
+	{
+		uint32_t length = 0;
+		if(StrTab_Read(STRTAB_GLOBAL_ID, (int32_t)i, NULL, &length) != 0)
+			continue;
+		char* text = (char*)malloc(length + 1);
+		if(text == NULL)
+			continue;
+		StrTab_Read(STRTAB_GLOBAL_ID, (int32_t)i, text, NULL);
+		if(length >= GDB_OLD_SLOT_SIZE)
+		{
+			length = GDB_OLD_SLOT_SIZE - 1;
+			cut++;
+		}
+		memcpy(d + GDB_OLD_SLOTS + i * GDB_OLD_SLOT_SIZE, text, length);
+		free(text);
+	}
+	if(cut)
+		printf("[GDB]: %u strings were longer than a slot and were cut to 31 bytes\n", cut);
+
+	uint32_t slot = 0, offset = 0, dropped = 0;
+	for(FlagEntry_t* f = gFlags; f; f = f->next)
+	{
+		size_t nameLength = strlen(f->name);
+		if(slot >= GDB_OLD_RECORDS || nameLength > 0x17 || f->bits == 0)
+		{
+			dropped++;
+			continue;
+		}
+		uint8_t* r = d + 0xC0408u + slot * GDB_OLD_RECORD_SIZE;
+		memcpy(r, f->name, nameLength);
+		Wr32(r + 0x18, f->bits);
+		Wr32(r + 0x1C, offset);
+		memcpy(d + 0xD0408u + offset, f->data, FlagBytes(f->bits));
+		offset += FlagBytes(f->bits);
+		slot++;
+	}
+	if(dropped)
+		printf("[GDB]: %u flag arrays do not fit the older layout and were left out\n", dropped);
+	total = 0xD0408u + offset;
+
+	uint8_t* file = NULL;
+	uint32_t fileSize = SDC_Encode(d, total, (uint32_t)(clock() % 1000), &file);
+	free(d);
+	if(!fileSize)
+	{
+		printf("[GDB]: SDC encoding failed\n");
+		return 0;
+	}
+	FILE* out = fopen(kGdbFile, "wb");
+	uint32_t written = 0;
+	if(out)
+	{
+		written = (uint32_t)fwrite(file, 1, fileSize, out);
+		fclose(out);
+	}
+	free(file);
+	printf("[GDB]: wrote %s in the older layout (long form), %u bytes (%u decoded)\n", kGdbFile, written, total);
+	return written == fileSize;
+}
+
 uint32_t GDB_Save(const uint8_t* globalMem, uint32_t globalSize)
 {
 	if(gGdbUnreadable)
@@ -914,6 +1024,8 @@ uint32_t GDB_Save(const uint8_t* globalMem, uint32_t globalSize)
 		       " the player's global data\n", kGdbFile);
 		return 0;
 	}
+	if(gGdbOldLayout)
+		return GDB_WriteOldLayout(globalMem, globalSize);
 	uint32_t strings = StrTab_Serialize(STRTAB_GLOBAL_ID, NULL) + 4;
 	uint32_t flags = Flags_Serialize(NULL);
 	uint32_t total = 0x100424 + strings + flags;
