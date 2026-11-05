@@ -707,7 +707,23 @@ uint8_t* Persistent_Block(void)
 
 static const char kGdbFile[] = "BGI.gdb";   // 0x004E70F0, beside the game
 
+// Set when BGI.gdb is there but this engine could not read it (a layout it does not
+// read yet, or damage). The original would read it - or migrate the older layout -
+// and write it back, so the player's global data survives. Writing this engine's own
+// database over a file it could not read would erase that data (Houkago's
+// clear data, RE lane on Droidtop/tracker#123), so GDB_Save keeps such a file.
+static int gGdbUnreadable = 0;
+
+static uint32_t GDB_Read(uint8_t* globalMem, uint32_t globalSize, int32_t* left, int32_t* top);
+
 uint32_t GDB_Load(uint8_t* globalMem, uint32_t globalSize, int32_t* left, int32_t* top)
+{
+	uint32_t status = GDB_Read(globalMem, globalSize, left, top);
+	gGdbUnreadable = status == 0x80000002u;
+	return status;
+}
+
+static uint32_t GDB_Read(uint8_t* globalMem, uint32_t globalSize, int32_t* left, int32_t* top)
 {
 	FILE* f = fopen(kGdbFile, "rb");
 	if(!f)
@@ -785,6 +801,12 @@ uint32_t GDB_Load(uint8_t* globalMem, uint32_t globalSize, int32_t* left, int32_
 
 uint32_t GDB_Save(const uint8_t* globalMem, uint32_t globalSize)
 {
+	if(gGdbUnreadable)
+	{
+		printf("[GDB]: %s is kept as it is: it is there but could not be read, and writing would replace"
+		       " the player's global data\n", kGdbFile);
+		return 0;
+	}
 	uint32_t strings = StrTab_Serialize(STRTAB_GLOBAL_ID, NULL) + 4;
 	uint32_t flags = Flags_Serialize(NULL);
 	uint32_t total = 0x100424 + strings + flags;
