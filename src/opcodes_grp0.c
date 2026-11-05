@@ -249,7 +249,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xE2 226 */ "--Unknown--",
 	/* 0xE3 227 */ "--Unknown--",
 	/* 0xE4 228 */ "ShowGroupObject",
-	/* 0xE5 229 */ "Unknown_229",
+	/* 0xE5 229 */ "SetObjectPlaceAndLevel",
 	/* 0xE6 230 */ "--Unknown--",
 	/* 0xE7 231 */ "--Unknown--",
 	/* 0xE8 232 */ "AddObjectToGroup",
@@ -508,7 +508,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xE2 226 */ NULL,
 	/* 0xE3 227 */ NULL,
 	/* 0xE4 228 */ Opcode_Grp0_ShowGroupObject,
-	/* 0xE5 229 */ Opcode_Grp0_Unknown_229,
+	/* 0xE5 229 */ Opcode_Grp0_SetObjectPlaceAndLevel,
 	/* 0xE6 230 */ NULL,
 	/* 0xE7 231 */ NULL,
 	/* 0xE8 232 */ Opcode_Grp0_AddObjectToGroup,
@@ -3060,13 +3060,48 @@ uint32_t Opcode_Grp0_ShowGroupObject(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_229(Thread_t* thread)
+/*
+ * Grp0 0xE5 (0x000090E5; 1.622 0x00480180 -> 0x004636F0 -> 0x004427F0): an object's
+ * place and effect level at once. Popped (top first): the effect level, y, x and the
+ * object; nothing is pushed. A level above 0x100 is fatal (0x00497F40), and so is a
+ * handle that names nothing. Then vtable+0x2C with x and y and vtable+0x48 with the
+ * level (a window's is the base's 0x0041B6F0: +0xAC, then each child), bracketed by
+ * the drawable test and damage.
+ *
+ * Fureraba's msgwndctrl+0x042B brings the message window to level 0 with it, right
+ * after Grp0 0x85 set 0x100 (title+0x05BD sets 0x100). The original's first prologue
+ * line then draws opaque (the RE lane's live read on Droidtop/tracker#123, comment
+ * 6662589011). This was OpenBGI's dummy that popped four values and did nothing,
+ * which left the message window fully transparent and its text unseen.
+ */
+uint32_t Opcode_Grp0_SetObjectPlaceAndLevel(Thread_t* thread)
 {
-	uint32_t value1 = Thread_PopStack(thread);
-	uint32_t value2 = Thread_PopStack(thread);
-	uint32_t value3 = Thread_PopStack(thread);
-	uint32_t groupHandle = Thread_PopStack(thread);
-	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	uint32_t level = Thread_PopStack(thread);
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	if(level > OBJECT_EFFECT_LEVEL_MAX)
+	{
+		printf("[Thread %d]: %sError: an invalid effect level / transparency / opacity / addition level [ %u ]"
+		       " was specified\n", thread->threadId, TLevel[thread->level], level);
+		return 0xFFFFFFFC;
+	}
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid object handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	if(Object_IsDrawable(object))
+		gObjectDamage++;
+	Object_Move(object, x, y);
+	const char* unread = Object_ApplyEffectLevel(object, level);
+	if(unread != NULL)
+		printf("[Thread %d]: %sWarning: the effect level of 0x%.8X needs %s\n", thread->threadId,
+		       TLevel[thread->level], handle, unread);
+	if(Object_IsDrawable(object))
+		gObjectDamage++;
 	return 0;
 }
 
