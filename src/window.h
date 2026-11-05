@@ -34,6 +34,9 @@ void Window_ReserveContent(Renderer_t* renderer, DisplayObject_t* window, uint32
 // the window has no pixels yet, which is the original's +0x13C guard.
 void Window_Redraw(Renderer_t* renderer, DisplayObject_t* window, const Rect_t* rect);
 // 0x0042CAE0: the same over the whole of the window.
+// Grp0 0x82: one of the six compose orders (0 background, text, content); above 5,
+// nothing changes.
+void Window_SetLayerOrder(DisplayObject_t* window, uint32_t order);
 void Window_RedrawAll(Renderer_t* renderer, DisplayObject_t* window);
 
 // 0x0042B9E0: the client area, where text goes, and the text cursor reset to it.
