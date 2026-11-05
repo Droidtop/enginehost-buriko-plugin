@@ -26,7 +26,7 @@ int gWheelToObjects = 1;
 
 void Engine_Init(Engine_t* engine)
 {
-	engine->threadCounter = 2;
+	engine->threadCounter = 1;
 	engine->programCounter = 0;
 	engine->threads = NULL;
 	engine->programs = NULL;

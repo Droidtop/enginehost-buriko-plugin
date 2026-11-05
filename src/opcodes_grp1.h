@@ -65,5 +65,6 @@ extern OpcodePtr_t OpcodesGrp1[256];
 extern char* OpcodesGrp1Mnemonics[256];
 
 uint32_t Opcode_Grp1_SetRubyStyle(Thread_t* thread);
+uint32_t Opcode_Grp1_MeasureText(Thread_t* thread);
 uint32_t Opcode_Grp1_SetIconPartEnabled(Thread_t* thread);
 #endif

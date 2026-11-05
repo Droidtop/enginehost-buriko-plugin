@@ -65,6 +65,12 @@ uint32_t Opcode_Strcpy(Thread_t* thread);
 uint32_t Opcode_StrToLower(Thread_t* thread);
 uint32_t Opcode_Strlen(Thread_t* thread);
 uint32_t Opcode_Streq(Thread_t* thread);
+uint32_t Opcode_ShowString(Thread_t* thread);
+uint32_t Opcode_ShowNumber(Thread_t* thread);
+uint32_t Opcode_MulDiv(Thread_t* thread);
+uint32_t Opcode_Length3(Thread_t* thread);
+uint32_t Opcode_Sin(Thread_t* thread);
+uint32_t Opcode_Cos(Thread_t* thread);
 
 extern OpcodePtr_t Opcodes[256];
 extern char* OpcodesMnemonics[256];

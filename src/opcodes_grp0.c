@@ -22,7 +22,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x01   1 */ "StopRendering",
 	/* 0x02   2 */ "SetFramerate",
 	/* 0x03   3 */ "SetFileCacheSize",
-	/* 0x04   4 */ "Unknown_4",
+	/* 0x04   4 */ "CaptureLastFrame",
 	/* 0x05   5 */ "CaptureScreen",
 	/* 0x06   6 */ "SetProjectionCentre",
 	/* 0x07   7 */ "SetLoadWaitTimeout",
@@ -281,7 +281,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x01   1 */ Opcode_Grp0_StopRendering,
 	/* 0x02   2 */ Opcode_Grp0_SetFramerate,
 	/* 0x03   3 */ Opcode_Grp0_SetFileCacheSize,
-	/* 0x04   4 */ Opcode_Grp0_Unknown_4,
+	/* 0x04   4 */ Opcode_Grp0_CaptureLastFrame,
 	/* 0x05   5 */ Opcode_Grp0_CaptureScreen,
 	/* 0x06   6 */ Opcode_Grp0_SetProjectionCentre,
 	/* 0x07   7 */ Opcode_Grp0_SetLoadWaitTimeout,
@@ -603,9 +603,37 @@ uint32_t Opcode_Grp0_SetFileCacheSize(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_4(Thread_t* thread)
+/*
+ * Grp0 0x04: a snapshot of the screen into a bitmap (Droidtop/tracker#123, the local
+ * lane's differential run: scrslct+0x0179 calls it with slot 0xECE after Start Game).
+ * Pops the slot; 0x4000 or more is fatal ("invalid bitmap number"). The slot is made
+ * anew at the screen's size and pixel mode, the creation path of 0x05, and the whole
+ * frame as last presented is copied into it, every layer: 0x05 without the priority
+ * cut-off. When there is no presented frame to read, the slot stays cleared. Nothing
+ * is pushed.
+ */
+uint32_t Opcode_Grp0_CaptureLastFrame(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t slot = Thread_PopStack(thread);
+	if(slot >= RENDERER_MAX_BITMAPS)
+	{
+		printf("[Thread %d]: %sError: an invalid bitmap number [ %d ] was specified\n",
+		       thread->threadId, TLevel[thread->level], (int32_t)slot);
+		return 0xFFFFFFFC;
+	}
+	Renderer_t* renderer = thread->engine->renderer;
+	Bitmap_t* back = Renderer_BackBuffer(renderer);
+	if(back == NULL)
+		return 0;
+	Bitmap_t* target = Renderer_CreateBitmap(renderer, (int)slot, back->width, back->height, Renderer_ScreenMode(renderer));
+	if(target == NULL || target->mode != back->mode || target->width != back->width || target->height != back->height)
+		return 0;
+	size_t row = (size_t)Renderer_ModePixelBytes(back->mode) * (size_t)back->width;
+	if(row > (size_t)back->stride || row > (size_t)target->stride)
+		return 0;
+	for(int y = 0; y < back->height; y++)
+		memcpy(target->bitmap + (size_t)y * (size_t)target->stride, back->bitmap + (size_t)y * (size_t)back->stride, row);
+	return 0;
 }
 
 uint32_t Opcode_Grp0_CaptureScreen(Thread_t* thread)
