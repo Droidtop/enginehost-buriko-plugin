@@ -66,20 +66,12 @@ void Window_ReserveContent(Renderer_t* renderer, DisplayObject_t* window, uint32
 	window->contentHalfWidth = width / 2;
 }
 
-// The text surface's pixel mode: 0x0041C060 with no template asks the device's own
-// mode (0x00407B10) and makes 24-bit into 32-bit, so the text keeps its alpha.
-static int Window_TextMode(Renderer_t* renderer)
-{
-	int mode = Renderer_ScreenMode(renderer);
-	return mode == BITMAP_MODE_24 ? BITMAP_MODE_32 : mode;
-}
-
 int Window_TextSurface(Renderer_t* renderer, DisplayObject_t* window, Bitmap_t* out)
 {
 	Bitmap_t pixels;
 	if(window == NULL || !Renderer_WindowBitmap(renderer, window->handle, &pixels))
 		return 0;
-	int mode = Window_TextMode(renderer);
+	int mode = Renderer_SurfaceMode(renderer);
 	int stride = pixels.width * Renderer_ModePixelBytes(mode);
 	if(window->textPixels == NULL)
 	{
@@ -175,6 +167,7 @@ void Window_Redraw(Renderer_t* renderer, DisplayObject_t* window, const Rect_t* 
 				if(window->backgroundSet && window->backgroundPixels != NULL)
 				{
 					Bitmap_t background = pixels;
+					background.mode = Renderer_ScreenMode(renderer);   // as Window_Background keeps it
 					background.bitmap = window->backgroundPixels;
 					if(Renderer_ClipBitmap(&background, &area))
 						Renderer_BlitView(&view, &background, BITMAP_BLEND_COPY, 0);
@@ -448,6 +441,10 @@ static int Window_Background(Renderer_t* renderer, DisplayObject_t* window, Bitm
 			return 0;
 	}
 	*out = pixels;
+	// The background surface keeps the device's own mode, as it always has here: what
+	// 0x0042B280 makes it in is not read, and a fill or picture on it stays opaque.
+	// Copied onto the 32-bit frame, its 24-bit pixels land opaque.
+	out->mode = Renderer_ScreenMode(renderer);
 	out->bitmap = window->backgroundPixels;
 	return 1;
 }

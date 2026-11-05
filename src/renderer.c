@@ -90,6 +90,18 @@ uint32_t Renderer_CreateScreen(Renderer_t* renderer, int width, int height)
     return id;
 }
 
+// 0x0041C060 with no template: the device's own pixel mode, with 24-bit made 32-bit so
+// the surface keeps an alpha. A window's frame (+0x144) and its text surface (+0x184)
+// are both made this way. A window with no background picture clears its frame to
+// all-zero bytes - alpha 0 - and draws it in blend 1 with that per-pixel alpha, so what
+// lies under the window shows through (RE lane on Droidtop/tracker#123: Fureraba's
+// message bubble, a sprite under its text window, drew black before).
+int Renderer_SurfaceMode(Renderer_t* renderer)
+{
+	int mode = Renderer_ScreenMode(renderer);
+	return mode == BITMAP_MODE_24 ? BITMAP_MODE_32 : mode;
+}
+
 int Renderer_WindowBitmap(Renderer_t* renderer, uint32_t handle, Bitmap_t* out)
 {
 	Screen_t* screen = Renderer_ResolveScreen(renderer, handle);
@@ -98,7 +110,7 @@ int Renderer_WindowBitmap(Renderer_t* renderer, uint32_t handle, Bitmap_t* out)
 
 	out->width  = screen->width;
 	out->height = screen->height;
-	out->mode   = Renderer_ScreenMode(renderer);
+	out->mode   = Renderer_SurfaceMode(renderer);
 	out->stride = screen->width * Renderer_ModePixelBytes(out->mode);
 	out->bitmap = screen->bitmap;
 	out->serial = 0xFFFFFFFFu;
@@ -986,7 +998,8 @@ static int Renderer_BlitBitmaps(Bitmap_t* dst, int x, int y,
 				pixel = destinationIsOpaque
 				      ? Renderer_BlendOverOpaque(dstRow[column], pixel)
 				      : Renderer_BlendOver(dstRow[column], pixel);
-			else if(destinationIsOpaque)
+			else if(destinationIsOpaque || src->mode == BITMAP_MODE_24)
+				// A 24-bit pixel has no alpha: it is opaque wherever it lands.
 				pixel |= 0xFF000000;
 			dstRow[column] = pixel;
 		}
