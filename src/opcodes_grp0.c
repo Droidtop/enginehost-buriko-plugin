@@ -8,6 +8,7 @@
 #include "opcodes_grp0.h"
 #include "sprite5.h"
 #include "icon.h"
+#include "select.h"
 #include "object.h"
 #include "font.h"
 #include "text.h"
@@ -194,8 +195,8 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0xAD 173 */ "--Unknown--",
 	/* 0xAE 174 */ "--Unknown--",
 	/* 0xAF 175 */ "SetFlag1to4",
-	/* 0xB0 176 */ "Unknown_176",
-	/* 0xB1 177 */ "Unknown_177",
+	/* 0xB0 176 */ "SelectIcon",
+	/* 0xB1 177 */ "SelectIconEx",
 	/* 0xB2 178 */ "--Unknown--",
 	/* 0xB3 179 */ "--Unknown--",
 	/* 0xB4 180 */ "Unknown_180",
@@ -453,8 +454,8 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0xAD 173 */ NULL,
 	/* 0xAE 174 */ NULL,
 	/* 0xAF 175 */ Opcode_Grp0_SetFlag1to4,
-	/* 0xB0 176 */ Opcode_Grp0_Unknown_176,
-	/* 0xB1 177 */ Opcode_Grp0_Unknown_177,
+	/* 0xB0 176 */ Opcode_Grp0_SelectIcon,
+	/* 0xB1 177 */ Opcode_Grp0_SelectIconEx,
 	/* 0xB2 178 */ NULL,
 	/* 0xB3 179 */ NULL,
 	/* 0xB4 180 */ Opcode_Grp0_Unknown_180,
@@ -2419,14 +2420,15 @@ uint32_t Opcode_Grp0_SetFlag1to4(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp0_Unknown_176(Thread_t* thread)
+// Grp0 0xB0 / 0xB1 (0x90B0 / 0x90B1): choice icons in a window, the select process (select.c).
+uint32_t Opcode_Grp0_SelectIcon(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	return Select_Start(thread, 0);
 }
 
-uint32_t Opcode_Grp0_Unknown_177(Thread_t* thread)
+uint32_t Opcode_Grp0_SelectIconEx(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	return Select_Start(thread, 1);
 }
 
 uint32_t Opcode_Grp0_Unknown_180(Thread_t* thread)
