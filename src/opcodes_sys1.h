@@ -17,7 +17,7 @@ uint32_t Opcode_Sys1_Unknown_11(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_12(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_13(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_14(Thread_t* thread);
-uint32_t Opcode_Sys1_Unknown_15(Thread_t* thread);
+uint32_t Opcode_Sys1_IsMinimised(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_16(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_17(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_20(Thread_t* thread);
