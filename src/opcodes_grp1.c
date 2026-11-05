@@ -72,7 +72,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x35  53 */ "--Unknown--",
     /* 0x36  54 */ "--Unknown--",
     /* 0x37  55 */ "--Unknown--",
-    /* 0x38  56 */ "--Unknown--",
+    /* 0x38  56 */ "GetObjectParameter",
     /* 0x39  57 */ "--Unknown--",
     /* 0x3A  58 */ "--Unknown--",
     /* 0x3B  59 */ "--Unknown--",
@@ -331,7 +331,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x35  53 */ NULL,
     /* 0x36  54 */ NULL,
     /* 0x37  55 */ NULL,
-    /* 0x38  56 */ NULL,
+    /* 0x38  56 */ Opcode_Grp1_GetObjectParameter,
     /* 0x39  57 */ NULL,
     /* 0x3A  58 */ NULL,
     /* 0x3B  59 */ NULL,
@@ -1365,4 +1365,67 @@ uint32_t Opcode_Grp1_SetIconPartEnabled(Thread_t* thread)
 	}
 	Thread_PushStack(thread, result);
 	return 0;
+}
+
+/*
+ * Grp1 0x38 (0x00009138; Fureraba's scrmsg+0x02BD): one parameter of a display object
+ * read, the getter that pairs with Grp0 0x38. Popped: the parameter number (top), the
+ * object handle, and the address of the in/out words. The object's vtable+0x60
+ * answers (Object_GetParameter). Each failure is fatal and nothing is pushed: a bad
+ * handle, an unsupported number ("unsupported parameter number [ 0x%.8X ]"), and a
+ * wrong argument, which names word 0. As the RE lane read it on Droidtop/tracker#123.
+ */
+uint32_t Opcode_Grp1_GetObjectParameter(Thread_t* thread)
+{
+	uint32_t number = Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	uint32_t address = Thread_PopStack(thread);
+
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid object handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFF;
+	}
+	uint32_t available = 0;
+	uint8_t* area = Thread_ResolveSpan(thread, address, &available);
+	if(area == NULL || available < 4)
+	{
+		printf("[Thread %d]: %sError: Grp1 0x38: the words at 0x%.8X are not script memory\n",
+		       thread->threadId, TLevel[thread->level], address);
+		return 0xFFFFFFFF;
+	}
+
+	// Word 0 is an input for the user word; the rest start as the script left them.
+	int32_t words[OBJECT_GET_WORDS] = { 0 };
+	uint32_t room = available / 4 < OBJECT_GET_WORDS ? available / 4 : OBJECT_GET_WORDS;
+	memcpy(words, area, room * 4);
+	uint32_t count = 0;
+	const char* unread = NULL;
+	uint32_t result = Object_GetParameter(object, number, words, &count, &unread);
+	switch(result)
+	{
+	case OBJECT_PARAM_OK:
+		if(count > room)
+		{
+			printf("[Thread %d]: %sError: Grp1 0x38: parameter [ 0x%.8X ] answers %u words, the area holds %u\n",
+			       thread->threadId, TLevel[thread->level], number, count, room);
+			return 0xFFFFFFFF;
+		}
+		memcpy(area, words, count * 4);
+		return 0;
+	case OBJECT_PARAM_BAD_ARGUMENT:
+		printf("[Thread %d]: %sError: the argument [ %d ( 0x%.8X ) ] passed for parameter [ 0x%.8X ] is wrong\n",
+		       thread->threadId, TLevel[thread->level], words[0], (uint32_t)words[0], number);
+		return 0xFFFFFFFF;
+	case OBJECT_PARAM_UNREAD:
+		printf("[Thread %d]: %sError: reading parameter [ 0x%.8X ] is not implemented (%s)\n",
+		       thread->threadId, TLevel[thread->level], number, unread != NULL ? unread : "unread");
+		return 0xFFFFFFFF;
+	default:
+		printf("[Thread %d]: %sError: an unsupported parameter number [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], number);
+		return 0xFFFFFFFF;
+	}
 }
