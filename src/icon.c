@@ -1322,6 +1322,20 @@ static void Icon_Update(Renderer_t* renderer, Icon_t* icon)
 	Icon_DrainMessages(renderer, icon);
 	if(!icon->ready)
 		return;
+	if(icon->kind == ICON_KIND_PLAIN)
+	{
+		// The plain icon's own pass (its virtuals: the pointer, the keys, its states
+		// changing and the events they post) is not ported; its content is drawn and
+		// stays as built. Named once rather than run through the Ex code.
+		static int named = 0;
+		if(!named)
+		{
+			named = 1;
+			printf("[Icon]: a DCIPIcon's per-frame pass (pointer, keys, state changes) is not ported; its content stays as built\n");
+		}
+		Icon_FlushDirty(icon);
+		return;
+	}
 	if(icon->active)
 	{
 		uint32_t bits = 0;
@@ -1384,8 +1398,20 @@ int Icon_SetKeyMap(uint32_t map, const uint32_t* actions)
 // ----------------------------------------------------------------------------------
 // Content (0x0044A130 / 0x0044C3B0 teardown, 0x0044A9E0 build)
 // ----------------------------------------------------------------------------------
+static void Icon_FreePlain(Icon_t* icon)
+{
+	if(icon->plain == NULL)
+		return;
+	for(int32_t i = 0; i < icon->plain->itemCount && icon->plain->items != NULL; i++)
+		free(icon->plain->items[i].states);
+	free(icon->plain->items);
+	free(icon->plain);
+	icon->plain = NULL;
+}
+
 static void Icon_Teardown(Icon_t* icon)
 {
+	Icon_FreePlain(icon);
 	// 0x0044C3B0: the Ex's copies, then the base (0x0044A130).
 	for(uint32_t i = 0; i < icon->root[0] && icon->copies != NULL; i++)
 	{
@@ -1674,6 +1700,134 @@ done:
 }
 
 // ----------------------------------------------------------------------------------
+// A DCIPIcon's content (Grp0 0xBA): see icon.h. Built from the local lane's description
+// of 0x0046C8D0 and 0x00447CF0; the plain icon's per-frame pass is not ported yet.
+// ----------------------------------------------------------------------------------
+// `count` words at a script address, copied; NULL when any of them is not addressable.
+static uint32_t* Icon_CopyWords(Thread_t* thread, uint32_t address, size_t count)
+{
+	uint8_t* p = Thread_ResolveAddr(thread, address);
+	if(p == NULL)
+		return NULL;
+	uint32_t* copy = (uint32_t*)malloc(count * sizeof(uint32_t));
+	if(copy != NULL)
+		memcpy(copy, p, count * sizeof(uint32_t));
+	return copy;
+}
+
+uint32_t Icon_SetPlainContent(Thread_t* thread, Renderer_t* renderer, Icon_t* icon, uint32_t rootAddress)
+{
+	uint32_t* root = Icon_CopyWords(thread, rootAddress, ICON_PLAIN_ROOT_WORDS);
+	if(root == NULL)
+		return ICON_PLAIN_BAD_ITEMS;
+	int32_t itemCount = (int32_t)root[0];
+	uint32_t* itemWords = (itemCount >= 1 && itemCount <= ICON_PLAIN_MAX_ITEMS)
+		? Icon_CopyWords(thread, root[1], (size_t)itemCount * ICON_PLAIN_ITEM_WORDS) : NULL;
+	if(itemWords == NULL)
+	{
+		free(root);
+		return ICON_PLAIN_BAD_ITEMS;
+	}
+	IconPlain_t* plain = (IconPlain_t*)calloc(1, sizeof(IconPlain_t));
+	IconPlainItem_t* items = (IconPlainItem_t*)calloc((size_t)itemCount, sizeof(IconPlainItem_t));
+	if(plain == NULL || items == NULL)
+	{
+		free(plain); free(items); free(itemWords); free(root);
+		return ICON_PLAIN_BAD_ITEMS;
+	}
+	memcpy(plain->raw, root, sizeof(plain->raw));
+	plain->itemCount = itemCount;
+	plain->items = items;
+	free(root);
+	uint32_t result = ICON_PLAIN_OK;
+	for(int32_t i = 0; i < itemCount; i++)
+	{
+		IconPlainItem_t* item = &items[i];
+		memcpy(item->raw, itemWords + (size_t)i * ICON_PLAIN_ITEM_WORDS, sizeof(item->raw));
+		int32_t states = (int32_t)(item->raw[0] & 0xFFFF);
+		int32_t columns = (int32_t)(item->raw[0] >> 16);
+		if(states < 1 || states > ICON_PLAIN_MAX_STATES)
+		{
+			result = ICON_PLAIN_BAD_STATE;
+			break;
+		}
+		item->states = Icon_CopyWords(thread, item->raw[1], (size_t)states * ICON_PLAIN_STATE_WORDS);
+		if(item->states == NULL)
+		{
+			result = ICON_PLAIN_BAD_STATE;
+			break;
+		}
+		item->stateCount = states;
+		item->columns = (columns <= 0 || columns > states) ? states : columns;
+		int32_t initial = (int32_t)item->raw[2];
+		// The initial state, cleared when it names none or a state with no bitmap.
+		item->current = (initial >= 0 && initial < states && item->states[(size_t)initial * ICON_PLAIN_STATE_WORDS] != 0) ? initial : -1;
+	}
+	free(itemWords);
+	if(result != ICON_PLAIN_OK)
+	{
+		for(int32_t i = 0; i < itemCount; i++)
+			free(items[i].states);
+		free(items);
+		free(plain);
+		return result;
+	}
+
+	// The old content goes, then the new is drawn: each item's state on show, and the
+	// second bitmap with it, in two window content slots per item at the state's
+	// offset. The icon's size is the area they cover.
+	Icon_Teardown(icon);
+	DisplayObject_t* window = icon->window;
+	Window_ReserveContent(renderer, window, (uint32_t)itemCount * 2);
+	int32_t right = 0, bottom = 0;
+	for(int32_t i = 0; i < itemCount; i++)
+	{
+		IconPlainItem_t* item = &items[i];
+		item->slot = (uint32_t)i * 2;
+		for(int32_t k = 0; k < item->stateCount; k++)
+		{
+			const uint32_t* st = item->states + (size_t)k * ICON_PLAIN_STATE_WORDS;
+			Bitmap_t* image = st[0] != 0 ? Renderer_ResolveBitmap(renderer, (int32_t)st[0]) : NULL;
+			if(image == NULL)
+				continue;
+			int32_t r = (int32_t)st[1] + image->width, b = (int32_t)st[2] + image->height;
+			if(r > right) right = r;
+			if(b > bottom) bottom = b;
+		}
+		if(item->current < 0)
+			continue;
+		const uint32_t* st = item->states + (size_t)item->current * ICON_PLAIN_STATE_WORDS;
+		Window_SetContentSlot(renderer, window, item->slot, (int32_t)st[0], (int32_t)st[1], (int32_t)st[2], 0, 0, item->slot);
+		Window_RedrawContentSlot(renderer, window, item->slot);
+		if((int32_t)st[6] != -2 && Renderer_ResolveBitmap(renderer, (int32_t)st[6]) != NULL)
+		{
+			Window_SetContentSlot(renderer, window, item->slot + 1, (int32_t)st[6], (int32_t)st[1], (int32_t)st[2], 0, 0, item->slot + 1);
+			Window_RedrawContentSlot(renderer, window, item->slot + 1);
+		}
+	}
+	if(icon->object != NULL)
+		Object_SetExtent(icon->object, right, bottom);
+
+	icon->plain = plain;
+	int32_t focused = (int32_t)plain->raw[2];
+	plain->focused = (focused >= 0 && focused < itemCount) ? focused : -1;
+	icon->keyMap = plain->raw[6] & 7;
+	// The pointer is measured from where it is when the focused item starts on a state.
+	if(plain->focused >= 0 && items[plain->focused].current >= 0)
+		Input_GetMouse(&icon->mouseX, &icon->mouseY);
+	else
+		icon->mouseX = icon->mouseY = 0x7FFFFFFF;
+	icon->ready = 1;
+	Icon_Damage(icon);
+	Icon_MarkDirty(icon);
+	// Not yet done: the original registers the focused item for keyboard and pad
+	// navigation when root[3] is set, registers each state's event id (state[14]) and
+	// reports the first state to whoever waits on the icon. Their exact forms are with
+	// the local lane (Droidtop/tracker#123).
+	return ICON_PLAIN_OK;
+}
+
+// ----------------------------------------------------------------------------------
 // The script's other calls
 // ----------------------------------------------------------------------------------
 void Icon_GetState(Icon_t* icon, uint32_t out[6])
@@ -1692,10 +1846,11 @@ void Icon_GetState(Icon_t* icon, uint32_t out[6])
 
 uint32_t Icon_SetPartEnabled(Renderer_t* renderer, Icon_t* icon, int32_t entry, int32_t part, uint32_t enabled)
 {
-	// 0x0044B540.
-	if(entry >= (int32_t)icon->root[0])
+	// 0x0044B540. A negative index, or an icon with no Ex content, is refused here
+	// rather than read through (a plain icon has no copies).
+	if(icon->copies == NULL || icon->states == NULL || entry < 0 || entry >= (int32_t)icon->root[0])
 		return 0x80000001u;
-	if(part >= (int32_t)icon->copies[entry].raw[0])
+	if(part < 0 || part >= (int32_t)icon->copies[entry].raw[0])
 		return 0x80000002u;
 	IconPartState_t* state = &icon->states[entry][part];
 	if(state->used)
