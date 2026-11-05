@@ -1604,11 +1604,16 @@ int Renderer_BlitAt(Bitmap_t* destination, int x, int y, Bitmap_t* source, int m
 	return Renderer_BlitBitmaps(destination, x, y, source, mode, weight);
 }
 
-// 0x0040A710: every pixel of the view set to one colour, opaque.
+// 0x0040A710 -> 0x0040A840: every pixel of the view set to one colour. A 32-bit view
+// takes the colour exactly as given, its top byte as the alpha (0 is see-through); a
+// 24-bit view takes it with the top byte cleared (RE lane on Droidtop/tracker#123,
+// comment 6665967698). The other modes' fills are not read.
 void Renderer_FillSolid(Bitmap_t* view, uint32_t colour)
 {
 	if(Renderer_ModePixelBytes(view->mode) != 4)
 		return;
+	if(view->mode == BITMAP_MODE_24)
+		colour &= 0x00FFFFFFu;
 	for(int row = 0; row < view->height; row++)
 	{
 		uint32_t* pixels = (uint32_t*)(view->bitmap + (size_t)row * view->stride);

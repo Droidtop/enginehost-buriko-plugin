@@ -167,7 +167,7 @@ void Window_Redraw(Renderer_t* renderer, DisplayObject_t* window, const Rect_t* 
 				if(window->backgroundSet && window->backgroundPixels != NULL)
 				{
 					Bitmap_t background = pixels;
-					background.mode = Renderer_ScreenMode(renderer);   // as Window_Background keeps it
+					background.mode = Renderer_SurfaceMode(renderer);   // as Window_Background keeps it
 					background.bitmap = window->backgroundPixels;
 					if(Renderer_ClipBitmap(&background, &area))
 						Renderer_BlitView(&view, &background, BITMAP_BLEND_COPY, 0);
@@ -441,10 +441,12 @@ static int Window_Background(Renderer_t* renderer, DisplayObject_t* window, Bitm
 			return 0;
 	}
 	*out = pixels;
-	// The background surface keeps the device's own mode, as it always has here: what
-	// 0x0042B280 makes it in is not read, and a fill or picture on it stays opaque.
-	// Copied onto the 32-bit frame, its 24-bit pixels land opaque.
-	out->mode = Renderer_ScreenMode(renderer);
+	// 0x0042B280 makes the frame (+0x140), the background (+0x160) and the text
+	// (+0x180) surfaces with the same call (0x0041C060), so the background is in the
+	// frame's mode: 32-bit with per-pixel alpha when the display is 24-bit (RE lane on
+	// Droidtop/tracker#123, comment 6665967698). A fill or picture keeps its own alpha,
+	// and Fureraba's B0000001, filled with colour 0, is see-through around its buttons.
+	out->mode = Renderer_SurfaceMode(renderer);
 	out->bitmap = window->backgroundPixels;
 	return 1;
 }
