@@ -723,6 +723,116 @@ uint32_t GDB_Load(uint8_t* globalMem, uint32_t globalSize, int32_t* left, int32_
 	return status;
 }
 
+// The older BGI.gdb layout, which 0x0046B800's else-branch reads when the decoded file
+// has no "BURIKO GDB 3.00" signature (Houkago Shippo Days, BGI 1.580; layout and
+// rules from the RE lane on Droidtop/tracker#123). Fixed offsets, no signature:
+//   +0x00 s32 window x, +0x04 s32 window y;
+//   +0x08 0x400 bytes of global memory;
+//   +0x408 0x40000 bytes of the persistent block (the rest of its megabyte zeroed);
+//   +0x40408 string slots of 32 bytes, 0x1000 of them (short form) or 0x4000 (long);
+//   then 0x800 flag records of 32 bytes - a 24-byte name, +0x18 u32 bit count (0 =
+//   unused), +0x1C u32 BYTE offset of its data from the bit data - and the bit data.
+// Each record's data is (bits + 7) >> 3 whole bytes copied as they are (0x00446D60 ->
+// 0x00446C60), so the flag store keeps the same bytes the 3.00 layout writes.
+// Writing is always the 3.00 layout. Anything that does not fit answers 0x80000002,
+// so GDB_Save keeps the file rather than replace it.
+#define GDB_OLD_SLOTS        0x40408u
+#define GDB_OLD_SLOT_SIZE    32u
+#define GDB_OLD_SHORT_SLOTS  0x1000u
+#define GDB_OLD_LONG_SLOTS   0x4000u
+#define GDB_OLD_RECORDS      0x800u
+#define GDB_OLD_RECORD_SIZE  32u
+#define GDB_OLD_MIN_SIZE     0x70408u
+
+static uint32_t GDB_ReadOldLayout(const uint8_t* d, uint32_t dsize, uint8_t* globalMem, uint32_t globalSize,
+                                  int32_t* left, int32_t* top)
+{
+	if(dsize < GDB_OLD_MIN_SIZE)
+	{
+		printf("[GDB]: %s has neither layout: %u bytes, the older one needs 0x%X\n", kGdbFile, dsize, GDB_OLD_MIN_SIZE);
+		return 0x80000002u;
+	}
+
+	// Short or long: the place where the short form's flag records would start is
+	// read as if it were one; any of these says it is still string slots instead.
+	const uint8_t* probe = d + GDB_OLD_SLOTS + GDB_OLD_SHORT_SLOTS * GDB_OLD_SLOT_SIZE;   // +0x60408
+	size_t probeLength = strnlen((const char*)probe, GDB_OLD_SLOT_SIZE);
+	int longForm = probe[0] == 0 || probeLength >= 24 || Rd32(probe + 0x18) == 0 || Rd32(probe + 0x1C) != 0;
+	uint32_t slots = longForm ? GDB_OLD_LONG_SLOTS : GDB_OLD_SHORT_SLOTS;
+	uint32_t records = GDB_OLD_SLOTS + slots * GDB_OLD_SLOT_SIZE;          // +0x60408 or +0xC0408
+	uint32_t bitData = records + GDB_OLD_RECORDS * GDB_OLD_RECORD_SIZE;     // +0x70408 or +0xD0408
+	if(dsize < bitData)
+	{
+		printf("[GDB]: %s looks like the older layout's long form but ends at 0x%X, before 0x%X\n",
+		       kGdbFile, dsize, bitData);
+		return 0x80000002u;
+	}
+	// Every record's data has to be inside the file before anything is taken over.
+	for(uint32_t i = 0; i < GDB_OLD_RECORDS; i++)
+	{
+		const uint8_t* r = d + records + i * GDB_OLD_RECORD_SIZE;
+		uint32_t bits = Rd32(r + 0x18);
+		if(bits == 0)
+			continue;
+		uint64_t start = (uint64_t)bitData + Rd32(r + 0x1C);
+		if(start + FlagBytes(bits) > dsize)
+		{
+			printf("[GDB]: %s: flag record %u runs past the end of the file\n", kGdbFile, i);
+			return 0x80000002u;
+		}
+	}
+
+	if(left) *left = (int32_t)Rd32(d + 0x00);
+	if(top) *top = (int32_t)Rd32(d + 0x04);
+	if(globalMem)
+		memcpy(globalMem, d + 0x08, globalSize < 0x400 ? globalSize : 0x400);
+	uint8_t* block = Persistent_Block();
+	memcpy(block, d + 0x408, 0x40000);
+	memset(block + 0x40000, 0, PERSISTENT_SIZE - 0x40000);
+
+	// The non-empty slots, in order, become table 0x80000000.
+	char* packed = (char*)malloc((size_t)slots * GDB_OLD_SLOT_SIZE);
+	if(packed == NULL)
+		return 0x80000002u;
+	size_t used = 0;
+	uint32_t count = 0;
+	for(uint32_t i = 0; i < slots; i++)
+	{
+		const char* slot = (const char*)(d + GDB_OLD_SLOTS + i * GDB_OLD_SLOT_SIZE);
+		size_t n = strnlen(slot, GDB_OLD_SLOT_SIZE - 1);
+		if(n == 0)
+			continue;
+		memcpy(packed + used, slot, n);
+		packed[used + n] = 0;
+		used += n + 1;
+		count++;
+	}
+	StrTab_Load(STRTAB_GLOBAL_ID, count, packed);
+	free(packed);
+
+	Flags_Clear();
+	uint32_t defined = 0;
+	for(uint32_t i = 0; i < GDB_OLD_RECORDS; i++)
+	{
+		const uint8_t* r = d + records + i * GDB_OLD_RECORD_SIZE;
+		uint32_t bits = Rd32(r + 0x18);
+		if(bits == 0)
+			continue;
+		char name[25];
+		size_t n = strnlen((const char*)r, 24);
+		memcpy(name, r, n);
+		name[n] = 0;
+		if(Flags_Define(name, bits) != 0)
+			continue;
+		FlagEntry_t* f = Flags_Find(name);
+		memcpy(f->data, d + bitData + Rd32(r + 0x1C), FlagBytes(bits));
+		defined++;
+	}
+	printf("[GDB]: read %s in the older layout (%s form): %u strings, %u flag arrays, %u bytes\n",
+	       kGdbFile, longForm ? "long" : "short", count, defined, dsize);
+	return 0;
+}
+
 static uint32_t GDB_Read(uint8_t* globalMem, uint32_t globalSize, int32_t* left, int32_t* top)
 {
 	FILE* f = fopen(kGdbFile, "rb");
@@ -746,15 +856,12 @@ static uint32_t GDB_Read(uint8_t* globalMem, uint32_t globalSize, int32_t* left,
 	}
 	free(file);
 
-	// Only the "BURIKO GDB 3.00" layout is read. The original also migrates an
-	// older layout (0x0046B9A5, a file of at least 0x70408 bytes with no such
-	// signature) which no game of this engine generation writes; it is refused
-	// by name here rather than guessed.
+	// "BURIKO GDB 3.00", or the older layout without a signature (0x0046B9A5).
 	if(dsize < 0x20 || memcmp(d, kGdbMagic, 16) != 0)
 	{
-		printf("[GDB]: %s is not a \"BURIKO GDB 3.00\" database (the older layout 0x0046B9A5 reads is not implemented)\n", kGdbFile);
+		uint32_t status = GDB_ReadOldLayout(d, dsize, globalMem, globalSize, left, top);
 		free(d);
-		return 0x80000002u;
+		return status;
 	}
 	const uint8_t* end = d + dsize;
 	const uint8_t* h = d + 0x10;
