@@ -185,38 +185,45 @@ static int GameId_FromBanner(const uint8_t* data, size_t size, const char* prefi
 	return 0;
 }
 
+// The whole file, or NULL when it cannot be read or is empty. The caller frees it.
+static uint8_t* ReadWholeFile(const char* path, size_t* size)
+{
+	*size = 0;
+	FILE* file = fopen(path, "rb");
+	if(file == NULL)
+		return NULL;
+	if(fseek(file, 0, SEEK_END) != 0)
+	{
+		fclose(file);
+		return NULL;
+	}
+	long length = ftell(file);
+	if(length <= 0)
+	{
+		fclose(file);
+		return NULL;
+	}
+	rewind(file);
+	uint8_t* data = (uint8_t*)malloc((size_t)length);
+	if(data == NULL)
+	{
+		fclose(file);
+		return NULL;
+	}
+	*size = fread(data, 1, (size_t)length, file);
+	fclose(file);
+	return data;
+}
+
 int GameId_ReadFromExecutable(const char* path, char* out)
 {
 	if(path == NULL || out == NULL)
 		return 0;
 
-	FILE* file = fopen(path, "rb");
-	if(file == NULL)
-		return 0;
-
-	if(fseek(file, 0, SEEK_END) != 0)
-	{
-		fclose(file);
-		return 0;
-	}
-
-	long length = ftell(file);
-	if(length <= GAMEID_PATTERN_LENGTH)
-	{
-		fclose(file);
-		return 0;
-	}
-	rewind(file);
-
-	uint8_t* data = (uint8_t*)malloc((size_t)length);
+	size_t size;
+	uint8_t* data = ReadWholeFile(path, &size);
 	if(data == NULL)
-	{
-		fclose(file);
 		return 0;
-	}
-
-	size_t size = fread(data, 1, (size_t)length, file);
-	fclose(file);
 	if(size <= GAMEID_PATTERN_LENGTH)
 	{
 		free(data);
@@ -349,6 +356,139 @@ int GameId_ScanFolder(const char* folder, char* out, char* exeName, size_t exeNa
 		AppendExamined(examined, examinedSize, entry->d_name);
 	}
 
+	closedir(directory);
+	return found;
+}
+
+// ----------------------------------------------------------------------------------
+// Reading the interpreter's version out of its executable
+//
+// Every BGI executable carries a standard Windows version resource whose FileVersion
+// string names the interpreter ("Version : 1.580.1 / Compatibility : 1.71", or "1.69"
+// in the oldest style) and whose FileDescription names the program ("Ethornell -
+// BURIKO General Interpreter"). The resource stays readable even where a protection
+// wrapper encrypts the code (Eustia, Daitoshokan; the RE lane on tracker#123), so it
+// is read here as data: each string entry is a WORD length, a WORD value length (in
+// characters), a WORD type (1 = text), its key in UTF-16LE with a terminator, padding
+// to a 4-byte boundary from the entry's start, then the value in UTF-16LE.
+// ----------------------------------------------------------------------------------
+
+// Copies the value of the first well-formed version string entry named `key` into
+// `out` as ASCII (anything else becomes '?'). Returns 1 when one was found.
+static int VersionString(const uint8_t* data, size_t size, const char* key, char* out, size_t outSize)
+{
+	size_t keyLength = strlen(key);
+	size_t keyBytes = (keyLength + 1) * 2;
+	for(size_t at = 6; at + keyBytes <= size; at += 2)
+	{
+		size_t c = 0;
+		while(c < keyLength && data[at + c * 2] == (uint8_t)key[c] && data[at + c * 2 + 1] == 0)
+			c++;
+		if(c < keyLength || data[at + keyLength * 2] != 0 || data[at + keyLength * 2 + 1] != 0)
+			continue;
+
+		size_t start = at - 6;
+		uint16_t length = ReadU16(data, start);
+		uint16_t valueLength = ReadU16(data, start + 2);
+		uint16_t type = ReadU16(data, start + 4);
+		size_t value = start + ((6 + keyBytes + 3) & ~(size_t)3);
+		if(type != 1 || valueLength == 0 || start + length > size || value + (size_t)valueLength * 2 > start + length)
+			continue;
+
+		size_t n = 0;
+		for(size_t i = 0; i < valueLength && n + 1 < outSize; i++)
+		{
+			uint16_t ch = ReadU16(data, value + i * 2);
+			if(ch == 0)
+				break;
+			out[n++] = (ch >= 0x20 && ch <= 0x7E) ? (char)ch : '?';
+		}
+		out[n] = 0;
+		return 1;
+	}
+	return 0;
+}
+
+static int ContainsNoCase(const char* text, const char* word)
+{
+	size_t wl = strlen(word);
+	for(const char* t = text; *t; t++)
+	{
+		size_t i = 0;
+		while(i < wl && t[i] && (t[i] | 0x20) == (word[i] | 0x20))
+			i++;
+		if(i == wl)
+			return 1;
+	}
+	return 0;
+}
+
+int GameId_ReadRuntimeVersion(const char* path, GameRuntimeVersion_t* version)
+{
+	memset(version, 0, sizeof(*version));
+	size_t size;
+	uint8_t* data = ReadWholeFile(path, &size);
+	if(data == NULL)
+		return 0;
+
+	char description[128];
+	int found = VersionString(data, size, "FileDescription", description, sizeof(description))
+	         && ContainsNoCase(description, "General Interpreter")
+	         && VersionString(data, size, "FileVersion", version->text, sizeof(version->text));
+	free(data);
+	if(!found)
+		return 0;
+
+	// The first "<digits>.<digits>" is the interpreter's version; the compatibility
+	// level comes after it.
+	for(const char* t = version->text; *t; t++)
+	{
+		if(*t < '0' || *t > '9')
+			continue;
+		const char* dot = t;
+		while(*dot >= '0' && *dot <= '9')
+			dot++;
+		if(*dot != '.' || dot[1] < '0' || dot[1] > '9')
+		{
+			t = dot - 1;
+			continue;
+		}
+		version->major = atoi(t);
+		version->minor = atoi(dot + 1);
+		const char* end = dot + 1;
+		while(*end >= '0' && *end <= '9')
+			end++;
+		version->minorDigits = (int)(end - (dot + 1));
+		return 1;
+	}
+	return 0;
+}
+
+int GameId_ScanRuntimeVersion(const char* folder, GameRuntimeVersion_t* version, char* exeName, size_t exeNameSize)
+{
+	DIR* directory = opendir(folder != NULL ? folder : ".");
+	if(directory == NULL)
+		return 0;
+
+	int found = 0;
+	struct dirent* entry;
+	while(!found && (entry = readdir(directory)) != NULL)
+	{
+		if(!HasExeExtension(entry->d_name))
+			continue;
+		char path[1024];
+		if((size_t)snprintf(path, sizeof(path), "%s/%s", folder != NULL ? folder : ".", entry->d_name) >= sizeof(path))
+			continue;
+		if(GameId_ReadRuntimeVersion(path, version))
+		{
+			found = 1;
+			if(exeName != NULL && exeNameSize > 0)
+			{
+				strncpy(exeName, entry->d_name, exeNameSize - 1);
+				exeName[exeNameSize - 1] = 0;
+			}
+		}
+	}
 	closedir(directory);
 	return found;
 }

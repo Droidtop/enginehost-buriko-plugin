@@ -16,4 +16,22 @@ int GameId_ReadFromExecutable(const char* path, char* out);
 int GameId_ScanFolder(const char* folder, char* out, char* exeName, size_t exeNameSize,
 	char* examined, size_t examinedSize);
 
+// The interpreter's own version, from its executable's version resource: FileVersion's
+// first "<major>.<minor>" (1.580 for "Version : 1.580.1 / Compatibility : 1.71").
+// minorDigits tells 1.69 (two digits, the oldest style) from 1.690.
+typedef struct
+{
+	int major;
+	int minor;
+	int minorDigits;
+	char text[96];
+} GameRuntimeVersion_t;
+
+// 1 when `path` is a BGI interpreter (its FileDescription says "General Interpreter")
+// with a version that parses.
+int GameId_ReadRuntimeVersion(const char* path, GameRuntimeVersion_t* version);
+
+// The first *.exe in `folder` that GameId_ReadRuntimeVersion accepts.
+int GameId_ScanRuntimeVersion(const char* folder, GameRuntimeVersion_t* version, char* exeName, size_t exeNameSize);
+
 #endif // __GAMEID_H__
