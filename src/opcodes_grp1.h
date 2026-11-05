@@ -47,6 +47,7 @@ uint32_t Opcode_Grp1_Unknown_140(Thread_t* thread);
 uint32_t Opcode_Grp1_GetTextCursor(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_142(Thread_t* thread);
 uint32_t Opcode_Grp1_GetObjectParameter(Thread_t* thread);
+uint32_t Opcode_Grp1_SetRubyFont(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_144(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_145(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_146(Thread_t* thread);

@@ -28,11 +28,11 @@ static int32_t gTextExtraSpacing = 0;
 // 0x00565BDC: how far ruby text pushes the first line in (0x004345B0).
 static int32_t gTextRubyIndent = 0;
 // 0x00565BE0, 0x00565CE0..0x00565CEC, 0x00507644, 0x00507648: the ruby's font
-// name, size, width, offset and colours (0x00434520). An empty name, a size or
-// width of 0 and a colour of -1 mean "the text's own".
+// name, size, weight, offset and colours, which Grp1 0x97 sets (0x00434520). An empty
+// name, a size or weight of 0 or less and a colour of -1 mean "the text's own".
 static char     gTextRubyFont[0x100];
 static int32_t  gTextRubySize = 0;
-static int32_t  gTextRubyWidth = 0;
+static int32_t  gTextRubyWeight = 0;
 static int32_t  gTextRubyOffsetX = 0;
 static int32_t  gTextRubyOffsetY = 0;
 static uint32_t gTextRubyColour = 0xFFFFFFFF;
@@ -566,6 +566,24 @@ static void Text_NarrowToInk(Bitmap_t* view, const FontGlyphInfo_t* info)
 // ----------------------------------------------------------------------------
 // Fonts, as the layout sees them
 // ----------------------------------------------------------------------------
+
+// Grp1 0x97 (0x00434520): the ruby's face, size, weight and offsets. The face is the
+// font name, or empty for the text's own; a face of 0x100 bytes or more is refused
+// and the old one kept, as the original's copy refuses it (the opcode still answers
+// 0). The colour and edge overrides go back to "the text's own".
+void Text_SetRubyFont(const char* name, int32_t size, int32_t weight, int32_t offsetX, int32_t offsetY)
+{
+	if(name == NULL)
+		gTextRubyFont[0] = 0;
+	else if(strlen(name) < sizeof(gTextRubyFont))
+		strcpy(gTextRubyFont, name);
+	gTextRubySize = size;
+	gTextRubyWeight = weight;
+	gTextRubyOffsetX = offsetX;
+	gTextRubyOffsetY = offsetY;
+	gTextRubyColour = 0xFFFFFFFF;
+	gTextRubyEdgeColour = 0xFFFFFFFF;
+}
 
 // 0x00437160: a character cell's advance - size times width per cent.
 static int32_t Text_CellAdvance(const FontEntryInfo_t* font)
@@ -1608,13 +1626,13 @@ int Text_LayoutRuby(Renderer_t* renderer, TextLayout_t* layout, uint32_t fontId,
 		return 0;
 	int32_t rubySize = Text_RubySize(font.size);
 	const char* name = gTextRubyFont[0] != 0 ? gTextRubyFont : font.name;
-	int32_t width = gTextRubyWidth > 0 ? gTextRubyWidth : font.width;
+	int32_t weight = gTextRubyWeight > 0 ? gTextRubyWeight : font.bold;
 	uint32_t colour = gTextRubyColour != 0xFFFFFFFF ? gTextRubyColour : rubyColour;
 	TextStyle_t rubyStyle = *style;
 	if(gTextRubyEdgeColour != 0xFFFFFFFF)
 		rubyStyle.colour = gTextRubyEdgeColour;
 	uint32_t rubyId = 0;
-	if(Font_Open(name, rubySize, width, font.bold, &rubyId) != 0)
+	if(Font_Open(name, rubySize, font.width, weight, &rubyId) != 0)
 		return 0;
 	FontEntryInfo_t rubyFont;
 	Font_GetInfo(rubyId, &rubyFont);

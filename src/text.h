@@ -138,6 +138,9 @@ int Text_SetSplitPair2(int32_t count, int32_t value);
 // (0x0050763C, 0 becomes 1) and the delay between characters (0x00507638). 0, or
 // 0x80000001 for a rate outside 25..100 and 0x80000002 for a negative margin, in
 // which case nothing changes.
+// Grp1 0x97: the ruby's face (NULL or empty for the text's own), size, weight and offsets;
+// the ruby colour and edge go back to the text's own.
+void Text_SetRubyFont(const char* name, int32_t size, int32_t weight, int32_t offsetX, int32_t offsetY);
 uint32_t Text_SetRubyStyle(uint32_t hangingIndent, int32_t rubyIndent, int32_t rubyPercent,
                            int32_t extraSpacing, uint32_t fadeLength, uint32_t delayStep);
 

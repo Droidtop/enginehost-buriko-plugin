@@ -167,7 +167,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x94 148 */ "SetNameTableEntry",
     /* 0x95 149 */ "NameTableWordsIn",
     /* 0x96 150 */ "LoadNameTable",
-    /* 0x97 151 */ "--Unknown--",
+    /* 0x97 151 */ "SetRubyFont",
     /* 0x98 152 */ "SetRubyStyle",
     /* 0x99 153 */ "--Unknown--",
     /* 0x9A 154 */ "SetFunctionParameter",
@@ -426,7 +426,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x94 148 */ Opcode_Grp1_SetNameTableEntry,
     /* 0x95 149 */ Opcode_Grp1_NameTableWordsIn,
     /* 0x96 150 */ Opcode_Grp1_LoadNameTable,
-    /* 0x97 151 */ NULL,
+    /* 0x97 151 */ Opcode_Grp1_SetRubyFont,
     /* 0x98 152 */ Opcode_Grp1_SetRubyStyle,
     /* 0x99 153 */ NULL,
     /* 0x9A 154 */ Opcode_Grp1_SetFunctionParameter,
@@ -1461,4 +1461,25 @@ uint32_t Opcode_Grp1_GetObjectParameter(Thread_t* thread)
 		       thread->threadId, TLevel[thread->level], number);
 		return 0xFFFFFFFF;
 	}
+}
+
+/*
+ * Grp1 0x97 (0x00009197; Houkago's msgwndctrl+0x0C1A; 1.622 0x00484920 -> 0x00463440 ->
+ * 0x00434520): the ruby (furigana) style, drawn by 0x004371F0 from then on; nothing is
+ * redrawn. Popped (top first): the y offset, the x offset, the weight, the size and
+ * the font number. An unknown font number names no face, so the ruby takes the
+ * text's. A size of 0 or less is the text's size times the ruby percentage, and the
+ * size is never below 4 (Text_RubySize); a weight of 0 or less is the text's. The
+ * ruby colour and edge overrides go back to the text's own. Nothing is pushed. As the
+ * RE lane read it on Droidtop/tracker#123.
+ */
+uint32_t Opcode_Grp1_SetRubyFont(Thread_t* thread)
+{
+	int32_t offsetY = (int32_t)Thread_PopStack(thread);
+	int32_t offsetX = (int32_t)Thread_PopStack(thread);
+	int32_t weight = (int32_t)Thread_PopStack(thread);
+	int32_t size = (int32_t)Thread_PopStack(thread);
+	uint32_t fontNumber = Thread_PopStack(thread);
+	Text_SetRubyFont(Engine_FontNameById(fontNumber), size, weight, offsetX, offsetY);
+	return 0;
 }
