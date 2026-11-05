@@ -1086,10 +1086,23 @@ static int SDLCALL SEJob_Decode(void* data)
 	AudioSEJob_t* job = (AudioSEJob_t*)data;
 	uint32_t frames = job->frames;
 	uint32_t got = 0;
+	// A two-channel SE is mixed down to the one channel an SE voice plays: both are
+	// read interleaved and averaged. (stb_vorbis cannot hand two channels out as one
+	// through this call - it asserts the buffer has two.)
+	int stereo = job->part.header[BW_CHANNELS] == 2;
+	int16_t pair[4096 * 2];
 	while(got < frames)
 	{
 		int want = (int)((frames - got) > 4096 ? 4096 : (frames - got));
-		int n = stb_vorbis_get_samples_short_interleaved(job->part.vorbis, 1, job->pcm + got, want);
+		int n;
+		if(stereo)
+		{
+			n = stb_vorbis_get_samples_short_interleaved(job->part.vorbis, 2, pair, want * 2);
+			for(int i = 0; i < n; i++)
+				job->pcm[got + (uint32_t)i] = (int16_t)(((int32_t)pair[2 * i] + (int32_t)pair[2 * i + 1]) / 2);
+		}
+		else
+			n = stb_vorbis_get_samples_short_interleaved(job->part.vorbis, 1, job->pcm + got, want);
 		if(n <= 0)
 			break;
 		got += (uint32_t)n;
@@ -1161,7 +1174,11 @@ AudioSEJob_t* Audio_SEBegin(uint32_t se, uint8_t* data, size_t size, uint32_t ra
 		       job->part.header[BW_CODEC], names[job->part.header[BW_CODEC]]);
 		r = AUDIO_REFUSED;
 	}
-	if(r == AUDIO_OK && job->part.header[BW_CHANNELS] != 1)
+	// 1.622 refuses a stereo SE when its voice is set up (0x0043A0E0, 0x80000002), but
+	// Houkago (1.580.1) registers one at every boot (system.arc sse990800) and runs, so
+	// its runtime takes two channels (RE lane, Droidtop/tracker#123). Two are mixed
+	// down to one (SEJob_Decode); "not mono" stays for more than two.
+	if(r == AUDIO_OK && (job->part.header[BW_CHANNELS] < 1 || job->part.header[BW_CHANNELS] > 2))
 		r = AUDIO_NOT_MONO;
 	if(r == AUDIO_OK)
 		r = Part_Open(&job->part);
