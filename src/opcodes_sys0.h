@@ -148,7 +148,7 @@ uint32_t Opcode_Sys0_ClearStringTables(Thread_t* thread);
 uint32_t Opcode_Sys0_StringTableCount(Thread_t* thread);
 uint32_t Opcode_Sys0_AddString(Thread_t* thread);
 uint32_t Opcode_Sys0_ReadString(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_224(Thread_t* thread);
+uint32_t Opcode_Sys0_RunProgram(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_225(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_226(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_227(Thread_t* thread);

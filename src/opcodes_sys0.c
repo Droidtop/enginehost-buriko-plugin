@@ -249,7 +249,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0xDD 221 */ "ReadString",
 	/* 0xDE 222 */ "StringLength",
 	/* 0xDF 223 */ "--Unknown--",
-	/* 0xE0 224 */ "Unknown_224",
+	/* 0xE0 224 */ "RunProgram",
 	/* 0xE1 225 */ "Unknown_225",
 	/* 0xE2 226 */ "Unknown_226",
 	/* 0xE3 227 */ "Unknown_227",
@@ -508,7 +508,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0xDD 221 */ Opcode_Sys0_ReadString,
 	/* 0xDE 222 */ Opcode_Sys0_StringLength,
 	/* 0xDF 223 */ NULL,
-	/* 0xE0 224 */ Opcode_Sys0_Unknown_224,
+	/* 0xE0 224 */ Opcode_Sys0_RunProgram,
 	/* 0xE1 225 */ Opcode_Sys0_Unknown_225,
 	/* 0xE2 226 */ Opcode_Sys0_Unknown_226,
 	/* 0xE3 227 */ Opcode_Sys0_Unknown_227,
@@ -1268,6 +1268,10 @@ uint32_t Opcode_Sys0_DeleteFile(Thread_t* thread)
 {
 	uint8_t* ptr1 = Thread_PopAndResolveAddress(thread);
 	uint8_t* ptr2 = Thread_PopAndResolveAddress(thread);
+	// Nothing on disk is deleted (that is unchanged); a file answered in place of a
+	// program (Sys0 0xE0) is dropped, as the script means it to be gone.
+	if(!Engine_DropAnswerFile((const char*)ptr1))
+		Engine_DropAnswerFile((const char*)ptr2);
 	printf("[Thread %d]: %sDeleting file (\"%s\", \"%s\")\n", thread->threadId, TLevel[thread->level], ptr1, ptr2);
 	Thread_PushStack(thread, 0);
 	return 0;
@@ -2420,9 +2424,58 @@ uint32_t Opcode_Sys0_ReadString(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_224(Thread_t* thread)
+/*
+ * Sys0 0xE0 (1.622 0x0048AB00 -> 0x00472630; 1.580 0x00470BF0 -> 0x0045C0E0): run an
+ * external program and wait for it. Popped (top first): whether to hide the game while
+ * it runs, a message for when it cannot start (0 for none), the command line, and a
+ * folder (0 for the game's own). The original starts the program, waits until it
+ * exits, and pushes 1 when it started, else 0 (RE lane on Droidtop/tracker#123).
+ *
+ * This engine never starts a program. The one call answered is the first-run screen
+ * setup BGI games make when they have no BGI.gdb yet - "ISESUfor<game>.exe a call from
+ * Ethornell.", from the game's own folder - which is a settings dialog, not a check:
+ * its program writes ISEfor<game>.dat, three u32 indices (screen mode, aspect, size),
+ * which the script reads (Sys0 0x31, 12 bytes) and deletes (Sys0 0x33). That file is
+ * answered in memory (Engine_ProvideAnswerFile), so nothing lands in the player's
+ * folder, and 1 is pushed as if the program had run and OK been pressed. The values
+ * are the dialog's own defaults for now - windowed, 16:9, its first size - until
+ * Enginehost's dialog component (Droidtop/tracker#904) asks the person. Every other
+ * command is refused: logged, nothing started, 0 pushed, as the original pushes when
+ * a program cannot start and no message was given.
+ */
+uint32_t Opcode_Sys0_RunProgram(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t hide = Thread_PopStack(thread);
+	uint32_t messageAddress = Thread_PopStack(thread);
+	uint32_t commandAddress = Thread_PopStack(thread);
+	uint32_t folderAddress = Thread_PopStack(thread);
+	(void)hide;
+	(void)messageAddress;
+	const char* command = commandAddress ? (const char*)Thread_ResolveAddr(thread, commandAddress) : NULL;
+	static const char kPrefix[] = "ISESUfor";
+	static const char kTail[] = ".exe a call from Ethornell.";
+	size_t length = command != NULL ? strnlen(command, 0x400) : 0;
+	size_t prefix = sizeof(kPrefix) - 1, tail = sizeof(kTail) - 1;
+	if(folderAddress == 0 && command != NULL && length > prefix + tail && length - prefix - tail < 0x100
+	   && strncasecmp(command, kPrefix, prefix) == 0 && strcmp(command + length - tail, kTail) == 0
+	   && memchr(command + prefix, ' ', length - prefix - tail) == NULL
+	   && memchr(command + prefix, '\\', length - prefix - tail) == NULL
+	   && memchr(command + prefix, '/', length - prefix - tail) == NULL)
+	{
+		char name[0x120];
+		snprintf(name, sizeof(name), "ISEfor%.*s.dat", (int)(length - prefix - tail), command + prefix);
+		const uint8_t answer[12] = { 0 };   // screen mode 0 (windowed), aspect 0 (16:9), size 0 (the first)
+		Engine_ProvideAnswerFile(name, answer, sizeof(answer));
+		printf("[Thread %d]: %sThe screen setup \"%s\" is answered with its defaults in %s; nothing is started\n",
+		       thread->threadId, TLevel[thread->level], command, name);
+		Thread_PushStack(thread, 1);
+		return 0;
+	}
+	printf("[Thread %d]: %sRefused to start \"%s\" (folder %s): this engine never starts a program\n",
+	       thread->threadId, TLevel[thread->level], command != NULL ? command : "(none)",
+	       folderAddress ? "given" : "the game's own");
+	Thread_PushStack(thread, 0);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_225(Thread_t* thread)

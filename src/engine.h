@@ -49,6 +49,11 @@ Thread_t* Engine_CreateThread(Engine_t* engine, uint32_t stackSize, uint32_t cod
 // A file the game's folder holds loose, matched part by part without regard to case
 // as Windows matches it; NULL when it is not there.
 uint8_t* Engine_ReadLooseFile(const char* name, size_t* size);
+// A file the core answers in place of a program the game would run (Sys0 0xE0): read
+// as if in the game's folder, gone when the script deletes it; never written to disk.
+void Engine_ProvideAnswerFile(const char* name, const uint8_t* data, size_t size);
+// 1 when such a file was there and is now gone.
+int Engine_DropAnswerFile(const char* name);
 // The host path a file the scripts write under `name` goes to (see engine.c).
 void     Engine_ResolveWritePath(const char* name, char* out, size_t outSize);
 uint8_t* Engine_ReadFile(Engine_t* engine, const char* archive, const char* filename, size_t* outSize);

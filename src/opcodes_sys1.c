@@ -34,7 +34,7 @@ char* OpcodesSys1Mnemonics[256] = {
 	/* 0x0C  12 */ "Unknown_12",
 	/* 0x0D  13 */ "Unknown_13",
 	/* 0x0E  14 */ "Unknown_14",
-	/* 0x0F  15 */ "Unknown_15",
+	/* 0x0F  15 */ "IsMinimised",
 	/* 0x10  16 */ "Unknown_16",
 	/* 0x11  17 */ "Unknown_17",
 	/* 0x12  18 */ "--Unknown--",
@@ -293,7 +293,7 @@ OpcodePtr_t OpcodesSys1[256] = {
 	/* 0x0C  12 */ Opcode_Sys1_Unknown_12,
 	/* 0x0D  13 */ Opcode_Sys1_Unknown_13,
 	/* 0x0E  14 */ Opcode_Sys1_Unknown_14,
-	/* 0x0F  15 */ Opcode_Sys1_Unknown_15,
+	/* 0x0F  15 */ Opcode_Sys1_IsMinimised,
 	/* 0x10  16 */ Opcode_Sys1_Unknown_16,
 	/* 0x11  17 */ Opcode_Sys1_Unknown_17,
 	/* 0x12  18 */ NULL,
@@ -581,9 +581,14 @@ uint32_t Opcode_Sys1_Unknown_14(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys1_Unknown_15(Thread_t* thread)
+// Sys1 0x0F (1.622 0x0048B720; Houkago's scrmain+0x017D polls it): whether the game's
+// window is minimised (IsIconic). Pops nothing. This engine is never told it is in the
+// background, so it pushes 0 - the game just never pauses for this (RE lane on
+// Droidtop/tracker#123, which named that safe).
+uint32_t Opcode_Sys1_IsMinimised(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	Thread_PushStack(thread, 0);
+	return 0;
 }
 
 uint32_t Opcode_Sys1_Unknown_16(Thread_t* thread)
