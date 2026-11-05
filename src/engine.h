@@ -81,6 +81,11 @@ extern uint32_t gIdleWaitTime;
 void Engine_SetIdleWaitTime(uint32_t value);
 
 extern uint32_t gDisplayModeWidth[8];
+// Sys1 0x64: the window's client size (0 for either: the base display size), kept for
+// read-back; the frame stays the display mode's size.
+void Engine_SetClientSize(uint32_t width, uint32_t height);
+uint32_t Engine_ClientWidth(void);
+uint32_t Engine_ClientHeight(void);
 extern uint32_t gDisplayModeHeight[8];
 uint32_t Engine_SetDisplayModeSize(uint32_t index, uint32_t width, uint32_t height);
 

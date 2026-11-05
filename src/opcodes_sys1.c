@@ -119,7 +119,7 @@ char* OpcodesSys1Mnemonics[256] = {
 	/* 0x61  97 */ "Unknown_97",
 	/* 0x62  98 */ "Unknown_98",
 	/* 0x63  99 */ "SetScreenMappingMode",
-	/* 0x64 100 */ "Unknown_100",
+	/* 0x64 100 */ "SetClientSize",
 	/* 0x65 101 */ "Unknown_101",
 	/* 0x66 102 */ "--Unknown--",
 	/* 0x67 103 */ "--Unknown--",
@@ -378,7 +378,7 @@ OpcodePtr_t OpcodesSys1[256] = {
 	/* 0x61  97 */ Opcode_Sys1_Unknown_97,
 	/* 0x62  98 */ Opcode_Sys1_Unknown_98,
 	/* 0x63  99 */ Opcode_Sys1_SetScreenMappingMode,
-	/* 0x64 100 */ Opcode_Sys1_Unknown_100,
+	/* 0x64 100 */ Opcode_Sys1_SetClientSize,
 	/* 0x65 101 */ Opcode_Sys1_Unknown_101,
 	/* 0x66 102 */ NULL,
 	/* 0x67 103 */ NULL,
@@ -789,9 +789,14 @@ uint32_t Opcode_Sys1_SetScreenMappingMode(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys1_Unknown_100(Thread_t* thread)
+// Sys1 0x64 (0x00008164; Houkago's environ+0x02EE): the window's client size. Popped:
+// the height (top), then the width; 0 means the base display size. Nothing is pushed.
+uint32_t Opcode_Sys1_SetClientSize(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t height = Thread_PopStack(thread);
+	uint32_t width = Thread_PopStack(thread);
+	Engine_SetClientSize(width, height);
+	return 0;
 }
 
 uint32_t Opcode_Sys1_Unknown_101(Thread_t* thread)

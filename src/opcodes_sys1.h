@@ -54,7 +54,7 @@ uint32_t Opcode_Sys1_SetDisplayModeSize(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_97(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_98(Thread_t* thread);
 uint32_t Opcode_Sys1_SetScreenMappingMode(Thread_t* thread);
-uint32_t Opcode_Sys1_Unknown_100(Thread_t* thread);
+uint32_t Opcode_Sys1_SetClientSize(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_101(Thread_t* thread);
 uint32_t Opcode_Sys1_SetAudioResumeOnActivate(Thread_t* thread);
 uint32_t Opcode_Sys1_Unknown_105(Thread_t* thread);

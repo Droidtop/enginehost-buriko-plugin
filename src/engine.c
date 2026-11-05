@@ -767,6 +767,39 @@ uint32_t Engine_ScreenHeight(void)
 	return gDisplayModeHeight[gDisplaySizeIndex & 7];
 }
 
+// Sys1 0x64 (0x0048C320 -> 0x0045E8F0): the window's client size. A width or height
+// of 0 puts back the game's base display size (0x00461240 -> 0x00461220); the size is
+// stored (0x0045E8C0) and applied (0x00461200), which when windowed rebuilds the
+// window through 0x00461290 as Sys0 0x60 does. This engine's frame is the display
+// mode's size whatever the window is, so applying it is only the window's layout
+// (OS_SetWindowSize); the device surface is left as it is. As the RE lane read it on
+// Droidtop/tracker#123.
+static uint32_t gClientWidth = 0;
+static uint32_t gClientHeight = 0;
+
+void Engine_SetClientSize(uint32_t width, uint32_t height)
+{
+	if(width == 0 || height == 0)
+	{
+		width = Engine_ScreenWidth();
+		height = Engine_ScreenHeight();
+	}
+	gClientWidth = width;
+	gClientHeight = height;
+	OS_SetWindowSize((int)width, (int)height);
+	printf("[Engine]: Window client size is %ux%u\n", width, height);
+}
+
+uint32_t Engine_ClientWidth(void)
+{
+	return gClientWidth != 0 ? gClientWidth : Engine_ScreenWidth();
+}
+
+uint32_t Engine_ClientHeight(void)
+{
+	return gClientHeight != 0 ? gClientHeight : Engine_ScreenHeight();
+}
+
 uint32_t gDisplayFlagUnknown98 = 0;
 uint32_t Engine_SetDisplayFlagUnknown98(uint32_t value)
 {
