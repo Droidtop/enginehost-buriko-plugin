@@ -76,6 +76,9 @@
 // How many workers the original's pool would have (see Banding above). 0 or 1
 // means no banding at all.
 void Xform_SetWorkerCount(int workers);
+// The engine's angles are degrees x 65536; this is that angle in radians, as 0x004EC8F8 / 0x004EC908
+// convert it (pi over 180 x 65536). Used by the transforms and by base opcodes 0x48 and 0x49.
+double Xform_AngleRadians(int32_t angle);
 
 /*
  * 0x00417800: the source turned / zoomed onto the destination view, replacing every

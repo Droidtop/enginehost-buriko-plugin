@@ -33,7 +33,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0x05   5 */ "--Unknown--",
 	/* 0x06   6 */ "SetClockBase",
 	/* 0x07   7 */ "--Unknown--",
-	/* 0x08   8 */ "Unknown_8",
+	/* 0x08   8 */ "GetPointerPosition",
 	/* 0x09   9 */ "--Unknown--",
 	/* 0x0A  10 */ "Unknown_10",
 	/* 0x0B  11 */ "Unknown_11",
@@ -221,8 +221,8 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0xC1 193 */ "Unknown_193",
 	/* 0xC2 194 */ "--Unknown--",
 	/* 0xC3 195 */ "--Unknown--",
-	/* 0xC4 196 */ "Unknown_196",
-	/* 0xC5 197 */ "Unknown_197",
+	/* 0xC4 196 */ "EncodeUserData",
+	/* 0xC5 197 */ "DecodeUserData",
 	/* 0xC6 198 */ "--Unknown--",
 	/* 0xC7 199 */ "--Unknown--",
 	/* 0xC8 200 */ "--Unknown--",
@@ -292,7 +292,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0x05   5 */ NULL,
 	/* 0x06   6 */ Opcode_Sys0_SetClockBase,
 	/* 0x07   7 */ NULL,
-	/* 0x08   8 */ Opcode_Sys0_Unknown_8,
+	/* 0x08   8 */ Opcode_Sys0_GetPointerPosition,
 	/* 0x09   9 */ NULL,
 	/* 0x0A  10 */ Opcode_Sys0_Unknown_10,
 	/* 0x0B  11 */ Opcode_Sys0_Unknown_11,
@@ -480,8 +480,8 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0xC1 193 */ Opcode_Sys0_Unknown_193,
 	/* 0xC2 194 */ NULL,
 	/* 0xC3 195 */ NULL,
-	/* 0xC4 196 */ Opcode_Sys0_Unknown_196,
-	/* 0xC5 197 */ Opcode_Sys0_Unknown_197,
+	/* 0xC4 196 */ Opcode_Sys0_EncodeUserData,
+	/* 0xC5 197 */ Opcode_Sys0_DecodeUserData,
 	/* 0xC6 198 */ NULL,
 	/* 0xC7 199 */ NULL,
 	/* 0xC8 200 */ NULL,
@@ -594,9 +594,20 @@ uint32_t Opcode_Sys0_GetSysTime(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_8(Thread_t* thread)
+/*
+ * Sys0 0x08: the pointer's position in game-screen pixels, x pushed first, then y
+ * (Droidtop/tracker#123, scrslct+0x09A3 after Start Game). The original subtracts the
+ * window's frame and caption and pushes 0, 0 when the game does not have the focus; this
+ * engine's pointer is already in game pixels (Input_GetMouse) and the game always has the
+ * screen.
+ */
+uint32_t Opcode_Sys0_GetPointerPosition(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int32_t x = 0, y = 0;
+	Input_GetMouse(&x, &y);
+	Thread_PushStack(thread, (uint32_t)x);
+	Thread_PushStack(thread, (uint32_t)y);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_Unknown_10(Thread_t* thread)
@@ -2218,14 +2229,40 @@ uint32_t Opcode_Sys0_Unknown_193(Thread_t* thread)
 	return 0xFFFFFFFF;
 }
 
-uint32_t Opcode_Sys0_Unknown_196(Thread_t* thread)
+/*
+ * Sys0 0xC4 / 0xC5: encode and decode user data, the save image (Droidtop/tracker#123).
+ * 0xC4 pops, top first, a record count, a record size, a source and a destination; the
+ * original runs a process that delta-codes the records (DCFS) and wraps that in SDC
+ * (gdb.c), and pushes the encoded size, or 0 when it could not. 0xC5 pops a source and a
+ * destination and pushes 0 when it decoded, 0x80000003 when the inner data is not DCFS and
+ * 0x80000004 when a run overflows a record.
+ *
+ * The DCFS bytes (the header's widths, the run-length coding) are not yet settled, and
+ * these files are the game's saves, which the owner's PC and cloud saves share: a guessed
+ * format would put saves there that the original cannot read. Until the local lane's trace
+ * settles them, 0xC4 answers 0 ("encode failed", which the game's own userdata program
+ * reports through 0x79 and goes on from) and writes nothing, and 0xC5 answers "not DCFS".
+ */
+uint32_t Opcode_Sys0_EncodeUserData(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t count = Thread_PopStack(thread);
+	uint32_t size = Thread_PopStack(thread);
+	uint32_t source = Thread_PopStack(thread);
+	uint32_t destination = Thread_PopStack(thread);
+	printf("[Thread %d]: %sUser data encode (Sys0 0xC4, %u records of 0x%X from 0x%08X to 0x%08X) is not ported yet; answering 0\n",
+	       thread->threadId, TLevel[thread->level], count, size, source, destination);
+	Thread_PushStack(thread, 0);
+	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_197(Thread_t* thread)
+uint32_t Opcode_Sys0_DecodeUserData(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	uint32_t source = Thread_PopStack(thread);
+	uint32_t destination = Thread_PopStack(thread);
+	printf("[Thread %d]: %sUser data decode (Sys0 0xC5, 0x%08X to 0x%08X) is not ported yet; answering not DCFS\n",
+	       thread->threadId, TLevel[thread->level], source, destination);
+	Thread_PushStack(thread, 0x80000003u);
+	return 0;
 }
 
 uint32_t Opcode_Sys0_CreateRecordTable(Thread_t* thread)

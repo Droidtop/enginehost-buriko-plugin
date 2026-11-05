@@ -118,15 +118,19 @@ static uint32_t Xform_Darken(uint32_t pixel, const uint16_t multiplier[4])
  * because this is the inverse mapping, and the row step is taken from the angle plus
  * pi / 2 rather than from the column step's sine and cosine, as the original does.
  */
+double Xform_AngleRadians(int32_t angle)
+{
+	return ((double)angle * 3.141592653589793) / 11796480.0;   // 0x004EC8F8 pi, 0x004EC908 180 * 65536
+}
+
 static void Xform_Setup(int32_t pointX, int32_t pointY, int32_t anchorX, int32_t anchorY,
                         int32_t angle, uint32_t scaleX, uint32_t scaleY,
                         int32_t start[2], int32_t row[2], int32_t column[2])
 {
-	const double pi = 3.141592653589793;        // 0x004EC8F8
 	const double halfPi = 1.5707963267948966;   // 0x004EC918
 	const double toPixels = 1.52587890625e-05;  // 0x004EC930, 1 / 65536
 
-	double theta = -(((double)angle * pi) / 11796480.0);   // 0x004EC908, 180 * 65536
+	double theta = -Xform_AngleRadians(angle);
 	double c = cos(theta);   // 0x004D5850
 	double s = sin(theta);   // 0x004D5980
 	// fild of the scale, 2^32 added when its top bit is set: the scale is unsigned.

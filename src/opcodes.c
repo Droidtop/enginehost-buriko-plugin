@@ -8,6 +8,8 @@
 #include "opcodes_sys0.h"
 #include "opcodes_sys1.h"
 #include "opcodes_grp0.h"
+#include "xform.h"
+#include <math.h>
 #include "opcodes_grp1.h"
 #include "opcodes_grp2.h"
 #include "opcodes_snd0.h"
@@ -83,14 +85,14 @@ char* OpcodesMnemonics[256] = {
 	/* 0x3F  63 */ "Unknown",
 	/* 0x40  64 */ "Ternary",
 	/* 0x41  65 */ "Unknown",
-	/* 0x42  66 */ "Unknown",
+	/* 0x42  66 */ "MulDiv",
 	/* 0x43  67 */ "Unknown",
-	/* 0x44  68 */ "Unknown",
+	/* 0x44  68 */ "Length3",
 	/* 0x45  69 */ "Unknown",
 	/* 0x46  70 */ "Unknown",
 	/* 0x47  71 */ "Unknown",
-	/* 0x48  72 */ "Unknown",
-	/* 0x49  73 */ "Unknown",
+	/* 0x48  72 */ "Sin",
+	/* 0x49  73 */ "Cos",
 	/* 0x4A  74 */ "Unknown",
 	/* 0x4B  75 */ "Unknown",
 	/* 0x4C  76 */ "Unknown",
@@ -138,8 +140,8 @@ char* OpcodesMnemonics[256] = {
 	/* 0x76 118 */ "Unknown",
 	/* 0x77 119 */ "Unknown",
 	/* 0x78 120 */ "Unknown",
-	/* 0x79 121 */ "Unknown",
-	/* 0x7A 122 */ "Unknown",
+	/* 0x79 121 */ "ShowString",
+	/* 0x7A 122 */ "ShowNumber",
 	/* 0x7B 123 */ "Unknown",
 	/* 0x7C 124 */ "Unknown",
 	/* 0x7D 125 */ "Unknown",
@@ -342,14 +344,14 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0x3F  63 */ 0,
 	/* 0x40  64 */ Opcode_Ternary,
 	/* 0x41  65 */ 0,
-	/* 0x42  66 */ 0,
+	/* 0x42  66 */ Opcode_MulDiv,
 	/* 0x43  67 */ 0,
-	/* 0x44  68 */ 0,
+	/* 0x44  68 */ Opcode_Length3,
 	/* 0x45  69 */ 0,
 	/* 0x46  70 */ 0,
 	/* 0x47  71 */ 0,
-	/* 0x48  72 */ 0,
-	/* 0x49  73 */ 0,
+	/* 0x48  72 */ Opcode_Sin,
+	/* 0x49  73 */ Opcode_Cos,
 	/* 0x4A  74 */ 0,
 	/* 0x4B  75 */ 0,
 	/* 0x4C  76 */ 0,
@@ -397,8 +399,8 @@ OpcodePtr_t Opcodes[256] = {
 	/* 0x76 118 */ 0,
 	/* 0x77 119 */ 0,
 	/* 0x78 120 */ 0,
-	/* 0x79 121 */ 0,
-	/* 0x7A 122 */ 0,
+	/* 0x79 121 */ Opcode_ShowString,
+	/* 0x7A 122 */ Opcode_ShowNumber,
 	/* 0x7B 123 */ 0,
 	/* 0x7C 124 */ 0,
 	/* 0x7D 125 */ 0,
@@ -1234,4 +1236,86 @@ int Opcode_ReportTextFailure(Thread_t* thread, uint32_t result, int32_t size, in
 		default:
 			return 0;
 	}
+}
+
+/*
+ * Base opcodes the runtime fills and OpenBGI did not (Droidtop/tracker#123, the local lane's
+ * static pass and differential runs on BGI 1.622, own-words descriptions). None reads an
+ * operand byte.
+ */
+
+// The longest string a debug print shows; script memory is not bounded here, so a string
+// with no terminator stops at this.
+#define SHOW_STRING_MAX 1024
+
+/*
+ * 0x79: a debug "show string". The original pops a string's address and shows a report in a
+ * system-modal box (thread, program, IP, instruction, SP and the call stack, then the
+ * string), then carries on. Scripts reach it on their own error paths (userdata's "user
+ * data encode failed"). Here it is a log line, never a box: nothing blocks a game on it.
+ */
+uint32_t Opcode_ShowString(Thread_t* thread)
+{
+	const char* text = (const char*)Thread_PopAndResolveAddress(thread);
+	printf("[Thread %d]: %sScript message (0x79) at 0x%08X: %.*s\n", thread->threadId, TLevel[thread->level],
+	       thread->instructionPointer, SHOW_STRING_MAX, text != NULL ? text : "(null)");
+	return 0;
+}
+
+// 0x7A: the same report for a number, which the original formats "Number : %d ( $%.8x )".
+uint32_t Opcode_ShowNumber(Thread_t* thread)
+{
+	uint32_t value = Thread_PopStack(thread);
+	printf("[Thread %d]: %sScript message (0x7A) at 0x%08X: Number : %d ( $%.8x )\n", thread->threadId,
+	       TLevel[thread->level], thread->instructionPointer, (int32_t)value, value);
+	return 0;
+}
+
+/*
+ * 0x42: pops c, then b, then a (top first) and pushes a * b / c, the product in 64 bits and
+ * the quotient truncated, signed. The original does not guard c == 0; here that pushes 0
+ * and logs instead of faulting.
+ */
+uint32_t Opcode_MulDiv(Thread_t* thread)
+{
+	int32_t c = (int32_t)Thread_PopStack(thread);
+	int32_t b = (int32_t)Thread_PopStack(thread);
+	int32_t a = (int32_t)Thread_PopStack(thread);
+	if(c == 0)
+	{
+		printf("[Thread %d]: %sWarning: 0x42 divides by zero; 0 pushed\n", thread->threadId, TLevel[thread->level]);
+		Thread_PushStack(thread, 0);
+		return 0;
+	}
+	int64_t product = (int64_t)a * (int64_t)b;
+	if(c == -1 && product == INT64_MIN)   // the one quotient that does not fit
+		product = INT64_MAX;
+	Thread_PushStack(thread, (uint32_t)(int32_t)(product / c));
+	return 0;
+}
+
+// 0x44: pops three numbers and pushes trunc(sqrt(a^2 + b^2 + c^2)), in floating point.
+uint32_t Opcode_Length3(Thread_t* thread)
+{
+	double c = (double)(int32_t)Thread_PopStack(thread);
+	double b = (double)(int32_t)Thread_PopStack(thread);
+	double a = (double)(int32_t)Thread_PopStack(thread);
+	double r = sqrt(a * a + b * b + c * c);
+	Thread_PushStack(thread, r >= 4294967295.0 ? 0xFFFFFFFFu : (uint32_t)r);
+	return 0;
+}
+
+// 0x48 / 0x49: pop an angle in degrees x 65536 and push trunc(sin or cos of it x 65536).
+uint32_t Opcode_Sin(Thread_t* thread)
+{
+	double theta = Xform_AngleRadians((int32_t)Thread_PopStack(thread));
+	Thread_PushStack(thread, (uint32_t)(int32_t)(sin(theta) * 65536.0));
+	return 0;
+}
+
+uint32_t Opcode_Cos(Thread_t* thread)
+{
+	double theta = Xform_AngleRadians((int32_t)Thread_PopStack(thread));
+	Thread_PushStack(thread, (uint32_t)(int32_t)(cos(theta) * 65536.0));
+	return 0;
 }

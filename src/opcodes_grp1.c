@@ -171,7 +171,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x98 152 */ "SetRubyStyle",
     /* 0x99 153 */ "--Unknown--",
     /* 0x9A 154 */ "SetFunctionParameter",
-    /* 0x9B 155 */ "--Unknown--",
+    /* 0x9B 155 */ "MeasureText",
     /* 0x9C 156 */ "DrawTextInDefaultStyle",
     /* 0x9D 157 */ "DrawTextInDefaultStyleOrPlain",
     /* 0x9E 158 */ "--Unknown--",
@@ -430,7 +430,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x98 152 */ Opcode_Grp1_SetRubyStyle,
     /* 0x99 153 */ NULL,
     /* 0x9A 154 */ Opcode_Grp1_SetFunctionParameter,
-    /* 0x9B 155 */ NULL,
+    /* 0x9B 155 */ Opcode_Grp1_MeasureText,
     /* 0x9C 156 */ Opcode_Grp1_DrawTextInDefaultStyle,
     /* 0x9D 157 */ Opcode_Grp1_DrawTextInDefaultStyleOrPlain,
     /* 0x9E 158 */ NULL,
@@ -1075,6 +1075,60 @@ uint32_t Opcode_Grp1_SetPhoneticMargin(Thread_t* thread)
 	uint32_t value5 = Thread_PopStack(thread);
 	//uint32_t value6 = Thread_PopStack(thread);
 	printf("[Thread %d]: %sWarning: dummy opcode\n", thread->threadId, TLevel[thread->level]);
+	return 0;
+}
+
+/*
+ * Grp1 0x9B: the width a string would take in a font (Droidtop/tracker#123, scrslct+0x10B4
+ * after Start Game). From the local lane's description: pops a flag (top), two words it
+ * does not use, a font number, a size, the string and an output address; the order is to
+ * be confirmed on the official trace. The original walks the string a character at a
+ * time, two bytes for a Shift-JIS lead byte, through the kinsoku-aware advance text.c
+ * ports, writes the width to the output and pushes 0, or 0x80000001-0x80000003 for a bad
+ * font, size or style.
+ *
+ * Interim, until the trace settles the font and style arguments: a double-byte character
+ * advances by the size and a single-byte one by half of it, which is what a Japanese
+ * font's cells are. The checks and the answers are the original's.
+ */
+uint32_t Opcode_Grp1_MeasureText(Thread_t* thread)
+{
+	uint32_t flag = Thread_PopStack(thread);
+	Thread_PopStack(thread);
+	Thread_PopStack(thread);
+	uint32_t fontNumber = Thread_PopStack(thread);
+	int32_t size = (int32_t)Thread_PopStack(thread);
+	const uint8_t* text = Thread_PopAndResolveAddress(thread);
+	uint8_t* out = Thread_PopAndResolveAddress(thread);
+	(void)flag;
+	if(Engine_FontNameById(fontNumber) == NULL)
+	{
+		Thread_PushStack(thread, 0x80000001u);
+		return 0;
+	}
+	if(size <= 0)
+	{
+		Thread_PushStack(thread, 0x80000002u);
+		return 0;
+	}
+	int64_t width = 0;
+	for(size_t i = 0; text != NULL && text[i] != 0 && i < 0x10000; i++)
+	{
+		uint8_t c = text[i];
+		int lead = (c >= 0x81 && c <= 0x9F) || (c >= 0xE0 && c <= 0xFC);
+		if(lead && text[i + 1] != 0)
+		{
+			width += size;
+			i++;
+		}
+		else
+			width += size / 2;
+	}
+	if(width > INT32_MAX)
+		width = INT32_MAX;
+	if(out != NULL)
+		Thread_WriteIntToMemory(thread, out, BGI_SIZE_DWORD, (uint32_t)width);
+	Thread_PushStack(thread, 0);
 	return 0;
 }
 
