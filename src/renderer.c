@@ -483,12 +483,29 @@ static uint8_t* Renderer_ParseBmp(const uint8_t* file, size_t size, int* width, 
 	uint32_t planes = BMP_U16(26);
 	uint32_t count = BMP_U16(28);
 	uint32_t compression = BMP_U32(30);
-#undef BMP_U32
-#undef BMP_U16
 	if(header < 40 || (size_t)14 + header > size || planes != 1 || compression != 0)
 		return NULL;
-	if(count != 24 && count != 32)
+	if(count != 8 && count != 24 && count != 32)
 		return NULL;
+	if(count == 8)
+	{
+		// An 8-bit image is a grayscale ramp - a mask or a transition rule (Eustia's
+		// SGMsgWnd200300 and SGMusic970000, RE lane on #123) - and loads as an 8-bit
+		// bitmap whose palette index is the value. Only a palette that is exactly that
+		// ramp is taken; a colour palette is refused rather than read as a mask.
+		uint32_t used = BMP_U32(46);
+		if(used == 0)
+			used = 256;
+		size_t palette = (size_t)14 + header;
+		if(used > 256 || palette + (size_t)used * 4 > offset)
+			return NULL;
+		for(uint32_t i = 0; i < used; i++)
+		{
+			const uint8_t* entry = file + palette + (size_t)i * 4;
+			if(entry[0] != i || entry[1] != i || entry[2] != i)
+				return NULL;
+		}
+	}
 	if(w <= 0 || w > 16384 || h == 0 || h < -16384 || h > 16384)
 		return NULL;
 	int rows = h < 0 ? -h : h;
@@ -519,6 +536,8 @@ static uint8_t* Renderer_ParseBmp(const uint8_t* file, size_t size, int* width, 
 	*bits = (int)count;
 	return pixels;
 }
+#undef BMP_U32
+#undef BMP_U16
 
 uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filename, const char* archive)
 {
