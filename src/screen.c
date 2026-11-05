@@ -165,7 +165,13 @@ static int Screen_DrawTransition(Renderer_t* renderer, DisplayObject_t* object, 
 {
 	Bitmap_t* image = Renderer_ResolveBitmap(renderer, data->bitmap);
 	if(image == NULL || Renderer_BitmapSerial(renderer, data->bitmap) != data->bitmapSerial)
+	{
+		if(gLogDraws)
+			printf("[Draws]:     screen transition: image [ 0x%X ] %s (serial now 0x%X, recorded 0x%X): nothing drawn\n",
+			       data->bitmap, image == NULL ? "does not exist" : "was refilled since 0x43",
+			       Renderer_BitmapSerial(renderer, data->bitmap), data->bitmapSerial);
 		return 0;
+	}
 	uint32_t weight = Object_Weight(object);   // 0x0041B840
 	int32_t ax = -(data->x + rect->left), ay = -(data->y + rect->top);
 
@@ -217,7 +223,12 @@ static int Screen_DrawTransition(Renderer_t* renderer, DisplayObject_t* object, 
 		Renderer_FillSolid(target, colour);
 	else if(weight > 0)
 		mode = BITMAP_BLEND_FADE_BLACK2;
-	Renderer_BlitAt(target, ax, ay, image, mode, (int)weight);
+	int blitted = Renderer_BlitAt(target, ax, ay, image, mode, (int)weight);
+	if(gLogDraws)
+		printf("[Draws]:     screen transition: image [ 0x%X ] %dx%d mode %d at (%d,%d) over [ 0x%X ], weight 0x%X,"
+		       " %s, blend 0x%02X onto a %dx%d mode %d view: %d\n", data->bitmap, image->width, image->height,
+		       image->mode, data->x, data->y, data->fromBitmap, weight, uncovered ? "uncovered" : "covered", mode,
+		       target->width, target->height, target->mode, blitted);
 	return 1;
 }
 
@@ -459,6 +470,8 @@ void Screen_Draw(Renderer_t* renderer, DisplayObject_t* object, Bitmap_t* target
 	// 0x0041C410: the class's own draw when the content flag is set, and the view
 	// cleared when that drew nothing or the flag is clear.
 	int drawn = 0;
+	if(gLogDraws)
+		printf("[Draws]:     screen class %u, content %s\n", object->kind, object->screenContent ? "shown" : "not shown");
 	if(object->screenContent)
 	{
 		ScreenData_t* data = Screen_Data(object);
