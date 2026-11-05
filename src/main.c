@@ -11,6 +11,7 @@
 #include "golden_log.h"
 #include "os.h"
 #include "gameid.h"
+#include "gdb.h"
 #include "renderer.h"
 #include "object.h"
 #include "audio.h"
@@ -117,6 +118,24 @@ int main(int argc, char** argv)
 
 		printf("[EngineHost]: Game identifier \"%s\" read from %s\n", gameId, exeName);
 		Engine_SetGameId(gameId);
+	}
+
+	// Which BGI.gdb layout this game's own runtime writes depends on its version, and a
+	// game with no BGI.gdb yet has nothing else to tell it by (gdb.h). The version is in
+	// the executable's version resource, readable even when the code is wrapped.
+	{
+		GameRuntimeVersion_t version;
+		char exeName[256] = { 0 };
+		if(GameId_ScanRuntimeVersion(".", &version, exeName, sizeof(exeName)))
+		{
+			int layout = GDB_LayoutForRuntime(version.major, version.minor, version.minorDigits);
+			GDB_SetRuntimeLayout(layout);
+			printf("[EngineHost]: Runtime \"%s\" (%s): BGI.gdb is written in %s\n", version.text, exeName,
+				layout == GDB_LAYOUT_OLDER ? "the older layout" : layout == GDB_LAYOUT_300 ? "the 3.00 layout"
+				: "the layout it was read in, as this version's own has not been checked");
+		}
+		else
+			printf("[EngineHost]: No executable with a BGI version resource: BGI.gdb is written in the layout it was read in\n");
 	}
 
 	PrintVersion();

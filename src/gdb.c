@@ -716,19 +716,54 @@ static int gGdbUnreadable = 0;
 
 static uint32_t GDB_Read(uint8_t* globalMem, uint32_t globalSize, int32_t* left, int32_t* top);
 
-// Which layout BGI.gdb was read in, so a save writes it back the same way: a game's own
-// runtime reads only its own layout (1.580 rejects a 3.00 file, RE lane on #123). The
-// older layout also keeps the window position it was read with, since this engine's
-// window has none of its own to write.
+// Which layout a save writes. Each original runtime writes one layout, and the 1.5x
+// runtimes read only the older one: 1.580 and 1.566 call a 3.00 file corrupt, and 1.520
+// quietly replaces it with a fresh one, losing the player's settings and flags (live
+// checks by the RE lane, tracker#123 comments 6668001284 and 6668215815). So the layout
+// is the one the game's runtime writes when its version is known (GDB_SetRuntimeVersion),
+// whatever the file was read in, and otherwise the one the file was read in (3.00 when
+// there was none). The older layout also keeps the window position it was read with,
+// since this engine's window has none of its own to write.
+static int gGdbRuntimeLayout = GDB_LAYOUT_UNKNOWN;
 static int gGdbOldLayout = 0;
 static int32_t gGdbOldLeft = 0;
 static int32_t gGdbOldTop = 0;
 
+int GDB_LayoutForRuntime(int major, int minor, int minorDigits)
+{
+	// Checked against the originals' own files: 1.520.6 (Eustia), 1.566.3 (Daitoshokan)
+	// and 1.580.1 (Houkago) write the older layout; 1.622 (Fureraba) writes 3.00. The
+	// versions between those, and the two-digit 1.69 style (Yoake), have not been
+	// checked, so they are left unknown rather than guessed.
+	if(major != 1 || minorDigits != 3)
+		return GDB_LAYOUT_UNKNOWN;
+	if(minor >= 520 && minor <= 580)
+		return GDB_LAYOUT_OLDER;
+	if(minor >= 622)
+		return GDB_LAYOUT_300;
+	return GDB_LAYOUT_UNKNOWN;
+}
+
+void GDB_SetRuntimeLayout(int layout)
+{
+	gGdbRuntimeLayout = layout;
+}
+
 uint32_t GDB_Load(uint8_t* globalMem, uint32_t globalSize, int32_t* left, int32_t* top)
 {
 	gGdbOldLayout = 0;
-	uint32_t status = GDB_Read(globalMem, globalSize, left, top);
+	gGdbOldLeft = 0;
+	gGdbOldTop = 0;
+	int32_t readLeft = 0, readTop = 0;
+	uint32_t status = GDB_Read(globalMem, globalSize, &readLeft, &readTop);
 	gGdbUnreadable = status == 0x80000002u;
+	if(status == 0)
+	{
+		gGdbOldLeft = readLeft;
+		gGdbOldTop = readTop;
+		if(left) *left = readLeft;
+		if(top) *top = readTop;
+	}
 	return status;
 }
 
@@ -743,8 +778,8 @@ uint32_t GDB_Load(uint8_t* globalMem, uint32_t globalSize, int32_t* left, int32_
 //   unused), +0x1C u32 BYTE offset of its data from the bit data - and the bit data.
 // Each record's data is (bits + 7) >> 3 whole bytes copied as they are (0x00446D60 ->
 // 0x00446C60), so the flag store keeps the same bytes the 3.00 layout writes.
-// Writing is always the 3.00 layout. Anything that does not fit answers 0x80000002,
-// so GDB_Save keeps the file rather than replace it.
+// Anything that does not fit answers 0x80000002, so GDB_Save keeps the file rather than
+// replace it. Which layout a save writes is GDB_Save's choice (gGdbRuntimeLayout).
 #define GDB_OLD_SLOTS        0x40408u
 #define GDB_OLD_SLOT_SIZE    32u
 #define GDB_OLD_SHORT_SLOTS  0x1000u
@@ -1024,7 +1059,8 @@ uint32_t GDB_Save(const uint8_t* globalMem, uint32_t globalSize)
 		       " the player's global data\n", kGdbFile);
 		return 0;
 	}
-	if(gGdbOldLayout)
+	int older = gGdbRuntimeLayout == GDB_LAYOUT_UNKNOWN ? gGdbOldLayout : gGdbRuntimeLayout == GDB_LAYOUT_OLDER;
+	if(older)
 		return GDB_WriteOldLayout(globalMem, globalSize);
 	uint32_t strings = StrTab_Serialize(STRTAB_GLOBAL_ID, NULL) + 4;
 	uint32_t flags = Flags_Serialize(NULL);

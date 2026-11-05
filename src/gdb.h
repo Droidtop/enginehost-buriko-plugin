@@ -79,4 +79,14 @@ uint32_t GDB_Load(uint8_t* globalMem, uint32_t globalSize, int32_t* left, int32_
 uint32_t GDB_Save(const uint8_t* globalMem, uint32_t globalSize);
 void     GDB_FreeAll(void);
 
+// The layout a save writes, from the game's own runtime version (gameid.h reads it from
+// the executable): GDB_LayoutForRuntime maps a version to the layout that runtime writes,
+// GDB_LAYOUT_UNKNOWN for a version not checked. Unknown keeps the layout the file was
+// read in, and 3.00 for a game that has no BGI.gdb yet.
+#define GDB_LAYOUT_UNKNOWN (-1)
+#define GDB_LAYOUT_300     0
+#define GDB_LAYOUT_OLDER   1
+int  GDB_LayoutForRuntime(int major, int minor, int minorDigits);
+void GDB_SetRuntimeLayout(int layout);
+
 #endif
