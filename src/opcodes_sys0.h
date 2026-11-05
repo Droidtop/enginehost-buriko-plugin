@@ -153,7 +153,7 @@ uint32_t Opcode_Sys0_Unknown_225(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_226(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_227(Thread_t* thread);
 uint32_t Opcode_Sys0_GetGameId(Thread_t* thread);
-uint32_t Opcode_Sys0_Unknown_236(Thread_t* thread);
+uint32_t Opcode_Sys0_ProductActivation(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_237(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_238(Thread_t* thread);
 uint32_t Opcode_Sys0_Unknown_239(Thread_t* thread);

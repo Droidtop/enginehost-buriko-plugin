@@ -261,7 +261,7 @@ char* OpcodesSys0Mnemonics[256] = {
 	/* 0xE9 233 */ "--Unknown--",
 	/* 0xEA 234 */ "--Unknown--",
 	/* 0xEB 235 */ "--Unknown--",
-	/* 0xEC 236 */ "Unknown_236",
+	/* 0xEC 236 */ "ProductActivation",
 	/* 0xED 237 */ "Unknown_237",
 	/* 0xEE 238 */ "Unknown_238",
 	/* 0xEF 239 */ "Unknown_239",
@@ -520,7 +520,7 @@ OpcodePtr_t OpcodesSys0[256] = {
 	/* 0xE9 233 */ NULL,
 	/* 0xEA 234 */ NULL,
 	/* 0xEB 235 */ NULL,
-	/* 0xEC 236 */ Opcode_Sys0_Unknown_236,
+	/* 0xEC 236 */ Opcode_Sys0_ProductActivation,
 	/* 0xED 237 */ Opcode_Sys0_Unknown_237,
 	/* 0xEE 238 */ Opcode_Sys0_Unknown_238,
 	/* 0xEF 239 */ Opcode_Sys0_Unknown_239,
@@ -2512,8 +2512,17 @@ uint32_t Opcode_Sys0_GetGameId(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Sys0_Unknown_236(Thread_t* thread)
+/*
+ * Sys0 0xEC (0x000080EC; Yoake's ipl+0x016C, BGI 1.69): machine-bound product
+ * activation - the original checks comap.dat against the PC and otherwise runs the
+ * publisher's reg.exe and waits for it (RE lane on Droidtop/tracker#123). The owner's
+ * decision (2026-11-05, option B): no activation logic of any kind here. The engine
+ * stops with a plain reason, and Yoake is listed as unsupported for now.
+ */
+uint32_t Opcode_Sys0_ProductActivation(Thread_t* thread)
 {
+	(void)thread;
+	Engine_StopWithMessage("This edition needs its publisher's Windows activation, which Enginehost cannot run");
 	return 0xFFFFFFFF;
 }
 

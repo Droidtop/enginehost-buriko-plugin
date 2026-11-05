@@ -305,6 +305,9 @@ extern ListNode_t* gLinkedListTailNext;
 extern ListNode_t  gLinkedListSentinel;
 void Engine_PushGlobalList(uint32_t value1, uint32_t value2, uint32_t value3);
 // Sys1 0x6A: catch fatal script errors (end only the failing thread) or not.
+// A sentence for the person when a handler stops the engine on purpose (it then
+// answers 0xFFFFFFFF, which error catching never catches).
+void Engine_StopWithMessage(const char* message);
 void Engine_SetCatchScriptErrors(uint32_t value);
 // Sys1 0x6B: the last caught error's text into `out` (at most `room` bytes, ended by a
 // NUL); answers its length + 1, or 0 when none is kept.

@@ -617,6 +617,16 @@ static void Engine_CatchScriptError(Thread_t* thread)
 	printf("[Engine]: Error in %s, caught (Sys1 0x6A): thread %d ends, the engine goes on.\n", where, thread->threadId);
 }
 
+// A plain sentence for the person, set by a handler that refuses to go on (Yoake's
+// activation, Sys0 0xEC). The stop line below carries it instead of the opcode's
+// place; the Android wrapper shows that line (logcat.c, "[Engine]: ... Stopping.").
+static char gStopMessage[200];
+
+void Engine_StopWithMessage(const char* message)
+{
+	snprintf(gStopMessage, sizeof(gStopMessage), "%s", message != NULL ? message : "");
+}
+
 void Engine_Execute(Engine_t* engine)
 {
 	engine->isRunning = 1;
@@ -643,6 +653,14 @@ void Engine_Execute(Engine_t* engine)
 				}
 			}
 			uint32_t res = Engine_RunInstructions(engine, thread);
+			if(res == 0xFFFFFFFF && gStopMessage[0] != 0)
+			{
+				printf("[Engine]: Opcode 0x%.4X in %s refused to go on.\n", thread->opcode,
+				       Thread_Where(thread, Thread_GetInstructionPointer(thread)));
+				printf("[Engine]: %s. Stopping.\n", gStopMessage);
+				engine->isRunning = 0;
+				break;
+			}
 			if(res == 0xFFFFFFFF)
 			{
 				printf("[Engine]: Stub opcode 0x%.4X encountered in %s. Stopping.\n", thread->opcode, Thread_Where(thread, Thread_GetInstructionPointer(thread)));
