@@ -134,7 +134,9 @@ int Renderer_FillBitmap(Renderer_t* renderer, int id, uint32_t colour);
 #define RENDERER_MASK_BAD_TARGET     1
 #define RENDERER_MASK_BAD_MASK       2
 #define RENDERER_MASK_NOT_GREYSCALE  3
-#define RENDERER_MASK_UNREAD         4
+// The original's error 10: a target mode the mask's routine does not take; no
+// message, nothing done.
+#define RENDERER_MASK_IGNORED        4
 int Renderer_ApplyAlphaMask(Renderer_t* renderer, int target, int mask, int32_t x, int32_t y);
 // 0, or one of the 0x8000000X codes the original's loader returns.
 uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filename, const char* archive);

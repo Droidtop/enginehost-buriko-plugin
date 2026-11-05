@@ -705,10 +705,11 @@ uint32_t Opcode_Grp1_ApplyAlphaMask(Thread_t* thread)
 		       thread->threadId, TLevel[thread->level], mask);
 		return 0xFFFFFFFF;
 	default:
-		printf("[Thread %d]: %sError: Grp1 0x1E: an 8-bit target [ %d ] with a mask [ %d ] that is not 8-bit"
-		       " goes through 0x00415670's other routines, which are not read yet\n",
+		// Error 10: the original reports nothing and goes on.
+		printf("[Thread %d]: %sGrp1 0x1E: target [ %d ] is in a mode mask [ %d ]'s routine does not take;"
+		       " nothing done (the original's silent error 10)\n",
 		       thread->threadId, TLevel[thread->level], target, mask);
-		return 0xFFFFFFFF;
+		return 0;
 	}
 }
 
