@@ -447,6 +447,67 @@ static int Renderer_IsRawBitmap(const uint8_t* file, size_t size)
 	return (uint64_t)16 + (uint64_t)width * height * (bits / 8) == (uint64_t)size;
 }
 
+/*
+ * A Windows BMP, as Eustia ENG (BGI 1.520.6) keeps its images, DSC-compressed in its
+ * archives (RE lane on Droidtop/tracker#123): "BM", the 14-byte file header with the
+ * pixels' offset at +10, then a BITMAPINFOHEADER (40 bytes or a later, longer one).
+ * Uncompressed (BI_RGB) 24- and 32-bit only; rows are padded to four bytes and run
+ * bottom-up for a positive height, top-down for a negative one. Answers the pixels
+ * top-down and packed, B, G, R(, A), as the other forms do, or NULL for anything else
+ * (an 8-bit palette image, 16-bit, a compressed one), which the loader reports as not
+ * Windows bitmap data. A 32-bit image whose fourth bytes are all 0 - the "unused" byte
+ * most Windows writers leave - is taken as opaque.
+ */
+static uint8_t* Renderer_ParseBmp(const uint8_t* file, size_t size, int* width, int* height, int* bits)
+{
+	if(size < 54 || file[0] != 'B' || file[1] != 'M')
+		return NULL;
+#define BMP_U16(o) ((uint32_t)file[(o)] | ((uint32_t)file[(o) + 1] << 8))
+#define BMP_U32(o) (BMP_U16(o) | (BMP_U16((o) + 2) << 16))
+	uint32_t offset = BMP_U32(10);
+	uint32_t header = BMP_U32(14);
+	int32_t w = (int32_t)BMP_U32(18);
+	int32_t h = (int32_t)BMP_U32(22);
+	uint32_t planes = BMP_U16(26);
+	uint32_t count = BMP_U16(28);
+	uint32_t compression = BMP_U32(30);
+#undef BMP_U32
+#undef BMP_U16
+	if(header < 40 || (size_t)14 + header > size || planes != 1 || compression != 0)
+		return NULL;
+	if(count != 24 && count != 32)
+		return NULL;
+	if(w <= 0 || w > 16384 || h == 0 || h < -16384 || h > 16384)
+		return NULL;
+	int rows = h < 0 ? -h : h;
+	size_t sourceBytes = count / 8;
+	size_t stride = (((size_t)w * count + 31) / 32) * 4;
+	if(offset > size || stride * (size_t)rows > size - offset)
+		return NULL;
+	size_t row = (size_t)w * sourceBytes;
+	uint8_t* pixels = (uint8_t*)malloc(row * (size_t)rows);
+	if(pixels == NULL)
+		return NULL;
+	int opaque = 1;
+	for(int y = 0; y < rows; y++)
+	{
+		// Bottom-up unless the height is negative.
+		const uint8_t* src = file + offset + stride * (size_t)(h > 0 ? rows - 1 - y : y);
+		memcpy(pixels + row * (size_t)y, src, row);
+		if(count == 32)
+			for(int x = 0; x < w && opaque; x++)
+				if(src[x * 4 + 3] != 0)
+					opaque = 0;
+	}
+	if(count == 32 && opaque)
+		for(size_t i = 3; i < row * (size_t)rows; i += 4)
+			pixels[i] = 0xFF;
+	*width = w;
+	*height = rows;
+	*bits = (int)count;
+	return pixels;
+}
+
 uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filename, const char* archive)
 {
 	size_t fileSize;
@@ -479,6 +540,8 @@ uint32_t Renderer_LoadBitmap(Renderer_t* renderer, int slot, const char* filenam
 		if(pixels != NULL)
 			memcpy(pixels, file + 16, bytes);
 	}
+	else if(fileSize >= 2 && file[0] == 'B' && file[1] == 'M')
+		pixels = Renderer_ParseBmp(file, fileSize, &width, &height, &bits);
 	else if(fileSize > 4 && file[0] == 0x89 && file[1] == 'P' && file[2] == 'N' && file[3] == 'G')
 	{
 		// Not a format the original knows; kept because OpenBGI's own test data uses it.
