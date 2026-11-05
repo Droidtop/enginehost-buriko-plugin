@@ -78,7 +78,7 @@ char* OpcodesGrp0Mnemonics[256] = {
 	/* 0x37  55 */ "SetObjectPosition",
 	/* 0x38  56 */ "SetObjectParameter",
 	/* 0x39  57 */ "--Unknown--",
-	/* 0x3A  58 */ "SetWindowLayer",
+	/* 0x3A  58 */ "SetObjectLayer",
 	/* 0x3B  59 */ "--Unknown--",
 	/* 0x3C  60 */ "Unknown_60",
 	/* 0x3D  61 */ "Unknown_61",
@@ -337,7 +337,7 @@ OpcodePtr_t OpcodesGrp0[256] = {
 	/* 0x37  55 */ Opcode_Grp0_SetObjectPosition,
 	/* 0x38  56 */ Opcode_Grp0_SetObjectParameter,
 	/* 0x39  57 */ NULL,
-	/* 0x3A  58 */ Opcode_Grp0_SetWindowLayer,
+	/* 0x3A  58 */ Opcode_Grp0_SetObjectLayer,
 	/* 0x3B  59 */ NULL,
 	/* 0x3C  60 */ Opcode_Grp0_Unknown_60,
 	/* 0x3D  61 */ Opcode_Grp0_Unknown_61,
@@ -2108,14 +2108,16 @@ uint32_t Opcode_Grp0_ShowWindow(Thread_t* thread)
 }
 
 /*
- * Grp0 0x3A (0x0000903A; title+0x07DD in Fureraba and Houkago; 1.622 0x0047B5E0 ->
- * 0x004621C0 -> 0x00443A90): a window's draw layer. Popped: the layer (top), then the
- * window; nothing is pushed. A layer above 0xFFFF is fatal (0x00497D40), and so is a
- * handle that is not a window. The layer is the key Grp0 0x85 sets (vtable+0x54); when
- * it changed, the display list is sorted again (0x004433E0). Redrawn when shown. As the
- * RE lane read it on Droidtop/tracker#123.
+ * Grp0 0x3A (0x0000903A; title+0x07DD in Fureraba and Houkago, title+0x0ABE in
+ * Daitoshokan; 1.622 0x0047B5E0 -> 0x004621C0 -> 0x00443A90): an object's draw layer.
+ * Popped: the layer (top), then the object; nothing is pushed. The object is any
+ * display object - the generic lookup 0x00443350, Object_Resolve, which takes every
+ * family and 0 for the screen - and Houkago and Daitoshokan pass sprite 0x80000000. A
+ * layer above 0xFFFF is fatal (0x00497D40), and so is a handle that names nothing. The
+ * layer is the key Grp0 0x85 sets (vtable+0x54); when it changed, the object's display
+ * list is sorted again (0x004433E0). As the RE lane read it on Droidtop/tracker#123.
  */
-uint32_t Opcode_Grp0_SetWindowLayer(Thread_t* thread)
+uint32_t Opcode_Grp0_SetObjectLayer(Thread_t* thread)
 {
 	uint32_t layer = Thread_PopStack(thread);
 	uint32_t handle = Thread_PopStack(thread);
@@ -2125,21 +2127,21 @@ uint32_t Opcode_Grp0_SetWindowLayer(Thread_t* thread)
 		       thread->threadId, TLevel[thread->level], layer);
 		return 0xFFFFFFFC;
 	}
-	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
-	if(window == NULL)
+	DisplayObject_t* object = Object_Resolve(handle);
+	if(object == NULL)
 	{
-		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		printf("[Thread %d]: %sError: an invalid object handle [ 0x%.8X ] was specified\n",
 		       thread->threadId, TLevel[thread->level], handle);
 		return 0xFFFFFFFC;
 	}
-	if(Object_IsDrawable(window))
+	if(Object_IsDrawable(object))
 		gObjectDamage++;
-	if(window->layer != layer)
+	if(object->layer != layer)
 	{
-		window->layer = layer;
-		Object_ListResort(window);
+		object->layer = layer;
+		Object_ListResort(object);
 	}
-	if(Object_IsDrawable(window))
+	if(Object_IsDrawable(object))
 		gObjectDamage++;
 	return 0;
 }

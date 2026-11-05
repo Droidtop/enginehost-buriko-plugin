@@ -156,7 +156,7 @@ char* OpcodesGrp1Mnemonics[256] = {
     /* 0x89 137 */ "SetWindowGapCoefficient",
     /* 0x8A 138 */ "SetWindowDirection",
     /* 0x8B 139 */ "SetWindowSwingingStyle",
-    /* 0x8C 140 */ "Unknown_140",
+    /* 0x8C 140 */ "SetWindowTextCursor",
     /* 0x8D 141 */ "GetTextCursor",
     /* 0x8E 142 */ "Unknown_142",
     /* 0x8F 143 */ "--Unknown--",
@@ -415,7 +415,7 @@ OpcodePtr_t OpcodesGrp1[256] = {
     /* 0x89 137 */ Opcode_Grp1_SetWindowGapCoefficient,
     /* 0x8A 138 */ Opcode_Grp1_SetWindowDirection,
     /* 0x8B 139 */ Opcode_Grp1_SetWindowSwingingStyle,
-    /* 0x8C 140 */ Opcode_Grp1_Unknown_140,
+    /* 0x8C 140 */ Opcode_Grp1_SetWindowTextCursor,
     /* 0x8D 141 */ Opcode_Grp1_GetTextCursor,
     /* 0x8E 142 */ Opcode_Grp1_Unknown_142,
     /* 0x8F 143 */ NULL,
@@ -990,9 +990,29 @@ uint32_t Opcode_Grp1_SetWindowSwingingStyle(Thread_t* thread)
 	return 0;
 }
 
-uint32_t Opcode_Grp1_Unknown_140(Thread_t* thread)
+/*
+ * Grp1 0x8C (0x0000918C; Eustia's msgwndctrl+0x0F8C; 1.622 0x004844D0 -> 0x00463280 ->
+ * 0x004410C0 -> 0x0042C7E0): a window's text cursor, where its next character is
+ * drawn (+0x368, +0x36C). Popped (top first): y, x and the window; nothing is pushed.
+ * A handle that is not a window is fatal. The window's newline (Window_NewLine,
+ * 0x0042C6E0) moves the cursor on from there in the direction Grp1 0x8B set. As the RE
+ * lane read it on Droidtop/tracker#123.
+ */
+uint32_t Opcode_Grp1_SetWindowTextCursor(Thread_t* thread)
 {
-	return 0xFFFFFFFF;
+	int32_t y = (int32_t)Thread_PopStack(thread);
+	int32_t x = (int32_t)Thread_PopStack(thread);
+	uint32_t handle = Thread_PopStack(thread);
+	DisplayObject_t* window = Object_ResolveKind(handle, OBJECT_TYPE_WINDOW);
+	if(window == NULL)
+	{
+		printf("[Thread %d]: %sError: an invalid window handle [ 0x%.8X ] was specified\n",
+		       thread->threadId, TLevel[thread->level], handle);
+		return 0xFFFFFFFC;
+	}
+	window->textCursorX = x;
+	window->textCursorY = y;
+	return 0;
 }
 
 /*
