@@ -18,7 +18,7 @@ uint32_t Opcode_Grp1_Unknown_21(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_24(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_25(Thread_t* thread);
 uint32_t Opcode_Grp1_ScaleBitmap(Thread_t* thread);
-uint32_t Opcode_Grp1_Unknown_30(Thread_t* thread);
+uint32_t Opcode_Grp1_ApplyAlphaMask(Thread_t* thread);
 uint32_t Opcode_Grp1_DuplicateBitmap(Thread_t* thread);
 uint32_t Opcode_Grp1_Unknown_51(Thread_t* thread);
 uint32_t Opcode_Grp1_SetScreenLayered(Thread_t* thread);
