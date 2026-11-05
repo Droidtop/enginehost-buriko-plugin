@@ -581,6 +581,42 @@ uint8_t* Thread_ResolveAddr(Thread_t* thread, uint32_t address)
 	}
 }
 
+/*
+ * A script address and how many bytes the area it is in has from there: global memory,
+ * the program's code, the thread's local memory or an aux block. NULL (and 0) when the
+ * address is in none. The original trusts a script's buffers; callers that write a size
+ * they cannot know ahead (Sys0 0xC4 / 0xC5) check against this instead.
+ */
+uint8_t* Thread_ResolveSpan(Thread_t* thread, uint32_t address, uint32_t* available)
+{
+	*available = 0;
+	if(address == 0)
+		return NULL;
+	uint32_t offset = BGI_ADDR_OFFSET(address);
+	switch(BGI_ADDR_TYPE(address))
+	{
+		case 0:
+			if(thread->engine->globalMem == NULL || offset >= thread->engine->globalBufferSize)
+				return NULL;
+			*available = thread->engine->globalBufferSize - offset;
+			return thread->engine->globalMem + offset;
+		case 1:
+			if(offset >= thread->codeSize)
+				return NULL;
+			*available = thread->codeSize - offset;
+			return thread->code + offset;
+		case 2:
+			if(thread->localMem == NULL || offset >= thread->localMemSize)
+				return NULL;
+			*available = thread->localMemSize - offset;
+			return thread->localMem + offset;
+		case 3:
+			return NULL;
+		default:
+			return Engine_ResolveAuxMemory(thread->engine, address, available);
+	}
+}
+
 uint8_t* Thread_PopAndResolveAddress(Thread_t* thread)
 {
 	uint32_t address = Thread_PopStack(thread);

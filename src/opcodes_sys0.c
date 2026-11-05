@@ -2230,38 +2230,70 @@ uint32_t Opcode_Sys0_Unknown_193(Thread_t* thread)
 }
 
 /*
- * Sys0 0xC4 / 0xC5: encode and decode user data, the save image (Droidtop/tracker#123).
- * 0xC4 pops, top first, a record count, a record size, a source and a destination; the
- * original runs a process that delta-codes the records (DCFS) and wraps that in SDC
- * (gdb.c), and pushes the encoded size, or 0 when it could not. 0xC5 pops a source and a
- * destination and pushes 0 when it decoded, 0x80000003 when the inner data is not DCFS and
- * 0x80000004 when a run overflows a record.
- *
- * The DCFS bytes (the header's widths, the run-length coding) are not yet settled, and
- * these files are the game's saves, which the owner's PC and cloud saves share: a guessed
- * format would put saves there that the original cannot read. Until the local lane's trace
- * settles them, 0xC4 answers 0 ("encode failed", which the game's own userdata program
- * reports through 0x79 and goes on from) and writes nothing, and 0xC5 answers "not DCFS".
+ * Sys0 0xC4 / 0xC5: encode and decode user data, the save image (Droidtop/tracker#123, the
+ * local lane's trace of 0x00447220 / 0x00447410 and the SDC writer, checked against the
+ * owner's two real saves). 0xC4 pops the record count (top), the record size, the source
+ * and the destination; it DCFS-codes the records, wraps that in SDC keyed by the clock's
+ * milliseconds (gdb.c, as BGI.gdb is) into the destination and pushes the SDC file's size,
+ * or 0 on any failure. The original runs it as a process the script waits on; doing it at
+ * once gives the script the same answer. 0xC5 pops the source (SDC) and the destination
+ * and pushes 0, 0x80000003 when the inner data is not DCFS, or 0x80000004 when its runs
+ * are malformed. The original trusts the buffers; here both are checked against the room
+ * the script's areas have (Thread_ResolveSpan).
  */
 uint32_t Opcode_Sys0_EncodeUserData(Thread_t* thread)
 {
 	uint32_t count = Thread_PopStack(thread);
 	uint32_t size = Thread_PopStack(thread);
-	uint32_t source = Thread_PopStack(thread);
-	uint32_t destination = Thread_PopStack(thread);
-	printf("[Thread %d]: %sUser data encode (Sys0 0xC4, %u records of 0x%X from 0x%08X to 0x%08X) is not ported yet; answering 0\n",
-	       thread->threadId, TLevel[thread->level], count, size, source, destination);
-	Thread_PushStack(thread, 0);
+	uint32_t sourceAddress = Thread_PopStack(thread);
+	uint32_t destinationAddress = Thread_PopStack(thread);
+	uint32_t sourceRoom = 0, destinationRoom = 0;
+	uint8_t* source = Thread_ResolveSpan(thread, sourceAddress, &sourceRoom);
+	uint8_t* destination = Thread_ResolveSpan(thread, destinationAddress, &destinationRoom);
+	uint32_t answer = 0;
+	uint8_t* dcfs = NULL;
+	size_t dcfsSize = 0;
+	if(source == NULL || destination == NULL || (uint64_t)count * size > sourceRoom)
+		printf("[Thread %d]: %sUser data encode: the source or destination is not addressable\n",
+		       thread->threadId, TLevel[thread->level]);
+	else if(DCFS_Encode(source, size, count, &dcfs, &dcfsSize) == 0 && dcfsSize <= 0xFFFFFFFFu)
+	{
+		uint8_t* file = NULL;
+		struct timespec now;
+		clock_gettime(CLOCK_REALTIME, &now);
+		uint32_t fileSize = SDC_Encode(dcfs, (uint32_t)dcfsSize, (uint32_t)(now.tv_nsec / 1000000), &file);
+		if(fileSize != 0 && fileSize <= destinationRoom)
+		{
+			memcpy(destination, file, fileSize);
+			answer = fileSize;
+		}
+		else if(fileSize != 0)
+			printf("[Thread %d]: %sUser data encode: %u bytes do not fit the destination's %u\n",
+			       thread->threadId, TLevel[thread->level], fileSize, destinationRoom);
+		free(file);
+	}
+	free(dcfs);
+	Thread_PushStack(thread, answer);
 	return 0;
 }
 
 uint32_t Opcode_Sys0_DecodeUserData(Thread_t* thread)
 {
-	uint32_t source = Thread_PopStack(thread);
-	uint32_t destination = Thread_PopStack(thread);
-	printf("[Thread %d]: %sUser data decode (Sys0 0xC5, 0x%08X to 0x%08X) is not ported yet; answering not DCFS\n",
-	       thread->threadId, TLevel[thread->level], source, destination);
-	Thread_PushStack(thread, 0x80000003u);
+	uint32_t sourceAddress = Thread_PopStack(thread);
+	uint32_t destinationAddress = Thread_PopStack(thread);
+	uint32_t sourceRoom = 0, destinationRoom = 0;
+	uint8_t* source = Thread_ResolveSpan(thread, sourceAddress, &sourceRoom);
+	uint8_t* destination = Thread_ResolveSpan(thread, destinationAddress, &destinationRoom);
+	uint32_t answer = DCFS_NOT_DCFS;
+	uint32_t decoded = source != NULL ? SDC_DecodedSize(source, sourceRoom) : 0;
+	if(destination != NULL && decoded != 0 && decoded <= 0x40000000u)
+	{
+		uint8_t* plain = (uint8_t*)malloc(decoded);
+		if(plain != NULL && SDC_Decode(source, sourceRoom, plain, decoded) == decoded)
+			answer = DCFS_Decode(plain, decoded, destination, destinationRoom);
+		free(plain);
+	}
+	Thread_PushStack(thread, answer);
 	return 0;
 }
 

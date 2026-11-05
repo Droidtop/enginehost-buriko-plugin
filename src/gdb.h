@@ -23,6 +23,25 @@ uint32_t SDC_Decode(const uint8_t* file, size_t fileSize, uint8_t* out, uint32_t
 // Encodes into a buffer the caller frees; answers the file size or 0.
 uint32_t SDC_Encode(const uint8_t* data, uint32_t size, uint32_t key, uint8_t** outFile);
 
+// ---------------------------------------------------------------- DCFS
+// User data (Sys0 0xC4 / 0xC5, 0x00447220 / 0x00447410; Droidtop/tracker#123, the local
+// lane's trace, checked against two real saves): a 0x18-byte header (the 16 characters
+// "DCFS FORMAT 1.00" with no NUL, the record size, the record count), the first record raw,
+// and every later record as runs against the one before it, alternating "the same for N
+// bytes" and "N bytes follow", always starting with "same", lengths in unsigned LEB128,
+// summing exactly to the record size, with nothing after the last record.
+#define DCFS_HEADER_SIZE 0x18
+#define DCFS_ERR_COUNT   0x80000001u
+#define DCFS_ERR_SIZE    0x80000002u
+#define DCFS_NOT_DCFS    0x80000003u
+#define DCFS_BAD_RUNS    0x80000004u
+// Encodes `count` records of `size` bytes into a buffer the caller frees. 0 and *out, *outSize
+// on success; DCFS_ERR_COUNT or DCFS_ERR_SIZE; 0xFFFFFFFF when the result does not decode back.
+uint32_t DCFS_Encode(const uint8_t* records, uint32_t size, uint32_t count, uint8_t** out, size_t* outSize);
+// Decodes into `out` (outSize bytes): 0, DCFS_NOT_DCFS, or DCFS_BAD_RUNS (a run past the record,
+// runs that do not sum to it, a stream that ends early, or records that do not fit `out`).
+uint32_t DCFS_Decode(const uint8_t* data, size_t dataSize, uint8_t* out, size_t outSize);
+
 // ---------------------------------------------------------------- string tables
 // The registry at 0x00503E00: tables of strings keyed by a number, each string
 // kept with its hash (0x00452BC0) and length. Table 0x80000000 is the one the
